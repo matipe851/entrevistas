@@ -364,6 +364,56 @@ function isHesitant(a){
 function lget(key){ try{ var v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch(e){ return null; } }
 function lset(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); return true; } catch(e){ return false; } }
 
+/* ---------------- self-contained invite link (works on any device, no server) ---------------- */
+function encodePayload(obj){
+  try{
+    var json = JSON.stringify(obj);
+    var b64 = btoa(unescape(encodeURIComponent(json)));
+    return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  } catch(e){ return ""; }
+}
+function decodePayload(str){
+  try{
+    var b64 = String(str).replace(/-/g,'+').replace(/_/g,'/');
+    while (b64.length % 4) b64 += '=';
+    var json = decodeURIComponent(escape(atob(b64)));
+    return JSON.parse(json);
+  } catch(e){ return null; }
+}
+function stripQuestions(qs){
+  return qs.map(function(q){ return { id:q.id, text:q.text, category:q.category, seconds:q.seconds, lang:q.lang, isFollowup:!!q.isFollowup, rootId:q.rootId, depth:q.depth||0, reason:q.reason||"" }; });
+}
+function buildInvitePayload(){
+  var c = state.config;
+  return {
+    v:1, code:state.code,
+    position:c.position, company:c.company, focus:c.focus||"",
+    level:c.level||"Semi-Senior", language:c.language||"es", followups:c.followups!==false,
+    recruiterEmail:c.recruiterEmail||"",
+    questions: stripQuestions(state.questions)
+  };
+}
+/* Dominio de producción por defecto. Se usa solo cuando la página no corre
+   sobre una URL pública propia (por ej. la previsualización dentro de claude.ai).
+   Cuando la app corre en su sitio real, se usa ESE dominio automáticamente,
+   así que si cambiás de dominio no hace falta tocar nada acá. */
+var PROD_BASE = "https://entrevistas-two.vercel.app/";
+function pageBaseUrl(){
+  if (typeof window==="undefined" || !window.location) return "";
+  var loc = window.location;
+  if (!/^https?:$/.test(loc.protocol)) return "";
+  if (/(^|\.)vercel\.app$/.test(loc.hostname) || loc.hostname === "localhost" || /^127\./.test(loc.hostname) || loc.hostname.indexOf(".") > 0){
+    return loc.origin + loc.pathname;
+  }
+  return "";
+}
+function computeInviteLink(){
+  var base = pageBaseUrl() || PROD_BASE;
+  var token = encodePayload(buildInvitePayload());
+  if (!token) return state.shareLink || "";
+  return base + "#e=" + token;
+}
+
 /* ---------------- question bank (local generator, no network calls) ---------------- */
 var QBANK = {
   es: {
@@ -647,8 +697,9 @@ function waveBars(n, cls){
 var state = {
   screen: "home",
   error: null, busy: false, storageWarn: false,
-  config: { position:"", company:"", focus:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:true },
+  config: { position:"", company:"", focus:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:true, recruiterEmail:"" },
   questions: [], idx: 0, answers: {}, report: null,
+  invite: null,
   code: "", candidateEmail: "", shareLink: "", interviewMode: "candidate",
   audioOmitted: false, recording:false, timeLeft:0, live:"", micDenied:false, analyzingId:null,
   gmailStatus: null, sendState: "idle", sendError: null, sentMessageId: null
@@ -666,6 +717,7 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
+try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, render:render }; }catch(e){}
 
 function Header(){
   var showHome = state.screen !== "home";
@@ -693,12 +745,11 @@ var Screens = {};
 
 Screens.home = function(){
   return Header() +
-  (!('localStorage' in window) ? Note("warn","Este navegador no permite guardar datos localmente, así que compartir por código no va a funcionar en esta sesión.") : "") +
   '<div class="grid2">' +
-    '<button class="tile tile-dark" data-action="go-recruiter">' + ic('shield',24) + '<h3>Panel del reclutador</h3><p>Crear entrevistas y ver las evaluaciones. Protegido con tu PIN, guardado solo en este navegador.</p></button>' +
-    '<button class="tile tile-light" data-action="go-candcode">' + ic('mic',24) + '<h3>Tengo una entrevista</h3><p>Ingresá el código que te compartieron y respondé las preguntas por audio.</p></button>' +
+    '<button class="tile tile-dark" data-action="go-recruiter">' + ic('shield',24) + '<h3>Panel del reclutador</h3><p>Creá entrevistas a medida del puesto y compartí un enlace listo para enviar. Protegido con tu PIN.</p></button>' +
+    '<button class="tile tile-light" data-action="go-candcode">' + ic('mic',24) + '<h3>Tengo una entrevista</h3><p>Abrí el enlace que te compartieron, o ingresá tu código, y respondé las preguntas por audio.</p></button>' +
   '</div>' +
-  '<p class="footer-note">Demo autocontenida: las entrevistas y respuestas se guardan únicamente en este navegador, no en un servidor.</p>';
+  '<p class="footer-note">Entrevistas por voz con preguntas a medida y evaluación automática. El enlace de cada entrevista funciona en cualquier dispositivo.</p>';
 };
 
 Screens["pin-set"] = function(){
@@ -756,6 +807,7 @@ Screens.config = function(){
         '<span class="field-hint">Rubro, cultura, tamaño — lo que quieras que se tenga en cuenta al armar las preguntas.</span>' +
       '</label>' +
       '<label class="field"><span class="field-label">Competencias o focos (opcional)</span>' + fieldInput("f_focus","Ej: orientación al cliente, manejo de objeciones", c.focus, "list") + '</label>' +
+      '<label class="field" style="background:var(--teal-tint);border:1px solid var(--border-soft);border-radius:14px;padding:14px 16px"><span class="field-label">Tu email (para recibir las respuestas)</span>' + fieldInput("f_recruiter","reclutador@empresa.com", c.recruiterEmail, "mail") + '<span class="field-hint">Cuando el candidato termine, sus respuestas y la evaluación te llegan a este correo. Recomendado.</span></label>' +
       '<div class="grid3">' +
         '<label class="field"><span class="field-label">Seniority</span><select class="bare" id="f_level">' + LEVELS.map(function(l){return '<option'+(l===c.level?' selected':'')+'>'+l+'</option>';}).join('') + '</select></label>' +
         '<label class="field"><span class="field-label">Idioma</span><select class="bare" id="f_lang">' + LANGS.map(function(l){return '<option value="'+l[0]+'"'+(l[0]===c.language?' selected':'')+'>'+l[1]+'</option>';}).join('') + '</select></label>' +
@@ -773,6 +825,26 @@ Screens.loading = function(){ return Header() + Centered(ic('loader',30,'spin'),
 Screens.submitting = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "No cierres esta ventana."); };
 Screens.evaluating = function(){ return Header() + Centered(ic('sparkle',30), "Evaluando respuestas", "Analizando duración, fluidez y contenido de cada respuesta…"); };
 Screens["cand-thanks"] = function(){ return Header() + Centered(ic('check',32), "¡Listo, gracias!", "Tus respuestas se enviaron correctamente. Ya podés cerrar esta ventana."); };
+Screens["cand-send"] = function(){
+  var c = state.config;
+  var hasRec = !!(c.recruiterEmail && c.recruiterEmail.trim());
+  var html = Header() +
+  '<div class="card" style="max-width:480px;margin:0 auto">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('check',22)+'<h2 style="font-size:19px;color:var(--ink)">Terminaste la entrevista</h2></div>' +
+    '<p style="font-size:14px;color:var(--muted);margin:0 0 18px">Último paso: enviá tus respuestas al reclutador. Se abre tu correo con todo escrito — solo tenés que tocar <strong style="color:var(--ink)">Enviar</strong>.</p>';
+  if (!hasRec) html += Note("warn","Esta invitación no incluía el correo del reclutador. Tocá “Copiar mis respuestas” y enviáselas por mail a la persona que te contactó.");
+  html += '<div class="flex-actions">';
+  if (hasRec){
+    html += '<a class="btn btn-teal" id="resGmailBtn" href="'+esc(resultsGmailHref())+'" target="_blank" rel="noopener">'+ic('send',15)+' Enviar respuestas por Gmail</a>';
+    html += '<a class="btn btn-ghost" id="resMailBtn" href="'+esc(resultsMailtoHref())+'" target="_top" rel="noopener">'+ic('mail',15)+' Abrir en tu app de correo</a>';
+  }
+  html += '<button class="btn btn-ghost" data-action="copy-results">'+ic('copy',15)+' <span id="copyResLbl">Copiar mis respuestas</span></button>';
+  html += '</div>';
+  if (state.audioOmitted) html += '<p style="margin:14px 0 0;font-size:11.5px;color:var(--muted)">Nota: los audios no se envían por su tamaño; se envían las transcripciones y la evaluación automática.</p>';
+  html += '<p style="margin:12px 0 0;font-size:11.5px;color:var(--muted)">Cuando lo hayas enviado, podés cerrar esta ventana. ¡Gracias!</p>';
+  html += '</div>';
+  return html;
+};
 
 function Centered(icon, title, sub){
   return '<div class="center-block">' + icon + '<h2>'+esc(title)+'</h2><p>'+esc(sub)+'</p></div>';
@@ -781,14 +853,57 @@ function backlink(action, label){ return '<button class="backlink" data-action="
 
 function buildShareMessage(){
   var c = state.config;
-  return "Hola,\n\nTe invitamos a una entrevista por voz para el puesto de " + c.position + ".\n\n" +
-    "1) Abrí este enlace: " + (state.shareLink || "[pegá aquí el enlace de esta página]") + "\n" +
-    "2) Elegí “Tengo una entrevista” e ingresá este código: " + state.code + "\n\n" +
-    "Vas a responder algunas preguntas grabando audio, con un tiempo límite por pregunta. Permití el acceso al micrófono (mejor en Chrome).\n\n¡Éxitos!";
+  var n = (state.questions && state.questions.length) ? state.questions.length : "algunas";
+  return "Hola,\n\n" +
+    "Te invitamos a completar una entrevista por voz para el puesto de " + c.position + ".\n\n" +
+    "Para comenzar, abrí este enlace desde tu celular o computadora (recomendamos usar Google Chrome):\n" +
+    (state.shareLink || "[enlace de la entrevista]") + "\n\n" +
+    "El enlace ya tiene todo cargado: solo tenés que abrirlo, permitir el acceso al micrófono y responder. Son " + n + " preguntas y cada una tiene un tiempo límite.\n\n" +
+    "Código de referencia: " + state.code + "\n\n" +
+    "Cualquier duda, respondé este correo. ¡Éxitos!";
 }
 function mailtoHref(){
   var c = state.config;
   return "mailto:"+encodeURIComponent(state.candidateEmail||"")+"?subject="+encodeURIComponent("Entrevista para "+c.position)+"&body="+encodeURIComponent(buildShareMessage());
+}
+function gmailComposeHref(){
+  var c = state.config;
+  return "https://mail.google.com/mail/?view=cm&fs=1&to="+encodeURIComponent(state.candidateEmail||"")+"&su="+encodeURIComponent("Entrevista para "+c.position)+"&body="+encodeURIComponent(buildShareMessage());
+}
+function buildResultsMessage(){
+  var c = state.config, r = state.report;
+  var L = [];
+  L.push("Respuestas de entrevista por voz");
+  L.push("Puesto: " + (c.position||"-"));
+  L.push("Candidato: " + (state.candidateEmail || "(sin email)"));
+  if (state.code) L.push("Código: " + state.code);
+  L.push("");
+  if (r){
+    L.push("=== EVALUACIÓN AUTOMÁTICA ===");
+    L.push("Puntaje: " + r.score + "/10  ·  " + r.recommendation);
+    L.push(r.overall);
+    L.push("");
+    if (r.strengths && r.strengths.length){ L.push("Fortalezas:"); r.strengths.forEach(function(s){ L.push("  • " + s); }); L.push(""); }
+    if (r.improve && r.improve.length){ L.push("A mejorar:"); r.improve.forEach(function(s){ L.push("  • " + s); }); L.push(""); }
+  }
+  L.push("=== RESPUESTAS (transcripción) ===");
+  state.questions.forEach(function(q,i){
+    var a = state.answers[q.id];
+    L.push((i+1) + ". " + q.text);
+    if (a && a.transcript) L.push("   R: " + a.transcript);
+    else L.push("   R: (sin respuesta o sin transcripción)");
+    if (a && a.signals) L.push("   [duró " + (a.signals.durationSec||0) + "s · pausa máx " + (a.signals.longestSilence||0) + "s]");
+    L.push("");
+  });
+  L.push("— Los audios no se adjuntan por tamaño. La evaluación se calcula automáticamente a partir de duración, fluidez y contenido de las respuestas.");
+  return L.join("\n");
+}
+function resultsSubject(){ return "Respuestas de entrevista – " + (state.config.position||"") + (state.candidateEmail?(" – "+state.candidateEmail):""); }
+function resultsGmailHref(){
+  return "https://mail.google.com/mail/?view=cm&fs=1&to="+encodeURIComponent(state.config.recruiterEmail||"")+"&su="+encodeURIComponent(resultsSubject())+"&body="+encodeURIComponent(buildResultsMessage());
+}
+function resultsMailtoHref(){
+  return "mailto:"+encodeURIComponent(state.config.recruiterEmail||"")+"?subject="+encodeURIComponent(resultsSubject())+"&body="+encodeURIComponent(buildResultsMessage());
 }
 
 function GmailBlock(){
@@ -820,22 +935,23 @@ Screens.share = function(){
   return Header() +
   '<div class="card">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;color:var(--teal)">'+ic('check',19)+'<h2 style="font-size:17px;color:var(--ink)">Entrevista lista para compartir</h2></div>' +
-    (state.storageWarn ? Note("warn","No se pudo guardar en este navegador (¿modo privado o memoria llena?). Usá “Previsualizar” para probar el flujo igual.") : "") +
-    Note("info","El código funciona dentro de este mismo navegador. Para probarlo de punta a punta, abrí esta misma página en otra pestaña de este dispositivo e ingresá el código como candidato.") +
+    Note("info","Este enlace es único para esta entrevista y funciona en cualquier dispositivo: el candidato solo tiene que abrirlo. No hace falta que instale nada ni que estén en la misma red.") +
+    (!(c.recruiterEmail && c.recruiterEmail.trim()) ? Note("warn","No cargaste tu email en la configuración, así que las respuestas del candidato no van a poder volver a vos automáticamente. Volvé al paso anterior y agregalo si querés recibirlas.") : "") +
     '<div class="share-code"><div class="lbl">Código de la entrevista</div><div class="val mono">'+esc(state.code)+'</div>' +
       '<button class="copybtn" data-action="copy-code">'+ic('copy',12)+' <span id="copyCodeLbl">Copiar código</span></button></div>' +
     '<div style="display:grid;gap:16px">' +
-      '<label class="field"><span class="field-label">Email del entrevistado</span>' + fieldInput("f_email","nombre@correo.com", state.candidateEmail, "mail") + '<span class="field-hint">Va a tener que escribir este mismo email, junto con el código, para poder entrar a la entrevista.</span></label>' +
-      '<label class="field"><span class="field-label">Enlace de esta página</span><span class="field-hint" style="margin:0 0 6px">Se completa solo con la URL de esta página. Podés editarlo si querés usar otro enlace.</span>' + fieldInput("f_link","https://…", state.shareLink) + '</label>' +
+      '<label class="field"><span class="field-label">Email del candidato</span>' + fieldInput("f_email","nombre@correo.com", state.candidateEmail, "mail") + '<span class="field-hint">A dónde le mandás la invitación. El candidato abre el enlace desde ahí; no necesita cargar ningún código.</span></label>' +
+      '<label class="field"><span class="field-label">Enlace de invitación (referencia)</span><span class="field-hint" style="margin:0 0 6px">No hace falta que lo copies: al tocar “Abrir en Gmail” ya va incluido en el mensaje, junto con el código. Lo dejamos acá por si querés compartirlo por otro medio (ej. WhatsApp).</span><div class="input-row" style="background:var(--surface-2)"><input id="f_link" class="mono" style="font-size:12px" value="'+esc(state.shareLink)+'" readonly onclick="this.select()"></div></label>' +
     '</div>' +
     '<div style="margin-top:18px">' + GmailBlock() + '</div>' +
     '<div class="flex-actions">' +
+      '<a class="btn btn-teal" id="gmailComposeBtn" href="'+esc(gmailComposeHref())+'" target="_blank" rel="noopener">'+ic('mail',15)+' Abrir en Gmail</a>' +
       '<a class="btn btn-ghost" id="mailBtn" href="'+esc(mailtoHref())+'" target="_top" rel="noopener">'+ic('mail',15)+' Abrir en tu cliente de correo</a>' +
       '<button class="btn btn-ghost" data-action="copy-msg">'+ic('copy',15)+' <span id="copyMsgLbl">Copiar mensaje</span></button>' +
       '<button class="btn btn-ghost" data-action="preview">'+ic('eye',15)+' Previsualizar</button>' +
       '<button class="btn btn-ghost" data-action="go-recruiterhome" style="margin-left:auto">Volver al panel</button>' +
     '</div>' +
-    '<p style="margin:16px 0 0;font-size:12px;color:var(--muted)">Si el envío directo por Gmail no está disponible, “Abrir en tu cliente de correo” arma el mensaje en tu app de mail, o usá “Copiar mensaje” y pegalo donde prefieras. Después entrá a “Ver respuestas” con este mismo código.</p>' +
+    '<p style="margin:16px 0 0;font-size:12px;color:var(--muted)">“Abrir en Gmail” abre la ventana de redactar de Gmail en el navegador con todo cargado (ideal si usás Gmail en el navegador). “Abrir en tu cliente de correo” usa la app de mail instalada, y “Copiar mensaje” copia el texto para pegarlo donde quieras. Cuando el candidato termine, sus respuestas y la evaluación te van a llegar por correo.</p>' +
   '</div>';
 };
 
@@ -854,6 +970,22 @@ function CodeScreen(opts){
 }
 Screens["cand-code"] = function(){ return CodeScreen({ title:"Ingresá a tu entrevista", subtitle:"Escribí el email al que te enviaron la invitación y el código que te compartieron junto con él. Vas a responder por audio, con un tiempo límite por pregunta.", cta:"Empezar entrevista", back:"home", icon:"mic", needsEmail:true }); };
 Screens["results-code"] = function(){ return CodeScreen({ title:"Ver respuestas y evaluación", subtitle:"Ingresá el código de la entrevista que compartiste con el candidato.", cta:"Abrir resultados", back:"go-recruiterhome", icon:"eye" }); };
+
+Screens["invite-landing"] = function(){
+  var inv = state.invite || {};
+  var n = (inv.questions && inv.questions.length) ? inv.questions.length : 0;
+  var empresa = shortEmpresa(inv.company||"");
+  return Header() +
+  '<div class="card" style="max-width:460px;margin:0 auto">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('mic',20)+'<h2 style="font-size:19px;color:var(--ink)">Fuiste invitado a una entrevista</h2></div>' +
+    '<p style="font-size:14px;color:var(--muted);margin:0 0 18px">Puesto: <strong style="color:var(--ink)">'+esc(inv.position||"")+'</strong>'+(empresa && empresa!=="la empresa"?(' · '+esc(empresa)):'')+'</p>' +
+    '<div class="note note-info">'+ic('alert',15)+'<span>Vas a responder '+(n?('<strong>'+n+' preguntas</strong>'):'unas preguntas')+' grabando audio, con un tiempo límite por cada una. Necesitás permitir el acceso al micrófono (funciona mejor en Chrome).</span></div>' +
+    ErrBox() +
+    '<label class="field" style="display:block;margin:16px 0 16px"><span class="field-label">Tu email</span>' + fieldInput("inviteEmail","nombre@correo.com","","mail") + '<span class="field-hint">Se incluye junto a tus respuestas para que el reclutador sepa quién sos.</span></label>' +
+    '<button class="btn btn-primary btn-block" id="inviteStartBtn">'+ic('mic',15)+' Comenzar entrevista</button>' +
+    '<p style="margin:14px 0 0;font-size:11.5px;color:var(--muted)">Al terminar, vas a poder enviar tus respuestas al reclutador con un solo toque.</p>' +
+  '</div>';
+};
 
 function Badge(text, catKey){
   var v = 'var(' + (CATEGORY_VAR[catKey]||'--teal') + ')';
@@ -1035,9 +1167,7 @@ function generate(){
       state.questions = qs; state.answers = {}; state.idx = 0; state.report = null;
       state.code = code; state.candidateEmail=""; state.storageWarn = !ok;
       state.sendState = "idle"; state.sendError = null; state.sentMessageId = null;
-      if (!state.shareLink && typeof window !== "undefined" && window.location && /^https?:$/.test(window.location.protocol)){
-        state.shareLink = window.location.origin + window.location.pathname;
-      }
+      state.shareLink = computeInviteLink();
       state.screen = "share";
       probeGmailOnce();
     } catch(e){
@@ -1049,6 +1179,26 @@ function generate(){
 }
 
 function emailsMatch(a, b){ return (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase(); }
+
+function startInviteInterview(emailRaw){
+  var inv = state.invite; if (!inv || !inv.questions) return;
+  var emailIn = (emailRaw||"").trim();
+  if (!emailIn || emailIn.indexOf("@") < 1){ state.error="Ingresá un email válido para comenzar."; render(); return; }
+  state.config = {
+    position: inv.position||"", company: inv.company||"", focus: inv.focus||"",
+    level: inv.level||"Semi-Senior", language: inv.language||"es",
+    includeEnglish:false, count:"auto", followups: inv.followups !== false,
+    recruiterEmail: inv.recruiterEmail || ""
+  };
+  rt.analyzed = {};
+  state.questions = inv.questions.slice();
+  state.answers = {}; state.idx = 0; state.report = null;
+  state.code = inv.code || "";
+  state.candidateEmail = emailIn;
+  state.interviewMode = "candidate";
+  state.error = null; state.screen = "interview";
+  render();
+}
 
 function loadForCandidate(emailRaw, raw){
   var code = (raw||"").toUpperCase().trim();
@@ -1119,8 +1269,10 @@ function submitAnswers(){
   }
   function finish(){
     var strip = qs.map(function(q){ return { id:q.id, text:q.text, category:q.category, seconds:q.seconds, lang:q.lang, isFollowup:!!q.isFollowup, rootId:q.rootId, depth:q.depth||0, reason:q.reason||"" }; });
-    lset("voz_ans_"+state.code, { questions: strip, answers: out, submittedAt: Date.now(), audioOmitted: omitted });
-    state.screen = "cand-thanks"; render();
+    lset("voz_ans_"+state.code, { questions: strip, answers: out, submittedAt: Date.now(), audioOmitted: omitted, candidateEmail: state.candidateEmail||"" });
+    try{ state.report = evaluateLocally(state.questions, state.answers, state.config); }catch(e){ state.report = null; }
+    state.audioOmitted = omitted;
+    state.screen = "cand-send"; render();
   }
   processNext(0);
 }
@@ -1296,6 +1448,9 @@ function bind(){
         if (ans && ans.blobUrl) downloadAudio(ans.blobUrl, name || "respuesta.webm");
       }
       else if (act === "send-gmail") sendViaGmail();
+      else if (act === "copy-results"){
+        copyText(buildResultsMessage(), function(){ var l=document.getElementById("copyResLbl"); if(l){ l.textContent="¡Copiado!"; setTimeout(function(){ if(l) l.textContent="Copiar mis respuestas"; },1400);} });
+      }
     });
   });
 
@@ -1304,6 +1459,7 @@ function bind(){
   if ((f=document.getElementById("f_pos"))) f.addEventListener("input", function(e){ state.config.position=e.target.value; syncGenBtn(); });
   if ((f=document.getElementById("f_company"))) f.addEventListener("input", function(e){ state.config.company=e.target.value; syncGenBtn(); });
   if ((f=document.getElementById("f_focus"))) f.addEventListener("input", function(e){ state.config.focus=e.target.value; });
+  if ((f=document.getElementById("f_recruiter"))) f.addEventListener("input", function(e){ state.config.recruiterEmail=e.target.value; });
   if ((f=document.getElementById("f_level"))) f.addEventListener("change", function(e){ state.config.level=e.target.value; });
   if ((f=document.getElementById("f_lang"))) f.addEventListener("change", function(e){ state.config.language=e.target.value; render(); });
   if ((f=document.getElementById("f_count"))) f.addEventListener("change", function(e){ state.config.count=e.target.value; });
@@ -1328,6 +1484,16 @@ function bind(){
     })();
   }
 
+  /* invite landing (candidate opened a shared link) */
+  if (document.getElementById("inviteStartBtn")){
+    (function(){
+      var em = document.getElementById("inviteEmail");
+      var go = function(){ startInviteInterview(em ? em.value : ""); };
+      document.getElementById("inviteStartBtn").addEventListener("click", go);
+      if (em){ em.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); }); em.focus(); }
+    })();
+  }
+
   /* code screens */
   if (document.getElementById("codeVal")){
     (function(){
@@ -1347,7 +1513,7 @@ function bind(){
   }
 
   /* share screen */
-  function syncMailHref(){ var m=document.getElementById("mailBtn"); if (m) m.setAttribute("href", mailtoHref()); }
+  function syncMailHref(){ var m=document.getElementById("mailBtn"); if (m) m.setAttribute("href", mailtoHref()); var g=document.getElementById("gmailComposeBtn"); if (g) g.setAttribute("href", gmailComposeHref()); }
   function persistCandidateEmail(){
     if (!state.code) return;
     var iv = lget("voz_iv_"+state.code);
@@ -1361,6 +1527,20 @@ function bind(){
   /* review screen */
   if ((f=document.getElementById("evalBtn"))) f.addEventListener("click", evaluate);
 }
+
+/* ---- entry from a shared invite link (works on any device) ---- */
+(function initFromHash(){
+  try{
+    var h = (window.location && window.location.hash) || "";
+    var m = h.match(/[#&]e=([^&]+)/);
+    if (!m) return;
+    var inv = decodePayload(m[1]);
+    if (inv && inv.questions && inv.questions.length){
+      state.invite = inv;
+      state.screen = "invite-landing";
+    }
+  } catch(e){}
+})();
 
 render();
 })();
