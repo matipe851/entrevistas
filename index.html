@@ -364,6 +364,10 @@ function isHesitant(a){
 function lget(key){ try{ var v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch(e){ return null; } }
 function lset(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); return true; } catch(e){ return false; } }
 
+/* ---------------- un solo uso (best-effort, por dispositivo) ---------------- */
+function isInterviewUsed(code){ if(!code) return false; return !!lget("voz_used_"+String(code).toUpperCase()); }
+function markInterviewUsed(code, email){ if(!code) return; lset("voz_used_"+String(code).toUpperCase(), { at: Date.now(), email: email||"" }); }
+
 /* ---------------- self-contained invite link (works on any device, no server) ---------------- */
 function encodePayload(obj){
   try{
@@ -515,6 +519,17 @@ var FOLLOWUP = {
 };
 
 var SECONDS_BY_CAT = { "Presentación":60, "Experiencia":100, "Competencias":100, "Situacional":150, "Motivación y cultura":95, "Cierre":70 };
+
+/* El reloj arranca cuando APARECE la pregunta, así que al tiempo de respuesta
+   le sumamos un margen para leer y pensar la consigna, proporcional a su largo. */
+function readingBuffer(text){
+  var words = (String(text||"").trim().match(/\S+/g) || []).length;
+  return Math.round(14 + Math.min(20, words * 0.5));
+}
+function questionTime(q, forCandidate){
+  var base = (q && q.seconds) || 90;
+  return forCandidate ? base + readingBuffer(q && q.text) : base;
+}
 
 function shortEmpresa(s){
   s = (s||"").trim().split("\n")[0];
@@ -701,13 +716,15 @@ var state = {
   questions: [], idx: 0, answers: {}, report: null,
   invite: null,
   code: "", candidateEmail: "", shareLink: "", interviewMode: "candidate",
-  audioOmitted: false, recording:false, timeLeft:0, live:"", micDenied:false, analyzingId:null,
-  gmailStatus: null, sendState: "idle", sendError: null, sentMessageId: null
+  audioOmitted: false, recording:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
+  gmailStatus: null, sendState: "idle", sendError: null, sentMessageId: null,
+  autoSendState: "idle", autoSendError: null
 };
 var rt = { // runtime refs, not persisted / not re-rendered on
   recorder:null, chunks:[], stream:null, recog:null, finalText:"", timerId:null,
   meterId:null, audioCtx:null, startTime:0, activeQ:null,
-  sig:{ longest:0, cur:0, total:0, spoke:false }, analyzed:{}, gmailProbed:false
+  sig:{ longest:0, cur:0, total:0, spoke:false }, analyzed:{}, gmailProbed:false,
+  autoStartedFor:{}
 };
 
 var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -825,6 +842,15 @@ Screens.loading = function(){ return Header() + Centered(ic('loader',30,'spin'),
 Screens.submitting = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "No cierres esta ventana."); };
 Screens.evaluating = function(){ return Header() + Centered(ic('sparkle',30), "Evaluando respuestas", "Analizando duración, fluidez y contenido de cada respuesta…"); };
 Screens["cand-thanks"] = function(){ return Header() + Centered(ic('check',32), "¡Listo, gracias!", "Tus respuestas se enviaron correctamente. Ya podés cerrar esta ventana."); };
+Screens["cand-autosend"] = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "Estamos enviando tus respuestas al reclutador. No cierres esta ventana…"); };
+Screens["cand-done"] = function(){
+  return Header() +
+  '<div class="card" style="max-width:480px;margin:0 auto;text-align:center">' +
+    '<div style="display:flex;justify-content:center;color:var(--green);margin-bottom:8px">'+ic('check',40)+'</div>' +
+    '<h2 style="font-size:20px;color:var(--ink);margin-bottom:8px">¡Listo! Terminaste la entrevista</h2>' +
+    '<p style="font-size:14px;color:var(--muted);margin:0">Tus respuestas ya se enviaron al reclutador automáticamente. No tenés que hacer nada más — ya podés cerrar esta ventana. ¡Gracias por tu tiempo!</p>' +
+  '</div>';
+};
 Screens["cand-send"] = function(){
   var c = state.config;
   var hasRec = !!(c.recruiterEmail && c.recruiterEmail.trim());
@@ -832,6 +858,7 @@ Screens["cand-send"] = function(){
   '<div class="card" style="max-width:480px;margin:0 auto">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('check',22)+'<h2 style="font-size:19px;color:var(--ink)">Terminaste la entrevista</h2></div>' +
     '<p style="font-size:14px;color:var(--muted);margin:0 0 18px">Último paso: enviá tus respuestas al reclutador. Se abre tu correo con todo escrito — solo tenés que tocar <strong style="color:var(--ink)">Enviar</strong>.</p>';
+  if (state.autoSendState === "error") html += Note("warn","No pudimos enviar tus respuestas automáticamente. Por favor, enviálas vos con el botón de abajo — solo toca “Enviar”.");
   if (!hasRec) html += Note("warn","Esta invitación no incluía el correo del reclutador. Tocá “Copiar mis respuestas” y enviáselas por mail a la persona que te contactó.");
   html += '<div class="flex-actions">';
   if (hasRec){
@@ -858,8 +885,9 @@ function buildShareMessage(){
     "Te invitamos a completar una entrevista por voz para el puesto de " + c.position + ".\n\n" +
     "Para comenzar, abrí este enlace desde tu celular o computadora (recomendamos usar Google Chrome):\n" +
     (state.shareLink || "[enlace de la entrevista]") + "\n\n" +
-    "El enlace ya tiene todo cargado: solo tenés que abrirlo, permitir el acceso al micrófono y responder. Son " + n + " preguntas y cada una tiene un tiempo límite.\n\n" +
-    "Código de referencia: " + state.code + "\n\n" +
+    "Al entrar te vamos a pedir tu email y este código de verificación:\n\n" +
+    "    CÓDIGO: " + state.code + "\n\n" +
+    "Importante: la entrevista es de un solo uso, así que hacela cuando tengas unos minutos tranquilo y en un lugar silencioso. Son " + n + " preguntas y respondés grabando audio; el cronómetro de cada pregunta arranca apenas aparece (incluye tiempo para leerla y pensarla) y la grabación se hace sola. Necesitás permitir el acceso al micrófono.\n\n" +
     "Cualquier duda, respondé este correo. ¡Éxitos!";
 }
 function mailtoHref(){
@@ -906,6 +934,32 @@ function resultsMailtoHref(){
   return "mailto:"+encodeURIComponent(state.config.recruiterEmail||"")+"?subject="+encodeURIComponent(resultsSubject())+"&body="+encodeURIComponent(buildResultsMessage());
 }
 
+/* ---------------- envío automático de resultados (sin acción del candidato) ----------------
+   Se usa Web3Forms (https://web3forms.com), gratis y sin backend. Pegá tu Access Key
+   abajo para activarlo. Los resultados llegan al email dueño de esa Access Key.
+   Si queda vacío, la app cae al envío manual (botón) como respaldo. */
+var WEB3FORMS_KEY = "bc827930-037b-41dd-b03b-63d59d485c53";
+function autoSendConfigured(){ return typeof WEB3FORMS_KEY === "string" && WEB3FORMS_KEY.length >= 20; }
+function sendResultsAuto(){
+  return fetch("https://api.web3forms.com/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({
+      access_key: WEB3FORMS_KEY,
+      subject: resultsSubject(),
+      from_name: "voz. entrevistas",
+      replyto: state.candidateEmail || "",
+      message: buildResultsMessage(),
+      candidato: state.candidateEmail || "",
+      puesto: state.config.position || "",
+      codigo: state.code || ""
+    })
+  }).then(function(r){ return r.json(); }).then(function(j){
+    if (j && j.success) return true;
+    throw { message: (j && j.message) || "El servicio de envío rechazó el mensaje." };
+  });
+}
+
 function GmailBlock(){
   var gs = state.gmailStatus;
   var out = '';
@@ -935,12 +989,12 @@ Screens.share = function(){
   return Header() +
   '<div class="card">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;color:var(--teal)">'+ic('check',19)+'<h2 style="font-size:17px;color:var(--ink)">Entrevista lista para compartir</h2></div>' +
-    Note("info","Este enlace es único para esta entrevista y funciona en cualquier dispositivo: el candidato solo tiene que abrirlo. No hace falta que instale nada ni que estén en la misma red.") +
+    Note("info","Este enlace es único para esta entrevista y funciona en cualquier dispositivo. Al abrirlo, el candidato ingresa su email y el código de verificación (ambos van en el mensaje). Es de un solo uso: si ya la realizó, no puede repetirla.") +
     (!(c.recruiterEmail && c.recruiterEmail.trim()) ? Note("warn","No cargaste tu email en la configuración, así que las respuestas del candidato no van a poder volver a vos automáticamente. Volvé al paso anterior y agregalo si querés recibirlas.") : "") +
     '<div class="share-code"><div class="lbl">Código de la entrevista</div><div class="val mono">'+esc(state.code)+'</div>' +
       '<button class="copybtn" data-action="copy-code">'+ic('copy',12)+' <span id="copyCodeLbl">Copiar código</span></button></div>' +
     '<div style="display:grid;gap:16px">' +
-      '<label class="field"><span class="field-label">Email del candidato</span>' + fieldInput("f_email","nombre@correo.com", state.candidateEmail, "mail") + '<span class="field-hint">A dónde le mandás la invitación. El candidato abre el enlace desde ahí; no necesita cargar ningún código.</span></label>' +
+      '<label class="field"><span class="field-label">Email del candidato</span>' + fieldInput("f_email","nombre@correo.com", state.candidateEmail, "mail") + '<span class="field-hint">A dónde le mandás la invitación. Para entrar va a tener que cargar este email y el código.</span></label>' +
       '<label class="field"><span class="field-label">Enlace de invitación (referencia)</span><span class="field-hint" style="margin:0 0 6px">No hace falta que lo copies: al tocar “Abrir en Gmail” ya va incluido en el mensaje, junto con el código. Lo dejamos acá por si querés compartirlo por otro medio (ej. WhatsApp).</span><div class="input-row" style="background:var(--surface-2)"><input id="f_link" class="mono" style="font-size:12px" value="'+esc(state.shareLink)+'" readonly onclick="this.select()"></div></label>' +
     '</div>' +
     '<div style="margin-top:18px">' + GmailBlock() + '</div>' +
@@ -951,7 +1005,7 @@ Screens.share = function(){
       '<button class="btn btn-ghost" data-action="preview">'+ic('eye',15)+' Previsualizar</button>' +
       '<button class="btn btn-ghost" data-action="go-recruiterhome" style="margin-left:auto">Volver al panel</button>' +
     '</div>' +
-    '<p style="margin:16px 0 0;font-size:12px;color:var(--muted)">“Abrir en Gmail” abre la ventana de redactar de Gmail en el navegador con todo cargado (ideal si usás Gmail en el navegador). “Abrir en tu cliente de correo” usa la app de mail instalada, y “Copiar mensaje” copia el texto para pegarlo donde quieras. Cuando el candidato termine, sus respuestas y la evaluación te van a llegar por correo.</p>' +
+    '<p style="margin:16px 0 0;font-size:12px;color:var(--muted)">“Abrir en Gmail” abre la ventana de redactar de Gmail en el navegador con todo cargado (ideal si usás Gmail en el navegador). “Abrir en tu cliente de correo” usa la app de mail instalada, y “Copiar mensaje” copia el texto para pegarlo donde quieras. ' + (autoSendConfigured() ? "Cuando el candidato termine, sus respuestas y la evaluación te llegan automáticamente por correo." : "Cuando el candidato termine, sus respuestas y la evaluación te van a llegar por correo.") + '</p>' +
   '</div>';
 };
 
@@ -975,15 +1029,24 @@ Screens["invite-landing"] = function(){
   var inv = state.invite || {};
   var n = (inv.questions && inv.questions.length) ? inv.questions.length : 0;
   var empresa = shortEmpresa(inv.company||"");
+  var used = inv.code && isInterviewUsed(inv.code);
+  if (used){
+    return Header() +
+    '<div class="card" style="max-width:460px;margin:0 auto">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--brick)">'+ic('alert',20)+'<h2 style="font-size:19px;color:var(--ink)">Esta entrevista ya fue realizada</h2></div>' +
+      '<p style="font-size:14px;color:var(--muted);margin:0">Este enlace es de un solo uso y ya se completó en este dispositivo. Si creés que es un error, escribile a quien te envió la invitación.</p>' +
+    '</div>';
+  }
   return Header() +
   '<div class="card" style="max-width:460px;margin:0 auto">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('mic',20)+'<h2 style="font-size:19px;color:var(--ink)">Fuiste invitado a una entrevista</h2></div>' +
     '<p style="font-size:14px;color:var(--muted);margin:0 0 18px">Puesto: <strong style="color:var(--ink)">'+esc(inv.position||"")+'</strong>'+(empresa && empresa!=="la empresa"?(' · '+esc(empresa)):'')+'</p>' +
-    '<div class="note note-info">'+ic('alert',15)+'<span>Vas a responder '+(n?('<strong>'+n+' preguntas</strong>'):'unas preguntas')+' grabando audio, con un tiempo límite por cada una. Necesitás permitir el acceso al micrófono (funciona mejor en Chrome).</span></div>' +
+    '<div class="note note-info">'+ic('alert',15)+'<span>Vas a responder '+(n?('<strong>'+n+' preguntas</strong>'):'unas preguntas')+' grabando audio. <strong>El cronómetro arranca en cuanto aparece cada pregunta</strong> (incluye tiempo para leerla y pensarla) y la grabación se hace sola. No se puede volver atrás ni regrabar. Permití el acceso al micrófono (funciona mejor en Chrome).</span></div>' +
     ErrBox() +
-    '<label class="field" style="display:block;margin:16px 0 16px"><span class="field-label">Tu email</span>' + fieldInput("inviteEmail","nombre@correo.com","","mail") + '<span class="field-hint">Se incluye junto a tus respuestas para que el reclutador sepa quién sos.</span></label>' +
+    '<label class="field" style="display:block;margin:16px 0 12px"><span class="field-label">Tu email</span>' + fieldInput("inviteEmail","nombre@correo.com","","mail") + '<span class="field-hint">Debe ser el email al que te llegó la invitación.</span></label>' +
+    '<label class="field" style="display:block;margin:0 0 16px"><span class="field-label">Código de verificación</span><div class="input-row"><input id="inviteCode" class="mono" style="letter-spacing:.18em;text-transform:uppercase" placeholder="Ej: AB7K2Q" maxlength="8"></div><span class="field-hint">Está en el correo de la invitación. Es de un solo uso.</span></label>' +
     '<button class="btn btn-primary btn-block" id="inviteStartBtn">'+ic('mic',15)+' Comenzar entrevista</button>' +
-    '<p style="margin:14px 0 0;font-size:11.5px;color:var(--muted)">Al terminar, vas a poder enviar tus respuestas al reclutador con un solo toque.</p>' +
+    '<p style="margin:14px 0 0;font-size:11.5px;color:var(--muted)">Solo podés realizar esta entrevista una vez. Al terminar, tus respuestas se envían automáticamente al reclutador.</p>' +
   '</div>';
 };
 
@@ -1009,7 +1072,7 @@ Screens.interview = function(){
   var lastLabel = isCandidate ? "Enviar respuestas" : "Terminar entrevista";
 
   var ring = 2*Math.PI*54;
-  var progress = state.recording ? state.timeLeft/q.seconds : 1;
+  var progress = state.recording ? state.timeLeft/(state.timeTotal || q.seconds) : 1;
   var overtime = state.recording && state.timeLeft <= 10;
 
   var html = Header();
@@ -1021,7 +1084,7 @@ Screens.interview = function(){
 
   html += '<div class="card">';
   html += '<div class="qa-meta">' + Badge(q.category, q.category) +
-    '<span class="pill-time">'+ic('clock',12)+' '+fmt(q.seconds)+' para responder</span>' +
+    '<span class="pill-time">'+ic('clock',12)+' '+fmt(questionTime(q, isCandidate))+(isCandidate?' (incluye leer y pensar)':' para responder')+'</span>' +
     (q.lang!=="es" ? Badge(LANG_LABEL[q.lang], "Repregunta") : '') +
   '</div>';
   if (q.isFollowup && q.reason) html += '<div class="followup-reason">El entrevistador repregunta para profundizar: '+esc(q.reason)+'</div>';
@@ -1036,14 +1099,25 @@ Screens.interview = function(){
     html += '<button class="rec-btn rec-active" data-action="stop-rec">'+ic('square',20)+'<span class="mono" style="font-size:17px;font-weight:600">'+fmt(state.timeLeft)+'</span></button>';
   } else if (answered){
     html += '<div class="rec-btn rec-done">'+ic('check',24)+'<span style="font-size:12px;font-weight:600">Grabado</span></div>';
+  } else if (isCandidate){
+    if (state.micDenied){
+      html += '<button class="rec-btn rec-idle" data-action="retry-rec" style="color:var(--brick)">'+ic('mic',22)+'<span style="font-size:11px;font-weight:600">Reintentar</span></button>';
+    } else {
+      html += '<div class="rec-btn rec-idle">'+ic('loader',20,'spin')+'<span style="font-size:11px;font-weight:600">Preparando…</span></div>';
+    }
   } else {
     html += '<button class="rec-btn rec-idle" data-action="start-rec">'+ic('mic',22)+'<span style="font-size:12px;font-weight:600">Grabar</span></button>';
   }
-  html += '</div><p class="rec-hint">' + (state.recording ? "Grabando… tocá el cuadrado para terminar antes." : answered ? "Podés escuchar tu respuesta o volver a grabar." : "Tocá el micrófono y el cronómetro arranca. Se corta solo al llegar a 0.") + '</p></div>';
+  var hintTxt;
+  if (state.recording) hintTxt = isCandidate ? "Grabando. Cuando termines de responder, tocá el cuadrado para pasar a la siguiente. Si no, se corta solo al llegar a 0." : "Grabando… tocá el cuadrado para terminar antes.";
+  else if (answered) hintTxt = isCandidate ? "Respuesta guardada. No se puede volver a grabar; continuá con la siguiente." : "Podés escuchar tu respuesta o volver a grabar.";
+  else if (isCandidate) hintTxt = state.micDenied ? "Necesitamos el micrófono para grabar tu respuesta. Dale permiso y tocá Reintentar." : "El cronómetro arranca en cuanto aparece la pregunta. Leé, pensá un momento y respondé.";
+  else hintTxt = "Tocá el micrófono y el cronómetro arranca. Se corta solo al llegar a 0.";
+  html += '</div><p class="rec-hint">' + hintTxt + '</p></div>';
 
-  if (state.micDenied) html += Note("err","No pude acceder al micrófono. Dale permiso al navegador e intentá de nuevo.");
+  if (state.micDenied && !isCandidate) html += Note("err","No pude acceder al micrófono. Dale permiso al navegador e intentá de nuevo.");
 
-  if (answer && answer.blobUrl && !state.recording){
+  if (answer && answer.blobUrl && !state.recording && !isCandidate){
     html += '<div class="transcript-box"><audio controls src="'+answer.blobUrl+'"></audio>';
     if (answer.transcript) html += '<div style="margin-top:12px"><div class="transcript-label">'+ic('msg',12)+' Transcripción aproximada</div><p style="margin:0;font-size:13.5px">'+esc(answer.transcript)+'</p></div>';
     html += '</div>';
@@ -1053,11 +1127,13 @@ Screens.interview = function(){
   html += '</div>';
 
   html += '<div class="flex-actions">';
-  if (answer && !state.recording) html += '<button class="btn btn-ghost btn-sm" data-action="re-record">'+ic('rotate',14)+' Volver a grabar</button>';
+  if (answer && !state.recording && !isCandidate) html += '<button class="btn btn-ghost btn-sm" data-action="re-record">'+ic('rotate',14)+' Volver a grabar</button>';
   if (showForce) html += '<button class="btn btn-ghost btn-sm" data-action="force-followup" style="color:var(--teal)">'+ic('sparkle',14)+' Profundizar</button>';
-  html += '<button class="btn btn-primary" data-action="next-q" style="margin-left:auto" '+(analyzing?'disabled':'')+'>' +
+  var showNext = isCandidate ? (answered || analyzing) : true;
+  if (showNext) html += '<button class="btn btn-primary" data-action="next-q" style="margin-left:auto" '+(analyzing?'disabled':'')+'>' +
     (analyzing ? ic('loader',15,'spin')+' Revisando respuesta…' : nextIsFollowup ? "Ir a la repregunta "+ic('chevron',15) : state.idx < total-1 ? "Siguiente pregunta "+ic('chevron',15) : esc(lastLabel)+" "+ic('chevron',15)) +
-  '</button></div>';
+  '</button>';
+  html += '</div>';
   return html;
 };
 
@@ -1130,7 +1206,7 @@ function ReportList(title, items, color){
 /* ================================================================
    NAVIGATION HELPERS
    ================================================================ */
-function resetInterview(){ state.questions=[]; state.answers={}; state.idx=0; state.report=null; rt.analyzed={}; }
+function resetInterview(){ state.questions=[]; state.answers={}; state.idx=0; state.report=null; rt.analyzed={}; rt.autoStartedFor={}; }
 function goHome(){ resetInterview(); state.error=null; state.screen="home"; render(); }
 function goRecruiterHome(){ resetInterview(); state.error=null; state.screen="rec-home"; render(); }
 
@@ -1180,24 +1256,49 @@ function generate(){
 
 function emailsMatch(a, b){ return (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase(); }
 
-function startInviteInterview(emailRaw){
+function startInviteInterview(emailRaw, codeRaw){
   var inv = state.invite; if (!inv || !inv.questions) return;
   var emailIn = (emailRaw||"").trim();
+  var codeIn = (codeRaw||"").trim().toUpperCase();
   if (!emailIn || emailIn.indexOf("@") < 1){ state.error="Ingresá un email válido para comenzar."; render(); return; }
-  state.config = {
-    position: inv.position||"", company: inv.company||"", focus: inv.focus||"",
-    level: inv.level||"Semi-Senior", language: inv.language||"es",
-    includeEnglish:false, count:"auto", followups: inv.followups !== false,
-    recruiterEmail: inv.recruiterEmail || ""
-  };
-  rt.analyzed = {};
-  state.questions = inv.questions.slice();
-  state.answers = {}; state.idx = 0; state.report = null;
-  state.code = inv.code || "";
-  state.candidateEmail = emailIn;
-  state.interviewMode = "candidate";
-  state.error = null; state.screen = "interview";
-  render();
+  if (!codeIn){ state.error="Ingresá el código de verificación que está en el correo de la invitación."; render(); return; }
+  if (inv.code && codeIn !== String(inv.code).toUpperCase()){ state.error="El código no es correcto. Revisá el correo de la invitación."; render(); return; }
+  if (inv.code && isInterviewUsed(inv.code)){ state.error=null; render(); return; }
+
+  function enter(){
+    state.config = {
+      position: inv.position||"", company: inv.company||"", focus: inv.focus||"",
+      level: inv.level||"Semi-Senior", language: inv.language||"es",
+      includeEnglish:false, count:"auto", followups: inv.followups !== false,
+      recruiterEmail: inv.recruiterEmail || ""
+    };
+    rt.analyzed = {}; rt.autoStartedFor = {};
+    state.questions = inv.questions.slice();
+    state.answers = {}; state.idx = 0; state.report = null;
+    state.code = inv.code || "";
+    state.candidateEmail = emailIn;
+    state.interviewMode = "candidate";
+    state.autoSendState = "idle"; state.autoSendError = null;
+    state.micDenied = false;
+    markInterviewUsed(inv.code, emailIn); // un solo uso: se marca al ingresar
+    state.error = null; state.screen = "interview";
+    render();
+  }
+
+  // Pedimos permiso de micrófono ahora (con el gesto del botón) para que después
+  // cada pregunta pueda grabar sola sin volver a preguntar.
+  state.error = null; state.screen = "loading"; render();
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+      try{ stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+      enter();
+    }).catch(function(){
+      state.error = "Necesitamos permiso para usar el micrófono. Activalo en el navegador y volvé a tocar “Comenzar entrevista”.";
+      state.screen = "invite-landing"; render();
+    });
+  } else {
+    enter();
+  }
 }
 
 function loadForCandidate(emailRaw, raw){
@@ -1272,7 +1373,17 @@ function submitAnswers(){
     lset("voz_ans_"+state.code, { questions: strip, answers: out, submittedAt: Date.now(), audioOmitted: omitted, candidateEmail: state.candidateEmail||"" });
     try{ state.report = evaluateLocally(state.questions, state.answers, state.config); }catch(e){ state.report = null; }
     state.audioOmitted = omitted;
-    state.screen = "cand-send"; render();
+    if (autoSendConfigured()){
+      state.autoSendState = "sending"; state.autoSendError = null; state.screen = "cand-autosend"; render();
+      sendResultsAuto().then(function(){
+        state.autoSendState = "sent"; state.screen = "cand-done"; render();
+      }).catch(function(err){
+        state.autoSendState = "error"; state.autoSendError = err;
+        state.screen = "cand-send"; render();
+      });
+    } else {
+      state.autoSendState = "idle"; state.screen = "cand-send"; render();
+    }
   }
   processNext(0);
 }
@@ -1307,7 +1418,7 @@ function startRecording(q){
     rt.recorder = mr; mr.start();
     startMeter(stream); rt.startTime = Date.now();
     startRecognition(q);
-    state.timeLeft = q.seconds; state.recording = true;
+    state.timeLeft = questionTime(q, state.interviewMode === "candidate"); state.timeTotal = state.timeLeft; state.recording = true;
     render();
     tick();
   }).catch(function(){ state.micDenied = true; render(); });
@@ -1433,6 +1544,7 @@ function bind(){
       else if (act === "go-resultscode"){ state.error=null; state.screen="results-code"; render(); }
       else if (act === "preview"){ rt.analyzed={}; state.answers={}; state.idx=0; state.interviewMode="preview"; state.screen="interview"; render(); }
       else if (act === "start-rec") startRecording(state.questions[state.idx]);
+      else if (act === "retry-rec") { state.micDenied=false; render(); startRecording(state.questions[state.idx]); }
       else if (act === "stop-rec") { stopRecording(); render(); }
       else if (act === "re-record") reRecord(state.questions[state.idx]);
       else if (act === "force-followup") runAnalyze(state.questions[state.idx], true);
@@ -1488,9 +1600,13 @@ function bind(){
   if (document.getElementById("inviteStartBtn")){
     (function(){
       var em = document.getElementById("inviteEmail");
-      var go = function(){ startInviteInterview(em ? em.value : ""); };
+      var cd = document.getElementById("inviteCode");
+      if (cd) cd.addEventListener("input", function(){ cd.value = cd.value.toUpperCase().slice(0,8); });
+      var go = function(){ startInviteInterview(em ? em.value : "", cd ? cd.value : ""); };
       document.getElementById("inviteStartBtn").addEventListener("click", go);
-      if (em){ em.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); }); em.focus(); }
+      if (em) em.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); });
+      if (cd) cd.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); });
+      if (em) em.focus();
     })();
   }
 
@@ -1526,6 +1642,20 @@ function bind(){
 
   /* review screen */
   if ((f=document.getElementById("evalBtn"))) f.addEventListener("click", evaluate);
+
+  /* candidate: the clock starts as soon as the question appears — auto-start recording */
+  if (state.screen === "interview" && state.interviewMode === "candidate"){
+    var cq = state.questions[state.idx];
+    if (cq && !state.answers[cq.id] && !state.recording && state.analyzingId !== cq.id && !state.micDenied && !rt.autoStartedFor[cq.id]){
+      rt.autoStartedFor[cq.id] = true;
+      setTimeout(function(){
+        var now = state.questions[state.idx];
+        if (state.screen === "interview" && state.interviewMode === "candidate" && now && now.id === cq.id && !state.recording && !state.answers[cq.id] && !state.micDenied){
+          startRecording(cq);
+        }
+      }, 500);
+    }
+  }
 }
 
 /* ---- entry from a shared invite link (works on any device) ---- */
