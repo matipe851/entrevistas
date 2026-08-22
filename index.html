@@ -518,7 +518,7 @@ var FOLLOWUP = {
   }
 };
 
-var SECONDS_BY_CAT = { "Presentación":60, "Experiencia":100, "Competencias":100, "Situacional":150, "Motivación y cultura":95, "Cierre":70 };
+var SECONDS_BY_CAT = { "Presentación":120, "Experiencia":160, "Competencias":160, "Situacional":210, "Motivación y cultura":155, "Cierre":130 };
 
 /* El reloj arranca cuando APARECE la pregunta, así que al tiempo de respuesta
    le sumamos un margen para leer y pensar la consigna, proporcional a su largo. */
@@ -611,7 +611,7 @@ function makeFollowup(q, reasonKind){
   return {
     id: root + "-f" + Date.now() + Math.floor(Math.random()*99),
     text: text, category: "Repregunta",
-    seconds: 75, lang: q.lang,
+    seconds: 135, lang: q.lang,
     isFollowup: true, rootId: root, depth: (q.depth||0)+1, reason: reason
   };
 }
@@ -948,13 +948,16 @@ function buildResultsMessage(){
   L.push("Candidato: " + (state.candidateEmail || "(sin email)"));
   if (state.code) L.push("Código: " + state.code);
   L.push("");
+  var perMap = {};
+  if (r && r.ai && r.perQuestion){ r.perQuestion.forEach(function(p){ if (p && p.n!=null) perMap[p.n] = p; }); }
   if (r){
-    L.push("=== EVALUACIÓN AUTOMÁTICA ===");
+    L.push(r.ai ? "=== EVALUACIÓN CON IA (entrevistador senior) ===" : "=== EVALUACIÓN AUTOMÁTICA (por reglas) ===");
     L.push("Puntaje: " + r.score + "/10  ·  " + r.recommendation);
-    L.push(r.overall);
+    if (r.overall) L.push(r.overall);
     L.push("");
     if (r.strengths && r.strengths.length){ L.push("Fortalezas:"); r.strengths.forEach(function(s){ L.push("  • " + s); }); L.push(""); }
     if (r.improve && r.improve.length){ L.push("A mejorar:"); r.improve.forEach(function(s){ L.push("  • " + s); }); L.push(""); }
+    if (r.probes && r.probes.length){ L.push("Repreguntas sugeridas:"); r.probes.forEach(function(s){ L.push("  • " + s); }); L.push(""); }
   }
   var hasAudio = state.audioUrls && Object.keys(state.audioUrls).length > 0;
   L.push(hasAudio ? "=== RESPUESTAS (audios para escuchar) ===" : "=== RESPUESTAS (transcripción aproximada) ===");
@@ -965,11 +968,14 @@ function buildResultsMessage(){
     if (url) L.push("   Audio: " + url);
     else if (a && a.transcript) L.push("   Transcripción aprox.: " + a.transcript);
     else L.push("   (sin respuesta)");
+    var p = perMap[i+1];
+    if (p && (p.assessment || p.rating)) L.push("   IA: " + (p.rating?("["+p.rating+"] "):"") + (p.assessment||""));
     if (a && a.signals) L.push("   [duró " + (a.signals.durationSec||0) + "s · pausa máx " + (a.signals.longestSilence||0) + "s]");
     L.push("");
   });
-  if (hasAudio) L.push("— Escuchá cada respuesta con los enlaces de audio. La evaluación automática mide completitud, desarrollo y fluidez (no interpreta el contenido); la valoración final es tuya al escuchar.");
-  else L.push("— Nota: la transcripción es automática y puede tener errores. La evaluación automática mide completitud, desarrollo y fluidez (no interpreta el contenido).");
+  if (r && r.ai) L.push("— Evaluación realizada por IA (entrevistador senior) sobre las respuestas transcriptas. " + (hasAudio ? "Escuchá los audios con los enlaces de arriba para tu valoración final." : ""));
+  else if (hasAudio) L.push("— Escuchá cada respuesta con los enlaces de audio. La evaluación mide completitud, desarrollo y fluidez (por reglas, no interpreta el contenido).");
+  else L.push("— Nota: la transcripción es automática y puede tener errores. La evaluación mide completitud, desarrollo y fluidez (por reglas, no interpreta el contenido).");
   return L.join("\n");
 }
 function resultsSubject(){ return "Respuestas de entrevista – " + (state.config.position||"") + (state.candidateEmail?(" – "+state.candidateEmail):""); }
@@ -978,6 +984,37 @@ function resultsGmailHref(){
 }
 function resultsMailtoHref(){
   return "mailto:"+encodeURIComponent(state.config.recruiterEmail||"")+"?subject="+encodeURIComponent(resultsSubject())+"&body="+encodeURIComponent(buildResultsMessage());
+}
+
+/* ---------------- análisis con IA (Gemini vía función serverless /api/analyze) ---------------- */
+var AI_ANALYZE_ENDPOINT = "/api/analyze";
+function analyzeWithAI(){
+  var payload = {
+    position: state.config.position, company: state.config.company, focus: state.config.focus,
+    level: state.config.level, language: state.config.language,
+    questions: state.questions.map(function(q,i){
+      var a = state.answers[q.id] || {};
+      return { n:i+1, text:q.text, category:q.category, transcript:(a.transcript||""), durationSec:(a.signals&&a.signals.durationSec)||0 };
+    })
+  };
+  return fetch(AI_ANALYZE_ENDPOINT, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if (j && j.ok && j.analysis) return j.analysis; throw new Error((j && j.error) || "sin_analisis"); });
+}
+function reportFromAI(ai){
+  function arr(x){ return Array.isArray(x) ? x.filter(function(v){ return v!=null && String(v).trim(); }).map(String) : []; }
+  var sc = Number(ai.score); if (!(sc>=1 && sc<=10)) sc = 1; sc = Math.round(sc*2)/2;
+  var per = Array.isArray(ai.perQuestion) ? ai.perQuestion.map(function(p){ return { n:p.n, rating:String(p.rating||""), assessment:String(p.assessment||"") }; }) : [];
+  return {
+    score: sc,
+    recommendation: ai.recommendation || (sc>=7.5?"Avanzar":sc>=5?"Con reservas":"No avanzar"),
+    overall: String(ai.overall||""),
+    strengths: arr(ai.strengths),
+    improve: arr(ai.improve),
+    probes: arr(ai.probes),
+    perQuestion: per,
+    ai: true
+  };
 }
 
 /* ---------------- envío automático de resultados (sin acción del candidato) ----------------
@@ -1256,18 +1293,28 @@ Screens.report = function(){
   var recColor = r.recommendation.indexOf("Avanzar")===0 ? 'var(--green)' : r.recommendation.indexOf("reservas")>=0 ? 'var(--amber)' : 'var(--brick)';
   var html = Header();
   html += '<div class="report-hero">' +
-    '<div class="report-eyebrow">Evaluación automática · '+esc(c.position)+' · solo visible para vos</div>' +
+    '<div class="report-eyebrow">'+(r.ai?'Análisis con IA (entrevistador senior)':'Evaluación por reglas')+' · '+esc(c.position)+' · solo visible para vos</div>' +
     '<div style="display:flex;align-items:flex-end;gap:14px;margin-top:8px;flex-wrap:wrap">' +
       '<div class="report-score">'+r.score+'<span style="font-size:20px;opacity:.6">/10</span></div>' +
       '<span class="rec-tag" style="background:rgba(255,255,255,.14);color:inherit;border:1px solid rgba(255,255,255,.25)">'+esc(r.recommendation)+'</span>' +
     '</div>' +
     '<p style="margin-top:14px;font-size:13.5px;opacity:.85;line-height:1.6">'+esc(r.overall)+'</p>' +
-    '<p style="margin-top:10px;font-size:11.5px;opacity:.55">Mide completitud, desarrollo y fluidez de cada respuesta (por reglas, no interpreta el significado). Un puntaje bajo indica respuestas escasas o sin desarrollar. Para la decisión final, escuchá los audios.</p>' +
+    '<p style="margin-top:10px;font-size:11.5px;opacity:.55">'+(r.ai?'Análisis realizado por IA (Gemini) con criterio de entrevistador senior, sobre las respuestas transcriptas. Escuchá los audios para tu valoración final.':'Mide completitud, desarrollo y fluidez de cada respuesta (por reglas, no interpreta el significado). Para la decisión final, escuchá los audios.')+'</p>' +
   '</div>';
   html += '<div class="grid2" style="margin-top:16px">' +
     ReportList("Fortalezas", r.strengths, "var(--green)") +
     ReportList("A mejorar", r.improve, "var(--amber)") +
   '</div>';
+  if (r.ai && r.perQuestion && r.perQuestion.length){
+    var ratingColor = function(rt){ rt=(rt||"").toLowerCase(); return rt.indexOf("sólida")>=0||rt.indexOf("solida")>=0?"var(--green)":rt.indexOf("acept")>=0?"var(--blue)":rt.indexOf("floja")>=0?"var(--amber)":"var(--brick)"; };
+    html += '<div class="card" style="padding:20px;margin-top:16px"><p style="font-size:13.5px;font-weight:700;color:var(--ink);margin:0 0 12px">Análisis por respuesta</p><div style="display:grid;gap:12px">';
+    r.perQuestion.forEach(function(p){
+      html += '<div style="border-left:3px solid '+ratingColor(p.rating)+';padding-left:12px">'+
+        '<p style="margin:0;font-size:12.5px;font-weight:700;color:var(--muted)">Pregunta '+esc(String(p.n||''))+(p.rating?(' · <span style="color:'+ratingColor(p.rating)+'">'+esc(p.rating)+'</span>'):'')+'</p>'+
+        '<p style="margin:3px 0 0;font-size:13px;line-height:1.5">'+esc(p.assessment||'')+'</p></div>';
+    });
+    html += '</div></div>';
+  }
   if (r.probes && r.probes.length) html += '<div style="margin-top:16px">' + ReportList("Repreguntas sugeridas para la próxima ronda", r.probes, "var(--teal)") + '</div>';
   html += '<div class="flex-actions">' +
     '<button class="btn btn-ghost" data-action="back-review">'+ic('back',14)+' Volver a las respuestas</button>' +
@@ -1457,22 +1504,27 @@ function submitAnswers(){
   processNext(0);
 }
 
-/* Sube audios (si está configurado) y luego envía los resultados al reclutador. */
+/* Sube audios, pide el análisis con IA y luego envía los resultados al reclutador. */
 function finalizeCandidate(){
   state.autoSendState = "idle"; state.autoSendError = null;
-  var needsUpload = audioUploadConfigured();
   var needsSend = autoSendConfigured();
-  if (!needsUpload && !needsSend){ state.screen = "cand-send"; render(); return; }
 
   state.autoSendState = "sending"; state.screen = "cand-autosend"; render();
-  uploadAllAudios().then(function(){
-    if (!needsSend){ state.autoSendState = "idle"; state.screen = "cand-send"; render(); return; }
-    return sendResultsAuto().then(function(){
-      state.autoSendState = "sent"; state.screen = "cand-done"; render();
-    }).catch(function(err){
-      state.autoSendState = "error"; state.autoSendError = err; state.screen = "cand-send"; render();
+  // 1) Subir audios (si está configurado)
+  uploadAllAudios()
+    // 2) Análisis con IA (si la función serverless está disponible); si falla, se conserva el análisis por reglas.
+    .then(function(){
+      return analyzeWithAI().then(function(ai){ state.report = reportFromAI(ai); }).catch(function(){ /* respaldo: análisis local ya calculado */ });
+    })
+    // 3) Enviar al reclutador
+    .then(function(){
+      if (!needsSend){ state.autoSendState = "idle"; state.screen = "cand-send"; render(); return; }
+      return sendResultsAuto().then(function(){
+        state.autoSendState = "sent"; state.screen = "cand-done"; render();
+      }).catch(function(err){
+        state.autoSendState = "error"; state.autoSendError = err; state.screen = "cand-send"; render();
+      });
     });
-  });
 }
 
 /* ---- recording ---- */
@@ -1606,11 +1658,13 @@ function nextQuestion(){
 }
 function evaluate(){
   state.screen = "evaluating"; state.error=null; render();
-  setTimeout(function(){
+  function fallback(){
     try{ state.report = evaluateLocally(state.questions, state.answers, state.config); state.screen = "report"; }
     catch(e){ state.error = "No pude generar la evaluación. Probá de nuevo."; state.screen = "review"; }
     render();
-  }, 900);
+  }
+  analyzeWithAI().then(function(ai){ state.report = reportFromAI(ai); state.screen = "report"; render(); })
+    .catch(function(){ fallback(); });
 }
 
 /* ================================================================
