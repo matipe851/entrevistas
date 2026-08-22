@@ -616,53 +616,94 @@ function makeFollowup(q, reasonKind){
   };
 }
 
-/* ---------------- local heuristic evaluation (no network / no LLM) ---------------- */
+/* ---------------- local heuristic evaluation (no network / no LLM) ----------------
+   Puntaje EXIGENTE y honesto. Mide completitud, desarrollo y fluidez de cada
+   respuesta — NO comprende el contenido (eso requeriría una IA). Arranca de cero
+   y cada respuesta suma según cuánto se desarrolló; las respuestas vacías, de una
+   palabra o genéricas casi no suman. */
+function answerQuality(a){
+  // Devuelve 0..1 para una respuesta y una etiqueta de estado.
+  if (!a || (!a.transcript && !a.blobUrl)) return { q:0, status:"sin responder" };
+  var text = a.transcript || "";
+  var m = speechMetrics(text);
+  var w = m.words;
+  var dur = (a.signals && a.signals.durationSec) || 0;
+  // Sin transcripción utilizable: si grabó algo audible, crédito mínimo; si no, casi nada.
+  if (w < 3){
+    if (a.blobUrl && a.signals && a.signals.spoke && dur >= 4) return { q:0.12, status:"muy breve" };
+    return { q:0, status:"insuficiente" };
+  }
+  var base;
+  if (w < 8) base = 0.12;
+  else if (w < 18) base = 0.32;
+  else if (w < 35) base = 0.55;
+  else if (w < 60) base = 0.78;
+  else if (w < 110) base = 0.92;
+  else base = 1.0;
+  // Penalizaciones por muletillas y dudas.
+  base -= Math.min(0.30, m.fillerRatio * 1.6);
+  if (isHesitant(a)) base -= 0.15;
+  // Respuestas larguísimas pero muy dubitativas no deberían quedar altas.
+  base = clamp(base, 0, 1);
+  var status = base >= 0.7 ? "sólida" : base >= 0.45 ? "aceptable" : base >= 0.2 ? "floja" : "muy breve";
+  return { q:base, status:status };
+}
 function evaluateLocally(questions, answers, cfg){
-  var answered = questions.filter(function(q){ return answers[q.id] && (answers[q.id].transcript || answers[q.id].blobUrl); });
-  var wordsArr = [], fillerArr = [], hesitantN = 0;
-  answered.forEach(function(q){
-    var a = answers[q.id];
-    var m = speechMetrics(a.transcript || "");
-    wordsArr.push(m.words); fillerArr.push(m.fillerRatio);
-    if (isHesitant(a)) hesitantN++;
-  });
-  var avgWords = wordsArr.length ? wordsArr.reduce(function(a,b){return a+b;},0)/wordsArr.length : 0;
+  var per = questions.map(function(q){ var r = answerQuality(answers[q.id]); r.q_id=q.id; r.text=q.text; r.category=q.category; return r; });
+  var n = questions.length || 1;
+  var answeredN = per.filter(function(r){ return r.status !== "sin responder"; }).length;
+  var insufficientN = per.filter(function(r){ return r.q < 0.2; }).length; // incluye sin responder + insuficientes
+  var solidN = per.filter(function(r){ return r.q >= 0.7; }).length;
+  var totalQ = per.reduce(function(s,r){ return s + r.q; }, 0);
+  var overallQuality = totalQ / n; // 0..1, las no respondidas cuentan como 0
+
+  // Puntaje de 1 a 10, exigente: 0 desarrollo => 1 ; desarrollo pleno => 10.
+  var score = clamp(Math.round((1 + 9 * overallQuality) * 2) / 2, 1, 10);
+
+  // Métricas de expresión (solo sobre lo efectivamente respondido).
+  var respondedTexts = per.filter(function(r){ return r.status !== "sin responder"; });
+  var fillerArr = respondedTexts.map(function(r){ return speechMetrics(answers[r.q_id].transcript||"").fillerRatio; });
   var avgFiller = fillerArr.length ? fillerArr.reduce(function(a,b){return a+b;},0)/fillerArr.length : 0;
-  var hesitantRate = answered.length ? hesitantN/answered.length : 0;
-  var coverage = questions.length ? answered.length/questions.length : 0;
+  var hesitantN = per.filter(function(r){ var a=answers[r.q_id]; return a && isHesitant(a); }).length;
+  var hesitantRate = answeredN ? hesitantN/answeredN : 0;
 
-  var score = 5 + coverage*2.2 + (avgWords>25?1.6:avgWords>12?0.8:-1.2) - avgFiller*8 - hesitantRate*2.2;
-  score = clamp(Math.round(score*2)/2, 1, 10);
-
-  var recommendation = score >= 7.5 ? "Avanzar" : score >= 5.5 ? "Con reservas" : "No avanzar";
+  var recommendation = score >= 7.5 ? "Avanzar" : score >= 5 ? "Con reservas" : "No avanzar";
 
   var strengths = [];
-  if (coverage === 1) strengths.push("Respondió todas las preguntas de la entrevista.");
-  if (avgWords > 25) strengths.push("Da respuestas con buen nivel de detalle y ejemplos concretos.");
-  if (avgFiller < 0.05 && wordsArr.length) strengths.push("Se expresa con fluidez, sin muletillas frecuentes.");
-  if (hesitantRate < 0.2 && answered.length) strengths.push("Mantiene un buen manejo del tiempo y seguridad al hablar.");
-  if (!strengths.length) strengths.push("Completó la entrevista y dejó respuestas grabadas para revisar en detalle.");
+  if (solidN >= Math.ceil(n*0.6)) strengths.push("Desarrolló con buen nivel de detalle la mayoría de las respuestas.");
+  else if (solidN >= 2) strengths.push("Algunas respuestas (" + solidN + ") fueron sólidas y desarrolladas.");
+  if (answeredN === n && insufficientN === 0) strengths.push("Respondió todas las preguntas con contenido suficiente.");
+  if (avgFiller < 0.05 && answeredN) strengths.push("Se expresa con fluidez, sin muletillas frecuentes.");
+  if (hesitantRate < 0.2 && answeredN) strengths.push("Se mostró seguro/a y sin dudas marcadas al hablar.");
+  if (!strengths.length) strengths.push("No se identificaron fortalezas destacables a partir de las respuestas registradas.");
 
   var improve = [];
-  if (coverage < 1) improve.push("Dejó " + (questions.length-answered.length) + " pregunta(s) sin responder.");
-  if (avgWords < 12 && wordsArr.length) improve.push("Varias respuestas fueron muy breves; conviene indagar pidiendo ejemplos concretos en la próxima instancia.");
-  if (avgFiller >= 0.12) improve.push("Se notan bastantes muletillas (eh, este, o sea); podría trabajar la fluidez al responder.");
-  if (hesitantRate >= 0.35) improve.push("Hubo pausas largas en varias respuestas, lo que puede indicar inseguridad con el tema.");
-  if (!improve.length) improve.push("No se detectaron señales relevantes de duda o brevedad en las respuestas.");
+  if (insufficientN > 0) improve.push(insufficientN + " de " + n + " respuestas quedaron sin responder o sin desarrollar (respuestas vacías o de muy pocas palabras).");
+  if (answeredN < n) improve.push("Dejó " + (n - answeredN) + " pregunta(s) sin responder.");
+  if (overallQuality < 0.35) improve.push("El nivel de desarrollo general fue bajo: las respuestas no alcanzan para evaluar competencias con seriedad.");
+  if (avgFiller >= 0.12) improve.push("Uso frecuente de muletillas (eh, este, o sea); conviene trabajar la fluidez.");
+  if (hesitantRate >= 0.35) improve.push("Pausas largas o dudas en varias respuestas, posible inseguridad con los temas.");
+  if (!improve.length) improve.push("No se detectaron debilidades relevantes en las respuestas registradas.");
 
-  var sortedByWords = answered.slice().sort(function(a,b){
-    return speechMetrics(answers[a.id].transcript||"").words - speechMetrics(answers[b.id].transcript||"").words;
+  // Repreguntas sugeridas: las respuestas más flojas (pero respondidas) primero.
+  var weakest = per.filter(function(r){ return r.status !== "sin responder"; }).sort(function(a,b){ return a.q - b.q; });
+  var probes = weakest.slice(0,2).map(function(r){
+    return "Volver a preguntar sobre “" + r.text.slice(0,70) + (r.text.length>70?"…":"") + "” pidiendo un ejemplo concreto y medible.";
   });
-  var probes = sortedByWords.slice(0,2).map(function(q){
-    return "Repreguntar sobre “" + q.text.slice(0,70) + (q.text.length>70?"…":"") + "” pidiendo un ejemplo concreto y medible.";
-  });
-  if (!probes.length) probes.push("Profundizar en las competencias del foco de búsqueda con un caso práctico adicional.");
+  if (!probes.length) probes.push("Profundizar con un caso práctico vinculado al puesto en la próxima instancia.");
 
-  var overall = "Completó " + answered.length + " de " + questions.length + " preguntas, con un nivel de detalle " +
-    (avgWords>25?"alto":avgWords>12?"moderado":"bajo") + ". " +
-    (hesitantRate>=0.3 ? "Mostró pausas o dudas en varias respuestas." : "Se mostró, en general, seguro/a al responder.");
+  var nivel = overallQuality >= 0.7 ? "alto" : overallQuality >= 0.45 ? "moderado" : overallQuality >= 0.2 ? "bajo" : "insuficiente";
+  var overall;
+  if (overallQuality < 0.2){
+    overall = "Entrevista insuficiente para evaluar: respondió " + answeredN + " de " + n + " preguntas y el desarrollo fue mínimo (respuestas vacías o de muy pocas palabras). No hay material para una valoración seria del perfil.";
+  } else {
+    overall = "Respondió " + answeredN + " de " + n + " preguntas, con un nivel de desarrollo " + nivel + ". " +
+      (insufficientN>0 ? (insufficientN + " respuesta(s) quedaron sin desarrollar. ") : "") +
+      (hesitantRate>=0.3 ? "Mostró pausas o dudas en varias respuestas." : "Se mostró, en general, seguro/a al responder.");
+  }
 
-  return { overall: overall, score: score, recommendation: recommendation, strengths: strengths, improve: improve, probes: probes };
+  return { overall: overall, score: score, recommendation: recommendation, strengths: strengths, improve: improve, probes: probes,
+           meta: { answeredN:answeredN, total:n, insufficientN:insufficientN, solidN:solidN, overallQuality:Math.round(overallQuality*100) } };
 }
 
 /* ================================================================
@@ -714,6 +755,7 @@ var state = {
   error: null, busy: false, storageWarn: false,
   config: { position:"", company:"", focus:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:true, recruiterEmail:"" },
   questions: [], idx: 0, answers: {}, report: null,
+  audioUrls: {},
   invite: null,
   code: "", candidateEmail: "", shareLink: "", interviewMode: "candidate",
   audioOmitted: false, recording:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
@@ -734,7 +776,7 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
-try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, render:render }; }catch(e){}
+try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
 function Header(){
   var showHome = state.screen !== "home";
@@ -842,7 +884,7 @@ Screens.loading = function(){ return Header() + Centered(ic('loader',30,'spin'),
 Screens.submitting = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "No cierres esta ventana."); };
 Screens.evaluating = function(){ return Header() + Centered(ic('sparkle',30), "Evaluando respuestas", "Analizando duración, fluidez y contenido de cada respuesta…"); };
 Screens["cand-thanks"] = function(){ return Header() + Centered(ic('check',32), "¡Listo, gracias!", "Tus respuestas se enviaron correctamente. Ya podés cerrar esta ventana."); };
-Screens["cand-autosend"] = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "Estamos enviando tus respuestas al reclutador. No cierres esta ventana…"); };
+Screens["cand-autosend"] = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "Estamos subiendo tus audios y enviándolos al reclutador. Puede tardar unos segundos — no cierres esta ventana…"); };
 Screens["cand-done"] = function(){
   return Header() +
   '<div class="card" style="max-width:480px;margin:0 auto;text-align:center">' +
@@ -914,16 +956,20 @@ function buildResultsMessage(){
     if (r.strengths && r.strengths.length){ L.push("Fortalezas:"); r.strengths.forEach(function(s){ L.push("  • " + s); }); L.push(""); }
     if (r.improve && r.improve.length){ L.push("A mejorar:"); r.improve.forEach(function(s){ L.push("  • " + s); }); L.push(""); }
   }
-  L.push("=== RESPUESTAS (transcripción) ===");
+  var hasAudio = state.audioUrls && Object.keys(state.audioUrls).length > 0;
+  L.push(hasAudio ? "=== RESPUESTAS (audios para escuchar) ===" : "=== RESPUESTAS (transcripción aproximada) ===");
   state.questions.forEach(function(q,i){
     var a = state.answers[q.id];
+    var url = state.audioUrls && state.audioUrls[q.id];
     L.push((i+1) + ". " + q.text);
-    if (a && a.transcript) L.push("   R: " + a.transcript);
-    else L.push("   R: (sin respuesta o sin transcripción)");
+    if (url) L.push("   Audio: " + url);
+    else if (a && a.transcript) L.push("   Transcripción aprox.: " + a.transcript);
+    else L.push("   (sin respuesta)");
     if (a && a.signals) L.push("   [duró " + (a.signals.durationSec||0) + "s · pausa máx " + (a.signals.longestSilence||0) + "s]");
     L.push("");
   });
-  L.push("— Los audios no se adjuntan por tamaño. La evaluación se calcula automáticamente a partir de duración, fluidez y contenido de las respuestas.");
+  if (hasAudio) L.push("— Escuchá cada respuesta con los enlaces de audio. La evaluación automática mide completitud, desarrollo y fluidez (no interpreta el contenido); la valoración final es tuya al escuchar.");
+  else L.push("— Nota: la transcripción es automática y puede tener errores. La evaluación automática mide completitud, desarrollo y fluidez (no interpreta el contenido).");
   return L.join("\n");
 }
 function resultsSubject(){ return "Respuestas de entrevista – " + (state.config.position||"") + (state.candidateEmail?(" – "+state.candidateEmail):""); }
@@ -939,6 +985,39 @@ function resultsMailtoHref(){
    abajo para activarlo. Los resultados llegan al email dueño de esa Access Key.
    Si queda vacío, la app cae al envío manual (botón) como respaldo. */
 var WEB3FORMS_KEY = "bc827930-037b-41dd-b03b-63d59d485c53";
+
+/* ---------------- audios: subida a Cloudinary (unsigned, sin backend) ----------------
+   Completá estos dos datos de tu cuenta gratuita de Cloudinary para que los audios
+   del candidato se suban y te lleguen como enlaces para escuchar. Si quedan vacíos,
+   el mail cae a la transcripción como respaldo. */
+var CLOUDINARY_CLOUD_NAME = "memtugeu";
+var CLOUDINARY_UPLOAD_PRESET = "ml_default";
+function audioUploadConfigured(){ return !!(CLOUDINARY_CLOUD_NAME && CLOUDINARY_UPLOAD_PRESET); }
+function uploadAudioToCloudinary(blob){
+  var fd = new FormData();
+  fd.append("file", blob);
+  fd.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  return fetch("https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD_NAME + "/auto/upload", { method:"POST", body: fd })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if (j && j.secure_url) return j.secure_url; throw new Error((j && j.error && j.error.message) || "Falló la subida del audio"); });
+}
+/* Sube todos los audios grabados y guarda las URLs en state.audioUrls (best-effort). */
+function uploadAllAudios(){
+  if (!audioUploadConfigured()) return Promise.resolve();
+  var qs = state.questions.slice();
+  var chain = Promise.resolve();
+  state.audioUrls = state.audioUrls || {};
+  qs.forEach(function(q){
+    var a = state.answers[q.id];
+    if (!a || !a.blobUrl || a.blobUrl.indexOf("blob:") !== 0) return;
+    chain = chain.then(function(){
+      return fetch(a.blobUrl).then(function(r){ return r.blob(); }).then(function(blob){
+        return uploadAudioToCloudinary(blob).then(function(url){ state.audioUrls[q.id] = url; }).catch(function(){ /* seguimos con los demás */ });
+      }).catch(function(){});
+    });
+  });
+  return chain;
+}
 function autoSendConfigured(){ return typeof WEB3FORMS_KEY === "string" && WEB3FORMS_KEY.length >= 20; }
 function sendResultsAuto(){
   return fetch("https://api.web3forms.com/submit", {
@@ -1183,7 +1262,7 @@ Screens.report = function(){
       '<span class="rec-tag" style="background:rgba(255,255,255,.14);color:inherit;border:1px solid rgba(255,255,255,.25)">'+esc(r.recommendation)+'</span>' +
     '</div>' +
     '<p style="margin-top:14px;font-size:13.5px;opacity:.85;line-height:1.6">'+esc(r.overall)+'</p>' +
-    '<p style="margin-top:10px;font-size:11.5px;opacity:.55">Calculada localmente a partir de duración, fluidez y contenido de las respuestas — no usa un modelo de lenguaje.</p>' +
+    '<p style="margin-top:10px;font-size:11.5px;opacity:.55">Mide completitud, desarrollo y fluidez de cada respuesta (por reglas, no interpreta el significado). Un puntaje bajo indica respuestas escasas o sin desarrollar. Para la decisión final, escuchá los audios.</p>' +
   '</div>';
   html += '<div class="grid2" style="margin-top:16px">' +
     ReportList("Fortalezas", r.strengths, "var(--green)") +
@@ -1274,7 +1353,7 @@ function startInviteInterview(emailRaw, codeRaw){
     };
     rt.analyzed = {}; rt.autoStartedFor = {};
     state.questions = inv.questions.slice();
-    state.answers = {}; state.idx = 0; state.report = null;
+    state.answers = {}; state.idx = 0; state.report = null; state.audioUrls = {};
     state.code = inv.code || "";
     state.candidateEmail = emailIn;
     state.interviewMode = "candidate";
@@ -1373,19 +1452,27 @@ function submitAnswers(){
     lset("voz_ans_"+state.code, { questions: strip, answers: out, submittedAt: Date.now(), audioOmitted: omitted, candidateEmail: state.candidateEmail||"" });
     try{ state.report = evaluateLocally(state.questions, state.answers, state.config); }catch(e){ state.report = null; }
     state.audioOmitted = omitted;
-    if (autoSendConfigured()){
-      state.autoSendState = "sending"; state.autoSendError = null; state.screen = "cand-autosend"; render();
-      sendResultsAuto().then(function(){
-        state.autoSendState = "sent"; state.screen = "cand-done"; render();
-      }).catch(function(err){
-        state.autoSendState = "error"; state.autoSendError = err;
-        state.screen = "cand-send"; render();
-      });
-    } else {
-      state.autoSendState = "idle"; state.screen = "cand-send"; render();
-    }
+    finalizeCandidate();
   }
   processNext(0);
+}
+
+/* Sube audios (si está configurado) y luego envía los resultados al reclutador. */
+function finalizeCandidate(){
+  state.autoSendState = "idle"; state.autoSendError = null;
+  var needsUpload = audioUploadConfigured();
+  var needsSend = autoSendConfigured();
+  if (!needsUpload && !needsSend){ state.screen = "cand-send"; render(); return; }
+
+  state.autoSendState = "sending"; state.screen = "cand-autosend"; render();
+  uploadAllAudios().then(function(){
+    if (!needsSend){ state.autoSendState = "idle"; state.screen = "cand-send"; render(); return; }
+    return sendResultsAuto().then(function(){
+      state.autoSendState = "sent"; state.screen = "cand-done"; render();
+    }).catch(function(err){
+      state.autoSendState = "error"; state.autoSendError = err; state.screen = "cand-send"; render();
+    });
+  });
 }
 
 /* ---- recording ---- */
