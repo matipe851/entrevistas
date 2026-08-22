@@ -1,0 +1,1364 @@
+<meta charset="UTF-8">
+<title>voz. entrevistas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#F6F4EF;
+  --surface:#FFFFFF;
+  --surface-2:#E9F1F0;
+  --ink:#152433;
+  --muted:#64717D;
+  --border:#E4E0D7;
+  --border-soft:#EEEBE3;
+  --teal:#2F6F6A;
+  --teal-strong:#1F4F4B;
+  --teal-tint:#E9F1F0;
+  --brick:#C4453B;
+  --brick-tint:#FBEDEC;
+  --amber:#8A6D1F;
+  --amber-tint:#FDF6E7;
+  --purple:#6D5BA6;
+  --purple-tint:#F3EEF7;
+  --blue:#3B6EA5;
+  --blue-tint:#EAF0F7;
+  --green:#2F8F6A;
+  --green-tint:#EAF5EF;
+  --cta-bg:#152433;
+  --cta-fg:#F6F4EF;
+  --shadow: 0 1px 2px rgba(21,36,51,.04), 0 8px 24px -12px rgba(21,36,51,.12);
+  --ring: rgba(47,111,106,.35);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101C1A;
+    --surface:#16241F;
+    --surface-2:#1B322C;
+    --ink:#ECF0EC;
+    --muted:#93A6A0;
+    --border:#294038;
+    --border-soft:#20342E;
+    --teal:#6BC2B6;
+    --teal-strong:#8ED4C9;
+    --teal-tint:#1B322C;
+    --brick:#E38079;
+    --brick-tint:#33201E;
+    --amber:#E0B767;
+    --amber-tint:#332A18;
+    --purple:#B7A4DD;
+    --purple-tint:#2A2438;
+    --blue:#8FB4DA;
+    --blue-tint:#1C2C3B;
+    --green:#7FCBA8;
+    --green-tint:#1A2E26;
+    --cta-bg:#ECF0EC;
+    --cta-fg:#0F1E1A;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    --ring: rgba(107,194,182,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101C1A;
+  --surface:#16241F;
+  --surface-2:#1B322C;
+  --ink:#ECF0EC;
+  --muted:#93A6A0;
+  --border:#294038;
+  --border-soft:#20342E;
+  --teal:#6BC2B6;
+  --teal-strong:#8ED4C9;
+  --teal-tint:#1B322C;
+  --brick:#E38079;
+  --brick-tint:#33201E;
+  --amber:#E0B767;
+  --amber-tint:#332A18;
+  --purple:#B7A4DD;
+  --purple-tint:#2A2438;
+  --blue:#8FB4DA;
+  --blue-tint:#1C2C3B;
+  --green:#7FCBA8;
+  --green-tint:#1A2E26;
+  --cta-bg:#ECF0EC;
+  --cta-fg:#0F1E1A;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  --ring: rgba(107,194,182,.35);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"Public Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size:15px;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{ background:var(--teal); color:var(--cta-fg); }
+h1,h2,h3{ font-family:"Fraunces", Georgia, serif; font-weight:600; letter-spacing:-.01em; text-wrap:balance; margin:0; }
+a{ color:inherit; }
+button{ font-family:inherit; }
+.mono{ font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; }
+.wrap{ max-width:760px; margin:0 auto; padding:40px 20px 64px; }
+@media (min-width:640px){ .wrap{ padding:56px 32px 80px; } }
+
+/* header */
+.hdr{ display:flex; align-items:center; gap:14px; margin-bottom:36px; }
+.hdr-mark{ position:relative; width:44px; height:44px; border-radius:13px; background:var(--ink); color:var(--bg); display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden; }
+.hdr-mark svg{ position:relative; z-index:1; }
+.hdr-wave{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:2px; opacity:.35; }
+.hdr-wave span{ width:2px; background:var(--bg); border-radius:1px; animation:wave 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion:reduce){ .hdr-wave span{ animation:none; } }
+.hdr-title{ font-size:21px; margin:0; }
+.hdr-title .dot{ color:var(--teal); }
+.hdr-sub{ margin:2px 0 0; font-size:12.5px; color:var(--muted); }
+.hdr-home{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; padding:9px 13px; border-radius:10px; background:var(--surface); border:1px solid var(--border); color:var(--ink); font-size:12.5px; font-weight:600; cursor:pointer; }
+.hdr-home:hover{ border-color:var(--teal); }
+
+/* generic */
+.card{ background:var(--surface); border:1px solid var(--border-soft); border-radius:18px; padding:24px; box-shadow:var(--shadow); }
+@media (min-width:640px){ .card{ padding:32px; } }
+.grid2{ display:grid; gap:16px; }
+@media (min-width:640px){ .grid2{ grid-template-columns:1fr 1fr; } }
+.grid3{ display:grid; gap:14px; grid-template-columns:1fr; }
+@media (min-width:520px){ .grid3{ grid-template-columns:1fr 1fr 1fr; } }
+.tile{ display:flex; flex-direction:column; align-items:flex-start; gap:12px; border-radius:18px; padding:26px; text-align:left; cursor:pointer; border:1px solid transparent; transition:transform .15s ease; }
+.tile:hover{ transform:translateY(-2px); }
+.tile:active{ transform:translateY(0) scale(.99); }
+.tile-dark{ background:var(--ink); color:var(--bg); }
+.tile-light{ background:var(--surface); border-color:var(--border); color:var(--ink); }
+.tile h3{ font-size:17.5px; }
+.tile p{ margin:0; font-size:13.5px; opacity:.82; line-height:1.5; }
+
+.note{ display:flex; gap:9px; align-items:flex-start; border-radius:13px; padding:12px 14px; font-size:13px; margin-bottom:18px; }
+.note-info{ background:var(--teal-tint); color:var(--teal-strong); border:1px solid var(--border-soft); }
+.note-warn{ background:var(--amber-tint); color:var(--amber); border:1px solid var(--border-soft); }
+.note-err{ background:var(--brick-tint); color:var(--brick); border:1px solid var(--border-soft); }
+.note svg{ flex-shrink:0; margin-top:1px; }
+
+label.field{ display:block; }
+.field-label{ display:block; font-size:13px; font-weight:600; margin-bottom:6px; }
+.field-hint{ display:block; font-size:12px; color:var(--muted); margin-top:5px; }
+.input-row{ display:flex; align-items:center; gap:9px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px 13px; transition:border-color .15s; }
+.input-row:focus-within{ border-color:var(--teal); box-shadow:0 0 0 3px var(--ring); }
+.input-row textarea{ resize:none; }
+.input-row input, .input-row select, .input-row textarea{
+  border:none; outline:none; background:transparent; color:var(--ink); font-size:14.5px; width:100%; font-family:inherit;
+}
+select.bare{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px 13px; font-size:14.5px; color:var(--ink); width:100%; outline:none; }
+select.bare:focus{ border-color:var(--teal); box-shadow:0 0 0 3px var(--ring); }
+.check-row{ display:flex; gap:12px; align-items:flex-start; border-radius:13px; padding:13px 14px; border:1px solid var(--border); cursor:pointer; }
+.check-row input{ margin-top:3px; width:16px; height:16px; accent-color:var(--teal); flex-shrink:0; }
+.check-title{ font-size:14px; }
+.check-sub{ display:block; margin-top:3px; font-size:12px; color:var(--muted); line-height:1.5; }
+
+.btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:12px; padding:12px 20px; font-size:14px; font-weight:600; border:none; cursor:pointer; text-decoration:none; transition:opacity .15s, transform .1s; }
+.btn:active{ transform:scale(.98); }
+.btn[disabled]{ cursor:not-allowed; opacity:.5; }
+.btn-primary{ background:var(--cta-bg); color:var(--cta-fg); }
+.btn-teal{ background:var(--teal); color:#fff; }
+.btn-ghost{ background:var(--surface); color:var(--ink); border:1px solid var(--border); }
+.btn-ghost:hover{ border-color:var(--teal); }
+.btn-block{ width:100%; }
+.btn-sm{ padding:9px 14px; font-size:13px; border-radius:10px; }
+
+.backlink{ display:inline-flex; align-items:center; gap:6px; background:none; border:none; color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer; padding:0; margin-bottom:16px; }
+.backlink:hover{ color:var(--ink); }
+
+.badge{ display:inline-flex; align-items:center; padding:4px 10px; border-radius:99px; font-size:11.5px; font-weight:600; letter-spacing:.01em; }
+.pill-time{ display:inline-flex; align-items:center; gap:5px; padding:5px 11px; border-radius:99px; font-size:11.5px; font-weight:600; background:var(--teal-tint); color:var(--teal-strong); }
+
+.center-block{ display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; border-radius:18px; padding:88px 24px; background:var(--surface); border:1px solid var(--border-soft); color:var(--teal); }
+.center-block h2{ margin-top:16px; font-size:17px; color:var(--ink); }
+.center-block p{ margin:6px 0 0; max-width:280px; font-size:13.5px; color:var(--muted); }
+.spin{ animation:spin 1s linear infinite; }
+@media (prefers-reduced-motion:reduce){ .spin{ animation:spin 2s linear infinite; } }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+@keyframes wave{ 0%,100%{ height:6px; } 50%{ height:18px; } }
+
+.progress-top{ display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:8px; }
+.progress-track{ height:6px; width:100%; border-radius:99px; background:var(--border); overflow:hidden; }
+.progress-fill{ height:100%; border-radius:99px; background:var(--teal); transition:width .3s; }
+
+.rec-wrap{ display:flex; flex-direction:column; align-items:center; margin:30px 0; }
+.rec-ring{ position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center; }
+.rec-ring svg{ position:absolute; inset:0; transform:rotate(-90deg); }
+.rec-btn{ position:relative; z-index:1; width:104px; height:104px; border-radius:50%; border:none; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; gap:4px; }
+.rec-idle{ background:var(--cta-bg); color:var(--cta-fg); }
+.rec-active{ background:var(--brick); color:#fff; }
+.rec-done{ background:var(--teal-tint); color:var(--teal-strong); }
+.rec-hint{ margin-top:16px; font-size:13px; color:var(--muted); text-align:center; max-width:320px; }
+
+.transcript-box{ border-radius:13px; padding:14px 16px; background:var(--bg); border:1px solid var(--border-soft); }
+.transcript-label{ display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:.04em; }
+audio{ width:100%; height:36px; }
+
+.qa-item{ border-radius:16px; padding:18px 20px; background:var(--surface); border:1px solid var(--border-soft); }
+.qa-item.followup{ margin-left:20px; border-left:3px solid var(--purple); }
+.qa-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:9px; }
+.qa-text{ margin:0 0 12px; font-size:15px; line-height:1.5; }
+
+.report-hero{ border-radius:18px; padding:26px 28px; background:var(--cta-bg); color:var(--cta-fg); }
+.report-eyebrow{ font-size:11px; letter-spacing:.06em; text-transform:uppercase; opacity:.6; }
+.report-score{ font-family:"Fraunces",serif; font-size:52px; font-weight:600; }
+.rec-tag{ padding:5px 13px; border-radius:99px; font-size:13px; font-weight:600; }
+
+.share-code{ text-align:center; border-radius:16px; padding:22px; background:var(--cta-bg); color:var(--cta-fg); margin-bottom:20px; }
+.share-code .lbl{ font-size:11px; text-transform:uppercase; letter-spacing:.08em; opacity:.6; }
+.share-code .val{ font-size:34px; font-weight:700; letter-spacing:.28em; margin:6px 0; }
+.copybtn{ background:none; border:none; display:inline-flex; align-items:center; gap:6px; font-size:12px; opacity:.75; cursor:pointer; color:inherit; }
+
+.footer-note{ margin-top:44px; text-align:center; font-size:11.5px; color:var(--muted); }
+.flex-actions{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:20px; }
+.hesitant-note{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--purple); margin-top:10px; }
+.followup-reason{ border-radius:11px; padding:10px 13px; font-size:12.5px; background:var(--purple-tint); color:var(--purple); margin-bottom:14px; }
+</style>
+
+<div class="wrap" id="app"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------------- palette / constants ---------------- */
+var CATEGORY_VAR = {
+  "Presentación":"--teal", "Experiencia":"--blue", "Competencias":"--purple",
+  "Situacional":"--amber", "Motivación y cultura":"--green", "Cierre":"--muted",
+  "Repregunta":"--purple"
+};
+var CATEGORY_TINT = {
+  "Presentación":"--teal-tint", "Experiencia":"--blue-tint", "Competencias":"--purple-tint",
+  "Situacional":"--amber-tint", "Motivación y cultura":"--green-tint", "Cierre":"--border-soft",
+  "Repregunta":"--purple-tint"
+};
+var LANG_LABEL = { es:"ES", en:"EN", pt:"PT" };
+var RECOG_LANG = { es:"es-AR", en:"en-US", pt:"pt-BR" };
+var LEVELS = ["Junior","Semi-Senior","Senior","Gerencial"];
+var LANGS = [["es","Español"],["en","Inglés"],["pt","Português"]];
+
+function fmt(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function clamp(n,a,b){ return Math.max(a,Math.min(b,n)); }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function makeCode(){ var A="ABCDEFGHJKMNPQRSTUVWXYZ23456789", c=""; for(var i=0;i<6;i++) c+=A[Math.floor(Math.random()*A.length)]; return c; }
+
+function extForAnswer(a){
+  var m = (a && a.mime) || "";
+  if (!m && a && a.blobUrl && a.blobUrl.indexOf("data:") === 0){
+    var mt = a.blobUrl.match(/^data:([^;,]+)/);
+    if (mt) m = mt[1];
+  }
+  if (m.indexOf("mp4") >= 0) return ".m4a";
+  if (m.indexOf("ogg") >= 0) return ".ogg";
+  return ".webm";
+}
+function plainBrowserDownload(blobUrl, filename){
+  try{
+    var a = document.createElement("a");
+    a.href = blobUrl; a.download = filename || "audio.webm";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  } catch(e){}
+}
+async function downloadAudio(blobUrl, filename){
+  try{
+    if (!window.claude || !window.claude.use){ plainBrowserDownload(blobUrl, filename); return; }
+    var downloads = await window.claude.use("downloads");
+    if (!downloads){ plainBrowserDownload(blobUrl, filename); return; }
+    var resp = await fetch(blobUrl);
+    var blob = await resp.blob();
+    await downloads.save({ filename: filename, data: blob });
+  } catch(e){ /* the artifact viewer sandbox blocks a plain download here — nothing more we can do */ }
+}
+
+/* ---------------- Gmail send via the mcp capability ---------------- */
+function probeGmailOnce(){
+  if (rt.gmailProbed) return;
+  rt.gmailProbed = true;
+  state.gmailStatus = "checking";
+  (async function(){
+    try{
+      if (!window.claude || !window.claude.use){ state.gmailStatus = "unavailable"; render(); return; }
+      var mcp = await window.claude.use("mcp");
+      if (!mcp){ state.gmailStatus = "unavailable"; render(); return; }
+      var res = await mcp.listTools();
+      var g = (res.servers || []).filter(function(s){ return s.server === "Gmail"; })[0];
+      if (g && g.authStatus === "connected" && (g.tools || []).some(function(t){ return t.name === "send_message"; })){
+        state.gmailStatus = "available";
+      } else if (g && g.authStatus === "needs_reauth"){
+        state.gmailStatus = "needs_reauth";
+      } else {
+        state.gmailStatus = "unavailable";
+      }
+    } catch(e){ state.gmailStatus = "unavailable"; }
+    render();
+  })();
+}
+function mapGmailError(err){
+  var code = (err && err.code) || "upstream_error";
+  var msgs = {
+    needs_reauth: "Tu conexión con Gmail venció. Reconectala en claude.ai → Configuración → Conectores y volvé a intentar.",
+    server_not_connected: "No encontramos Gmail conectado en tu cuenta. Conectalo en claude.ai → Configuración → Conectores.",
+    selection_required: "Tenés más de una cuenta de Gmail conectada. Elegí una en el aviso de claude.ai y volvé a intentar.",
+    blocked_by_policy: "Tu organización no permite enviar esto desde Gmail. Usá “Copiar mensaje”.",
+    approval_required: "Este envío necesita aprobación de tu organización. Usá “Copiar mensaje” mientras tanto.",
+    tool_error: "Gmail no pudo enviar el mensaje" + (err && err.message ? (": " + err.message) : "") + ".",
+    server_unavailable: "Gmail no respondió a tiempo. Podés reintentar en unos segundos.",
+    not_granted: "Esta vista no tiene permiso para usar conectores.",
+    capability_disabled: "El envío por Gmail no está disponible acá ahora.",
+    no_email: "Ingresá el email del entrevistado antes de enviar."
+  };
+  return { code: code, message: msgs[code] || "No pudimos enviarlo por Gmail ahora. Probá de nuevo o usá “Copiar mensaje”.", retryable: !!(err && err.retryable) };
+}
+function sendViaGmail(){
+  if (!state.candidateEmail || !state.candidateEmail.trim()){
+    state.sendState = "error"; state.sendError = mapGmailError({code:"no_email"}); render(); return;
+  }
+  state.sendState = "sending"; state.sendError = null; render();
+  (async function(){
+    try{
+      if (!window.claude || !window.claude.use) throw {code:"capability_disabled"};
+      var mcp = await window.claude.use("mcp");
+      if (!mcp) throw {code:"capability_disabled"};
+      var c = state.config;
+      var result = await mcp.callTool("Gmail", "send_message", {
+        to: [state.candidateEmail.trim()],
+        subject: "Entrevista para " + c.position,
+        body: buildShareMessage()
+      });
+      state.sendState = "sent";
+      var payload = result && result.payload;
+      state.sentMessageId = (payload && payload.id) ? payload.id : null;
+      render();
+    } catch(err){
+      state.sendState = "error";
+      state.sendError = mapGmailError(err);
+      render();
+    }
+  })();
+}
+
+/* ---------------- speech / hesitancy signals (pure heuristics) ---------------- */
+var FILLERS = /(\beh+\b|\bem+\b|\bmmm+\b|\beste\b|\bo sea\b|\bosea\b|\bdigamos\b|\bviste\b|\bcomo que\b|\bponele\b|\bum+\b|\byou know\b|\blike\b|\bkind of\b)/gi;
+function speechMetrics(text){
+  text = text || "";
+  var words = (text.trim().match(/\S+/g) || []).length;
+  var fillers = (text.match(FILLERS) || []).length;
+  return { words: words, fillers: fillers, fillerRatio: words ? fillers/words : 0 };
+}
+function isHesitant(a){
+  a = a || {};
+  var s = a.signals || {};
+  var m = speechMetrics(a.transcript || "");
+  if ((s.durationSec||0) < 3) return false;
+  if (s.spoke === false) return true;
+  if ((s.longestSilence||0) >= 3) return true;
+  if (m.words >= 4 && m.fillerRatio > 0.15) return true;
+  var wpm = s.durationSec ? m.words/(s.durationSec/60) : 0;
+  if (m.words >= 6 && wpm > 0 && wpm < 55) return true;
+  return false;
+}
+
+/* ---------------- local storage (same-browser persistence) ---------------- */
+function lget(key){ try{ var v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch(e){ return null; } }
+function lset(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); return true; } catch(e){ return false; } }
+
+/* ---------------- question bank (local generator, no network calls) ---------------- */
+var QBANK = {
+  es: {
+    "Presentación": [
+      "Contame brevemente tu trayectoria y qué te llevó a postularte para el puesto de {puesto}.",
+      "Hacé una breve presentación tuya: quién sos, tu experiencia, y por qué te interesa esta posición de {puesto}."
+    ],
+    "Experiencia": [
+      "Contame sobre tu experiencia más relevante relacionada con {puesto}. ¿Qué tareas manejabas en el día a día?",
+      "¿Qué herramientas, sistemas o metodologías usás habitualmente en un rol como {puesto}?",
+      "Describime un logro concreto del que te sientas orgulloso/a en un puesto similar a {puesto}.",
+      "¿Cómo se organizaba tu rutina de trabajo en tu experiencia más reciente vinculada a {puesto}?",
+      "Contame de un proyecto en el que hayas tenido que aprender algo nuevo rápido para poder avanzar.",
+      "¿Qué fue lo más desafiante de tu experiencia previa y cómo lo resolviste?"
+    ],
+    "Competencias": [
+      "¿Cómo trabajás en equipo cuando hay opiniones distintas sobre cómo resolver algo?",
+      "Contame de una vez que hayas tenido que priorizar varias tareas urgentes al mismo tiempo. ¿Cómo lo resolviste?",
+      "¿Cómo manejás el feedback o las críticas sobre tu trabajo?",
+      "Cuando algo no sale como esperabas, ¿cómo se lo comunicás al equipo o a tu jefe/a?",
+      "{focoLine}"
+    ],
+    "Situacional": [
+      "Imaginate que un cliente está muy disconforme y pide hablar con un responsable ya mismo. ¿Qué harías?",
+      "Contame una situación real donde algo salió mal por un error tuyo. ¿Qué pasó y cómo lo resolviste?",
+      "Si tuvieras dos tareas urgentes con el mismo plazo y no llegás a las dos, ¿cómo decidís qué priorizar?",
+      "Describí una situación en la que tuviste que dar una mala noticia a un compañero, cliente o jefe.",
+      "Contame de un conflicto con un compañero de trabajo: qué pasó y cómo lo resolvieron."
+    ],
+    "Motivación y cultura": [
+      "¿Por qué te interesa este puesto en particular y no otro similar?",
+      "¿Qué es lo que más valorás de un buen ambiente de trabajo?",
+      "Contanos qué sabés de {empresaShort} y por qué te gustaría formar parte del equipo.",
+      "¿Dónde te ves en los próximos dos o tres años dentro de tu carrera?",
+      "¿Qué tipo de liderazgo o de jefe/a te ayuda a rendir mejor?"
+    ],
+    "Cierre": [
+      "¿Tenés alguna pregunta para nosotros sobre el puesto o la empresa?",
+      "¿Hay algo importante sobre vos o tu experiencia que no hayamos cubierto en esta entrevista?",
+      "¿En qué plazo podrías incorporarte si avanzamos con el proceso?"
+    ]
+  },
+  en: {
+    "Presentación": [ "Briefly walk me through your background and what led you to apply for the {puesto} role." ],
+    "Experiencia": [
+      "Tell me about your most relevant experience related to {puesto}. What did your day-to-day look like?",
+      "What tools or methods do you typically use in a role like {puesto}?",
+      "Describe a concrete achievement you're proud of in a similar role."
+    ],
+    "Competencias": [
+      "How do you work with a team when there are different opinions on how to solve something?",
+      "Tell me about a time you had to juggle several urgent tasks at once. How did you handle it?"
+    ],
+    "Situacional": [
+      "Imagine a very unhappy client asking to speak to a manager right now. What would you do?",
+      "Tell me about a real situation where something went wrong because of a mistake you made. What happened, and how did you fix it?"
+    ],
+    "Motivación y cultura": [
+      "Why are you interested in this specific role and not a similar one elsewhere?",
+      "What do you value most about a good work environment?"
+    ],
+    "Cierre": [ "Do you have any questions for us about the role or the company?" ]
+  },
+  pt: {
+    "Presentación": [ "Conte brevemente sua trajetória e o que te levou a se candidatar para a vaga de {puesto}." ],
+    "Experiencia": [
+      "Fale sobre sua experiência mais relevante relacionada a {puesto}. Como era o seu dia a dia?",
+      "Quais ferramentas ou métodos você costuma usar em uma função como {puesto}?"
+    ],
+    "Competencias": [ "Como você trabalha em equipe quando há opiniões diferentes sobre como resolver algo?" ],
+    "Situacional": [ "Conte uma situação real em que algo deu errado por um erro seu. O que aconteceu e como você resolveu?" ],
+    "Motivación y cultura": [ "Por que você se interessa por esta vaga em particular?" ],
+    "Cierre": [ "Você tem alguma pergunta para nós sobre a vaga ou a empresa?" ]
+  }
+};
+
+var FOLLOWUP = {
+  es: {
+    content: [
+      "¿Podrías darme un ejemplo bien concreto de eso que contaste?",
+      "Me gustaría que profundices un poco más: ¿qué pasó exactamente y cuál fue tu rol?",
+      "¿Cómo mediste o supiste que el resultado fue bueno?",
+      "¿Qué harías distinto si te tocara resolver eso de nuevo?"
+    ],
+    delivery: [
+      "Noté algunas pausas largas en tu respuesta. ¿Podés resumir en dos o tres frases la idea principal?",
+      "¿Podés contar eso mismo de forma más breve y con un ejemplo puntual?",
+      "Tomate un momento y contame, con tus palabras, lo más importante de esa situación."
+    ]
+  },
+  en: {
+    content: [ "Could you give me a concrete example of that?", "Can you go a bit deeper — what exactly happened and what was your role?" ],
+    delivery: [ "I noticed a few long pauses — could you sum up the main idea in two or three sentences?" ]
+  },
+  pt: {
+    content: [ "Você poderia me dar um exemplo bem concreto disso?" ],
+    delivery: [ "Notei algumas pausas longas. Pode resumir a ideia principal em poucas frases?" ]
+  }
+};
+
+var SECONDS_BY_CAT = { "Presentación":60, "Experiencia":100, "Competencias":100, "Situacional":150, "Motivación y cultura":95, "Cierre":70 };
+
+function shortEmpresa(s){
+  s = (s||"").trim().split("\n")[0];
+  if (s.length > 60) s = s.slice(0,57).trim() + "…";
+  return s || "la empresa";
+}
+function fillTpl(tpl, cfg){
+  var focoLine = cfg.focus ? ("Dijiste que uno de los focos a evaluar es \"" + cfg.focus + "\". Contame una situación concreta donde lo hayas puesto en práctica.") : "";
+  return tpl
+    .replace(/\{puesto\}/g, cfg.position || "este puesto")
+    .replace(/\{empresaShort\}/g, shortEmpresa(cfg.company))
+    .replace(/\{focoLine\}/g, focoLine);
+}
+function pickTemplates(lang, cat, n, cfg){
+  var bank = (QBANK[lang] && QBANK[lang][cat]) ? QBANK[lang][cat].slice() : QBANK.es[cat].slice();
+  var out = [], used = {};
+  for (var i=0; i<n; i++){
+    var pool = bank.filter(function(t,idx){ return !used[idx]; });
+    if (!pool.length){ pool = bank; used = {}; }
+    var idx = bank.indexOf(pick(pool));
+    used[idx] = true;
+    var text = fillTpl(bank[idx], cfg);
+    if (!text.trim()) { i--; continue; }
+    out.push(text);
+  }
+  return out;
+}
+
+function buildQuestions(cfg){
+  var n;
+  if (cfg.count === "auto"){
+    n = cfg.level === "Junior" ? 7 : cfg.level === "Senior" ? 8 : cfg.level === "Gerencial" ? 9 : 7;
+  } else { n = parseInt(cfg.count,10) || 7; }
+  n = clamp(n, 5, 12);
+
+  var middle = ["Experiencia","Competencias","Situacional","Motivación y cultura"];
+  var seq = ["Presentación"];
+  var ci = 0;
+  while (seq.length < n-1){ seq.push(middle[ci % middle.length]); ci++; }
+  seq.push("Cierre");
+
+  var mainLang = cfg.language;
+  var englishSlots = [];
+  if (mainLang === "es" && cfg.includeEnglish){
+    var mid = [];
+    for (var i=1;i<seq.length-1;i++) mid.push(i);
+    while (englishSlots.length < 2 && mid.length){
+      var pi = Math.floor(Math.random()*mid.length);
+      englishSlots.push(mid[pi]); mid.splice(pi,1);
+    }
+  }
+
+  var counters = {};
+  var qs = seq.map(function(cat, i){
+    counters[cat] = (counters[cat]||0);
+    var lang = englishSlots.indexOf(i) >= 0 ? "en" : mainLang;
+    var tplLang = lang === "es" ? "es" : lang;
+    var text = pickTemplates(tplLang, cat, counters[cat]+1, cfg)[counters[cat]];
+    counters[cat]++;
+    return {
+      id: "q"+i,
+      text: text,
+      category: cat,
+      seconds: SECONDS_BY_CAT[cat] || 90,
+      lang: lang
+    };
+  });
+  return qs;
+}
+
+function makeFollowup(q, reasonKind){
+  var lang = q.lang === "es" ? "es" : (FOLLOWUP[q.lang] ? q.lang : "es");
+  var bank = FOLLOWUP[lang] || FOLLOWUP.es;
+  var text = pick(reasonKind === "delivery" ? bank.delivery : bank.content);
+  var reason = reasonKind === "delivery"
+    ? "Se detectaron pausas largas o muletillas; conviene pedir que lo resuma con claridad."
+    : "La respuesta fue breve o genérica; conviene pedir un ejemplo concreto.";
+  var root = q.rootId || q.id;
+  return {
+    id: root + "-f" + Date.now() + Math.floor(Math.random()*99),
+    text: text, category: "Repregunta",
+    seconds: 75, lang: q.lang,
+    isFollowup: true, rootId: root, depth: (q.depth||0)+1, reason: reason
+  };
+}
+
+/* ---------------- local heuristic evaluation (no network / no LLM) ---------------- */
+function evaluateLocally(questions, answers, cfg){
+  var answered = questions.filter(function(q){ return answers[q.id] && (answers[q.id].transcript || answers[q.id].blobUrl); });
+  var wordsArr = [], fillerArr = [], hesitantN = 0;
+  answered.forEach(function(q){
+    var a = answers[q.id];
+    var m = speechMetrics(a.transcript || "");
+    wordsArr.push(m.words); fillerArr.push(m.fillerRatio);
+    if (isHesitant(a)) hesitantN++;
+  });
+  var avgWords = wordsArr.length ? wordsArr.reduce(function(a,b){return a+b;},0)/wordsArr.length : 0;
+  var avgFiller = fillerArr.length ? fillerArr.reduce(function(a,b){return a+b;},0)/fillerArr.length : 0;
+  var hesitantRate = answered.length ? hesitantN/answered.length : 0;
+  var coverage = questions.length ? answered.length/questions.length : 0;
+
+  var score = 5 + coverage*2.2 + (avgWords>25?1.6:avgWords>12?0.8:-1.2) - avgFiller*8 - hesitantRate*2.2;
+  score = clamp(Math.round(score*2)/2, 1, 10);
+
+  var recommendation = score >= 7.5 ? "Avanzar" : score >= 5.5 ? "Con reservas" : "No avanzar";
+
+  var strengths = [];
+  if (coverage === 1) strengths.push("Respondió todas las preguntas de la entrevista.");
+  if (avgWords > 25) strengths.push("Da respuestas con buen nivel de detalle y ejemplos concretos.");
+  if (avgFiller < 0.05 && wordsArr.length) strengths.push("Se expresa con fluidez, sin muletillas frecuentes.");
+  if (hesitantRate < 0.2 && answered.length) strengths.push("Mantiene un buen manejo del tiempo y seguridad al hablar.");
+  if (!strengths.length) strengths.push("Completó la entrevista y dejó respuestas grabadas para revisar en detalle.");
+
+  var improve = [];
+  if (coverage < 1) improve.push("Dejó " + (questions.length-answered.length) + " pregunta(s) sin responder.");
+  if (avgWords < 12 && wordsArr.length) improve.push("Varias respuestas fueron muy breves; conviene indagar pidiendo ejemplos concretos en la próxima instancia.");
+  if (avgFiller >= 0.12) improve.push("Se notan bastantes muletillas (eh, este, o sea); podría trabajar la fluidez al responder.");
+  if (hesitantRate >= 0.35) improve.push("Hubo pausas largas en varias respuestas, lo que puede indicar inseguridad con el tema.");
+  if (!improve.length) improve.push("No se detectaron señales relevantes de duda o brevedad en las respuestas.");
+
+  var sortedByWords = answered.slice().sort(function(a,b){
+    return speechMetrics(answers[a.id].transcript||"").words - speechMetrics(answers[b.id].transcript||"").words;
+  });
+  var probes = sortedByWords.slice(0,2).map(function(q){
+    return "Repreguntar sobre “" + q.text.slice(0,70) + (q.text.length>70?"…":"") + "” pidiendo un ejemplo concreto y medible.";
+  });
+  if (!probes.length) probes.push("Profundizar en las competencias del foco de búsqueda con un caso práctico adicional.");
+
+  var overall = "Completó " + answered.length + " de " + questions.length + " preguntas, con un nivel de detalle " +
+    (avgWords>25?"alto":avgWords>12?"moderado":"bajo") + ". " +
+    (hesitantRate>=0.3 ? "Mostró pausas o dudas en varias respuestas." : "Se mostró, en general, seguro/a al responder.");
+
+  return { overall: overall, score: score, recommendation: recommendation, strengths: strengths, improve: improve, probes: probes };
+}
+
+/* ================================================================
+   ICONS — small hand-drawn line set (24x24, stroke=currentColor)
+   ================================================================ */
+function ic(name, size, cls){
+  size = size || 18; cls = cls ? (' class="'+cls+'"') : '';
+  var P = '<svg' + cls + ' width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
+  var paths = {
+    mic: '<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3.5M9 21.5h6"/>',
+    square: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+    rotate: '<path d="M3 11a9 9 0 1 1 2.6 6.3"/><path d="M3 17v-5h5"/>',
+    chevron: '<path d="M9 5l7 7-7 7"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+    building: '<rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M9 8h.01M15 8h.01M9 12h.01M15 12h.01M9 16h.01M15 16h.01"/>',
+    briefcase: '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 2.5 15.4 0 18M12 3c-2.5 2.6-2.5 15.4 0 18"/>',
+    loader: '<path d="M12 3v3.5M12 17.5V21M4.9 4.9l2.5 2.5M16.6 16.6l2.5 2.5M3 12h3.5M17.5 12H21M4.9 19.1l2.5-2.5M16.6 7.4l2.5-2.5"/>',
+    check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5 5.5-6"/>',
+    alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/>',
+    download: '<path d="M12 4v11m0 0l-4-4m4 4l4-4"/><path d="M5 18h14v2H5z"/>',
+    sparkle: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 15l.7 1.9L21.5 17.5l-1.8.7-.7 1.9-.7-1.9-1.8-.7 1.8-.7z"/>',
+    back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+    list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>',
+    msg: '<path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12.5h5"/>',
+    lock: '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+    mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4.5 7l7.5 6 7.5-6"/>',
+    copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2.5"/>',
+    send: '<path d="M4 12l16-8-6 16-3-6-7-2z"/>',
+    key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8m0 0h-4m4 0v4M15.5 8.5L18 11"/>',
+    users: '<circle cx="9" cy="9" r="3.2"/><path d="M3.5 19c.7-3 2.9-4.7 5.5-4.7s4.8 1.7 5.5 4.7"/><circle cx="17" cy="9.5" r="2.5"/><path d="M15.5 14.5c2 .2 3.7 1.8 4.3 4.5"/>',
+    eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/>',
+    shield: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+    home: '<path d="M4 11.5L12 4l8 7.5"/><path d="M6 10v9.5h12V10"/>'
+  };
+  return P + (paths[name]||'') + '</svg>';
+}
+function waveBars(n, cls){
+  n = n || 5; var s='<span class="'+ (cls||'hdr-wave') +'">';
+  for (var i=0;i<n;i++){ s += '<span style="animation-delay:'+(i*0.12)+'s"></span>'; }
+  return s + '</span>';
+}
+
+/* ================================================================
+   STATE
+   ================================================================ */
+var state = {
+  screen: "home",
+  error: null, busy: false, storageWarn: false,
+  config: { position:"", company:"", focus:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:true },
+  questions: [], idx: 0, answers: {}, report: null,
+  code: "", candidateEmail: "", shareLink: "", interviewMode: "candidate",
+  audioOmitted: false, recording:false, timeLeft:0, live:"", micDenied:false, analyzingId:null,
+  gmailStatus: null, sendState: "idle", sendError: null, sentMessageId: null
+};
+var rt = { // runtime refs, not persisted / not re-rendered on
+  recorder:null, chunks:[], stream:null, recog:null, finalText:"", timerId:null,
+  meterId:null, audioCtx:null, startTime:0, activeQ:null,
+  sig:{ longest:0, cur:0, total:0, spoke:false }, analyzed:{}, gmailProbed:false
+};
+
+var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+
+/* ================================================================
+   RENDER ROOT
+   ================================================================ */
+var app = document.getElementById("app");
+function render(){ app.innerHTML = Screens[state.screen](); bind(); }
+
+function Header(){
+  var showHome = state.screen !== "home";
+  return '' +
+  '<div class="hdr">' +
+    '<div class="hdr-mark">' + waveBars(4) + ic('mic', 19) + '</div>' +
+    '<div>' +
+      '<h1 class="hdr-title">voz<span class="dot">.</span> entrevistas</h1>' +
+      '<p class="hdr-sub">Entrevistas por audio, con preguntas y evaluación automática</p>' +
+    '</div>' +
+    (showHome ? '<button class="hdr-home" data-action="home">'+ic('home',14)+' Inicio</button>' : '') +
+  '</div>';
+}
+function Note(tone, text){
+  var cls = tone==="warn"?"note-warn":tone==="err"?"note-err":"note-info";
+  var icon = tone==="err" ? ic('alert',15) : ic('alert',15);
+  return '<div class="note '+cls+'">' + icon + '<span>' + text + '</span></div>';
+}
+function ErrBox(){ return state.error ? Note("err", esc(state.error)) : ""; }
+
+/* ================================================================
+   SCREENS
+   ================================================================ */
+var Screens = {};
+
+Screens.home = function(){
+  return Header() +
+  (!('localStorage' in window) ? Note("warn","Este navegador no permite guardar datos localmente, así que compartir por código no va a funcionar en esta sesión.") : "") +
+  '<div class="grid2">' +
+    '<button class="tile tile-dark" data-action="go-recruiter">' + ic('shield',24) + '<h3>Panel del reclutador</h3><p>Crear entrevistas y ver las evaluaciones. Protegido con tu PIN, guardado solo en este navegador.</p></button>' +
+    '<button class="tile tile-light" data-action="go-candcode">' + ic('mic',24) + '<h3>Tengo una entrevista</h3><p>Ingresá el código que te compartieron y respondé las preguntas por audio.</p></button>' +
+  '</div>' +
+  '<p class="footer-note">Demo autocontenida: las entrevistas y respuestas se guardan únicamente en este navegador, no en un servidor.</p>';
+};
+
+Screens["pin-set"] = function(){
+  return Header() +
+  '<div class="card" style="max-width:420px;margin:0 auto;">' +
+    backlink("home","Volver") +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('key',19)+'<h2 style="font-size:17px;color:var(--ink)">Creá tu PIN</h2></div>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Vas a usarlo para entrar al panel y ver evaluaciones. Se guarda solo en este navegador; el candidato nunca lo ve.</p>' +
+    ErrBox() +
+    '<div class="input-row" style="margin-bottom:10px"><input id="pin1" type="password" inputmode="numeric" placeholder="PIN (mínimo 4 dígitos)" maxlength="8"></div>' +
+    '<div class="input-row" style="margin-bottom:16px"><input id="pin2" type="password" inputmode="numeric" placeholder="Repetí el PIN" maxlength="8"></div>' +
+    '<button class="btn btn-primary btn-block" id="pinSetBtn" disabled>'+ic('lock',15)+' Guardar PIN y entrar</button>' +
+  '</div>';
+};
+
+Screens["pin-enter"] = function(){
+  return Header() +
+  '<div class="card" style="max-width:420px;margin:0 auto;">' +
+    backlink("home","Volver") +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('key',19)+'<h2 style="font-size:17px;color:var(--ink)">Ingresá tu PIN</h2></div>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Solo vos accedés a la configuración y a las evaluaciones.</p>' +
+    ErrBox() +
+    '<div class="input-row" style="margin-bottom:16px"><input id="pinE" type="password" inputmode="numeric" placeholder="PIN" maxlength="8"></div>' +
+    '<button class="btn btn-primary btn-block" id="pinEnterBtn">'+ic('lock',15)+' Entrar</button>' +
+  '</div>';
+};
+
+Screens["rec-home"] = function(){
+  return Header() +
+  Note("info", ic('shield',13)+' &nbsp;Sesión de reclutador — solo vos ves la configuración y las evaluaciones en este navegador.') +
+  '<div class="grid2">' +
+    '<button class="tile tile-dark" data-action="go-config">'+ic('sparkle',22)+'<h3>Crear nueva entrevista</h3><p>Cargá el puesto y la empresa. Obtenés un código para compartirle al candidato.</p></button>' +
+    '<button class="tile tile-light" data-action="go-resultscode">'+ic('eye',22)+'<h3>Ver respuestas y evaluación</h3><p>Con el código, escuchá las respuestas y generá la evaluación automática.</p></button>' +
+  '</div>';
+};
+
+function fieldInput(id, placeholder, val, icon){
+  return '<div class="input-row">' + (icon?ic(icon,15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"'):'') +
+    '<input id="'+id+'" placeholder="'+esc(placeholder)+'" value="'+esc(val)+'"></div>';
+}
+
+Screens.config = function(){
+  var c = state.config;
+  var ready = c.position.trim() && c.company.trim();
+  return Header() +
+  '<div class="card">' +
+    backlink("go-recruiterhome","Volver al panel") +
+    '<h2 style="font-size:18px;margin-bottom:5px">Configurá la entrevista</h2>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 22px">Cargá el puesto y el contexto de la empresa. Las preguntas y los tiempos se arman automáticamente.</p>' +
+    ErrBox() +
+    '<div style="display:grid;gap:18px">' +
+      '<label class="field"><span class="field-label">Puesto a entrevistar</span>' + fieldInput("f_pos","Ej: Analista de RRHH Jr, Vendedor de mostrador", c.position, "briefcase") + '</label>' +
+      '<label class="field"><span class="field-label">Empresa y contexto</span>' +
+        '<div class="input-row" style="align-items:flex-start"><span style="color:var(--muted);margin-top:2px">'+ic('building',15)+'</span><textarea id="f_company" rows="3" placeholder="Ej: Rent a car en Aeroparque, atención al cliente, mucho contacto con turistas…">'+esc(c.company)+'</textarea></div>' +
+        '<span class="field-hint">Rubro, cultura, tamaño — lo que quieras que se tenga en cuenta al armar las preguntas.</span>' +
+      '</label>' +
+      '<label class="field"><span class="field-label">Competencias o focos (opcional)</span>' + fieldInput("f_focus","Ej: orientación al cliente, manejo de objeciones", c.focus, "list") + '</label>' +
+      '<div class="grid3">' +
+        '<label class="field"><span class="field-label">Seniority</span><select class="bare" id="f_level">' + LEVELS.map(function(l){return '<option'+(l===c.level?' selected':'')+'>'+l+'</option>';}).join('') + '</select></label>' +
+        '<label class="field"><span class="field-label">Idioma</span><select class="bare" id="f_lang">' + LANGS.map(function(l){return '<option value="'+l[0]+'"'+(l[0]===c.language?' selected':'')+'>'+l[1]+'</option>';}).join('') + '</select></label>' +
+        '<label class="field"><span class="field-label">Cantidad</span><select class="bare" id="f_count"><option value="auto"'+(c.count==='auto'?' selected':'')+'>Automático</option>' + [5,8,10,12].map(function(n){return '<option value="'+n+'"'+(String(c.count)===String(n)?' selected':'')+'>'+n+' preguntas</option>';}).join('') + '</select></label>' +
+      '</div>' +
+      '<label class="check-row" for="f_followups"><input type="checkbox" id="f_followups"' + (c.followups?' checked':'') + '><span><span class="check-title">Repreguntas automáticas</span><span class="check-sub">El entrevistador profundiza cuando una respuesta queda breve, genérica o dubitativa (pausas, muletillas). Hasta 2 por pregunta.</span></span></label>' +
+      (c.language==='es' ? '<label class="check-row" for="f_english" style="background:var(--teal-tint);border-color:var(--border-soft)"><input type="checkbox" id="f_english"' + (c.includeEnglish?' checked':'') + '><span class="check-title">Sumar 2 preguntas en inglés para evaluar el nivel del idioma</span></label>' : '') +
+    '</div>' +
+    '<button class="btn btn-primary btn-block" id="genBtn" style="margin-top:26px" '+(ready?'':'disabled')+'>'+ic('sparkle',15)+' Generar entrevista</button>' +
+  '</div>';
+};
+
+Screens.generating = function(){ return Header() + Centered(ic('loader',30,'spin'), "Armando la entrevista", "Redactando preguntas a medida del puesto…"); };
+Screens.loading = function(){ return Header() + Centered(ic('loader',30,'spin'), "Buscando…", "Un momento."); };
+Screens.submitting = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "No cierres esta ventana."); };
+Screens.evaluating = function(){ return Header() + Centered(ic('sparkle',30), "Evaluando respuestas", "Analizando duración, fluidez y contenido de cada respuesta…"); };
+Screens["cand-thanks"] = function(){ return Header() + Centered(ic('check',32), "¡Listo, gracias!", "Tus respuestas se enviaron correctamente. Ya podés cerrar esta ventana."); };
+
+function Centered(icon, title, sub){
+  return '<div class="center-block">' + icon + '<h2>'+esc(title)+'</h2><p>'+esc(sub)+'</p></div>';
+}
+function backlink(action, label){ return '<button class="backlink" data-action="'+action+'">'+ic('back',13)+' '+esc(label)+'</button>'; }
+
+function buildShareMessage(){
+  var c = state.config;
+  return "Hola,\n\nTe invitamos a una entrevista por voz para el puesto de " + c.position + ".\n\n" +
+    "1) Abrí este enlace: " + (state.shareLink || "[pegá aquí el enlace de esta página]") + "\n" +
+    "2) Elegí “Tengo una entrevista” e ingresá este código: " + state.code + "\n\n" +
+    "Vas a responder algunas preguntas grabando audio, con un tiempo límite por pregunta. Permití el acceso al micrófono (mejor en Chrome).\n\n¡Éxitos!";
+}
+function mailtoHref(){
+  var c = state.config;
+  return "mailto:"+encodeURIComponent(state.candidateEmail||"")+"?subject="+encodeURIComponent("Entrevista para "+c.position)+"&body="+encodeURIComponent(buildShareMessage());
+}
+
+function GmailBlock(){
+  var gs = state.gmailStatus;
+  var out = '';
+  if (gs === "available"){
+    if (state.sendState === "sent"){
+      out += '<div class="note note-info">'+ic('check',15)+'<span>Enviado desde tu Gmail'+(state.sentMessageId?(' <span class="mono" style="opacity:.7">('+esc(state.sentMessageId)+')</span>'):'')+'. Podés volver a enviarlo si hace falta.</span></div>';
+    }
+    if (state.sendState === "error" && state.sendError){
+      out += Note("err", esc(state.sendError.message));
+    }
+    out += '<button class="btn btn-teal" id="gmailBtn" data-action="send-gmail" '+(state.sendState==="sending"?'disabled':'')+'>' +
+      (state.sendState==="sending" ? ic('loader',15,'spin')+' Enviando desde Gmail…' : ic('send',15)+' Enviar desde tu Gmail') +
+      '</button>';
+  } else if (gs === "checking" || !gs){
+    out += '<button class="btn btn-ghost" disabled>'+ic('loader',15,'spin')+' Revisando conexión con Gmail…</button>';
+  } else if (gs === "needs_reauth"){
+    out += Note("warn","Tu conexión con Gmail necesita reconectarse. Andá a claude.ai → Configuración → Conectores, reconectá Gmail y volvé a esta pantalla.");
+  } else {
+    out += '<p style="margin:0;font-size:12px;color:var(--muted)">El envío directo por Gmail está disponible cuando esta página corre dentro de claude.ai con el conector de Gmail conectado. Acá, usá el enlace de mail o copiá el mensaje.</p>';
+  }
+  return out;
+}
+
+Screens.share = function(){
+  var c = state.config;
+  var message = buildShareMessage();
+  return Header() +
+  '<div class="card">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;color:var(--teal)">'+ic('check',19)+'<h2 style="font-size:17px;color:var(--ink)">Entrevista lista para compartir</h2></div>' +
+    (state.storageWarn ? Note("warn","No se pudo guardar en este navegador (¿modo privado o memoria llena?). Usá “Previsualizar” para probar el flujo igual.") : "") +
+    Note("info","El código funciona dentro de este mismo navegador. Para probarlo de punta a punta, abrí esta misma página en otra pestaña de este dispositivo e ingresá el código como candidato.") +
+    '<div class="share-code"><div class="lbl">Código de la entrevista</div><div class="val mono">'+esc(state.code)+'</div>' +
+      '<button class="copybtn" data-action="copy-code">'+ic('copy',12)+' <span id="copyCodeLbl">Copiar código</span></button></div>' +
+    '<div style="display:grid;gap:16px">' +
+      '<label class="field"><span class="field-label">Email del entrevistado</span>' + fieldInput("f_email","nombre@correo.com", state.candidateEmail, "mail") + '<span class="field-hint">Va a tener que escribir este mismo email, junto con el código, para poder entrar a la entrevista.</span></label>' +
+      '<label class="field"><span class="field-label">Enlace de esta página (opcional)</span><span class="field-hint" style="margin:0 0 6px">Pegá acá la URL de este artefacto para incluirla en el mail.</span>' + fieldInput("f_link","https://…", state.shareLink) + '</label>' +
+    '</div>' +
+    '<div style="margin-top:18px">' + GmailBlock() + '</div>' +
+    '<div class="flex-actions">' +
+      '<a class="btn btn-ghost" id="mailBtn" href="'+esc(mailtoHref())+'" target="_top" rel="noopener">'+ic('mail',15)+' Abrir en tu cliente de correo</a>' +
+      '<button class="btn btn-ghost" data-action="copy-msg">'+ic('copy',15)+' <span id="copyMsgLbl">Copiar mensaje</span></button>' +
+      '<button class="btn btn-ghost" data-action="preview">'+ic('eye',15)+' Previsualizar</button>' +
+      '<button class="btn btn-ghost" data-action="go-recruiterhome" style="margin-left:auto">Volver al panel</button>' +
+    '</div>' +
+    '<p style="margin:16px 0 0;font-size:12px;color:var(--muted)">Si el envío directo por Gmail no está disponible, “Abrir en tu cliente de correo” arma el mensaje en tu app de mail, o usá “Copiar mensaje” y pegalo donde prefieras. Después entrá a “Ver respuestas” con este mismo código.</p>' +
+  '</div>';
+};
+
+function CodeScreen(opts){
+  return Header() +
+  '<div class="card" style="max-width:420px;margin:0 auto;">' +
+    backlink(opts.back, "Volver") +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic(opts.icon,19)+'<h2 style="font-size:17px;color:var(--ink)">'+esc(opts.title)+'</h2></div>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">'+esc(opts.subtitle)+'</p>' +
+    ErrBox() +
+    (opts.needsEmail ? ('<label class="field" style="display:block;margin-bottom:12px"><span class="field-label">Email al que te llegó la invitación</span>' + fieldInput("emailVal","nombre@correo.com","","mail") + '</label>') : '') +
+    (opts.needsEmail ? '<span class="field-label" style="display:block;margin-bottom:6px">Código de la entrevista</span>' : '') +
+    '<div class="input-row" style="margin-bottom:16px;justify-content:center"><input id="codeVal" class="mono" style="text-align:center;font-size:18px;letter-spacing:.2em" placeholder="AB7K2Q" maxlength="8"></div>' +
+    '<button class="btn btn-primary btn-block" id="codeBtn">'+ic('chevron',15)+' '+esc(opts.cta)+'</button>' +
+  '</div>';
+}
+Screens["cand-code"] = function(){ return CodeScreen({ title:"Ingresá a tu entrevista", subtitle:"Escribí el email al que te enviaron la invitación y el código que te compartieron junto con él. Vas a responder por audio, con un tiempo límite por pregunta.", cta:"Empezar entrevista", back:"home", icon:"mic", needsEmail:true }); };
+Screens["results-code"] = function(){ return CodeScreen({ title:"Ver respuestas y evaluación", subtitle:"Ingresá el código de la entrevista que compartiste con el candidato.", cta:"Abrir resultados", back:"go-recruiterhome", icon:"eye" }); };
+
+function Badge(text, catKey){
+  var v = 'var(' + (CATEGORY_VAR[catKey]||'--teal') + ')';
+  var t = 'var(' + (CATEGORY_TINT[catKey]||'--teal-tint') + ')';
+  return '<span class="badge" style="background:'+t+';color:'+v+'">'+esc(text)+'</span>';
+}
+
+Screens.interview = function(){
+  var q = state.questions[state.idx];
+  if (!q) return Header() + Centered(ic('alert',28), "No hay más preguntas", "Volvé al inicio.");
+  var total = state.questions.length;
+  var pct = ((state.idx + (state.answers[q.id]?1:0)) / total) * 100;
+  var root = q.rootId || q.id;
+  var nx = state.questions[state.idx+1];
+  var nextIsFollowup = !!(nx && nx.isFollowup && nx.rootId === root);
+  var answer = state.answers[q.id];
+  var answered = !!(answer && answer.blobUrl);
+  var analyzing = state.analyzingId === q.id;
+  var showForce = answered && !state.recording && !analyzing && (q.depth||0) < 2 && !nextIsFollowup && state.interviewMode !== "candidate";
+  var isCandidate = state.interviewMode === "candidate";
+  var lastLabel = isCandidate ? "Enviar respuestas" : "Terminar entrevista";
+
+  var ring = 2*Math.PI*54;
+  var progress = state.recording ? state.timeLeft/q.seconds : 1;
+  var overtime = state.recording && state.timeLeft <= 10;
+
+  var html = Header();
+  if (state.config.position) html += '<p style="font-size:12px;color:var(--muted);font-weight:600;margin:0 0 8px">Entrevista · '+esc(state.config.position)+'</p>';
+  html += '<div style="margin-bottom:22px">' +
+    '<div class="progress-top"><span>Pregunta '+(state.idx+1)+' de '+total+'</span><span>'+Math.round(pct)+'% completo</span></div>' +
+    '<div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div>' +
+  '</div>';
+
+  html += '<div class="card">';
+  html += '<div class="qa-meta">' + Badge(q.category, q.category) +
+    '<span class="pill-time">'+ic('clock',12)+' '+fmt(q.seconds)+' para responder</span>' +
+    (q.lang!=="es" ? Badge(LANG_LABEL[q.lang], "Repregunta") : '') +
+  '</div>';
+  if (q.isFollowup && q.reason) html += '<div class="followup-reason">El entrevistador repregunta para profundizar: '+esc(q.reason)+'</div>';
+  html += '<p style="font-size:17px;line-height:1.55;font-family:Fraunces,Georgia,serif;font-weight:500;margin:0">'+esc(q.text)+'</p>';
+
+  html += '<div class="rec-wrap"><div class="rec-ring">' +
+    '<svg width="168" height="168" viewBox="0 0 128 128">' +
+      '<circle cx="64" cy="64" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>' +
+      '<circle cx="64" cy="64" r="54" fill="none" stroke="'+(overtime?'var(--brick)':'var(--teal)')+'" stroke-width="6" stroke-linecap="round" stroke-dasharray="'+ring+'" stroke-dashoffset="'+(ring*(1-progress))+'" style="transition:stroke-dashoffset 1s linear"/>' +
+    '</svg>';
+  if (state.recording){
+    html += '<button class="rec-btn rec-active" data-action="stop-rec">'+ic('square',20)+'<span class="mono" style="font-size:17px;font-weight:600">'+fmt(state.timeLeft)+'</span></button>';
+  } else if (answered){
+    html += '<div class="rec-btn rec-done">'+ic('check',24)+'<span style="font-size:12px;font-weight:600">Grabado</span></div>';
+  } else {
+    html += '<button class="rec-btn rec-idle" data-action="start-rec">'+ic('mic',22)+'<span style="font-size:12px;font-weight:600">Grabar</span></button>';
+  }
+  html += '</div><p class="rec-hint">' + (state.recording ? "Grabando… tocá el cuadrado para terminar antes." : answered ? "Podés escuchar tu respuesta o volver a grabar." : "Tocá el micrófono y el cronómetro arranca. Se corta solo al llegar a 0.") + '</p></div>';
+
+  if (state.micDenied) html += Note("err","No pude acceder al micrófono. Dale permiso al navegador e intentá de nuevo.");
+
+  if (answer && answer.blobUrl && !state.recording){
+    html += '<div class="transcript-box"><audio controls src="'+answer.blobUrl+'"></audio>';
+    if (answer.transcript) html += '<div style="margin-top:12px"><div class="transcript-label">'+ic('msg',12)+' Transcripción aproximada</div><p style="margin:0;font-size:13.5px">'+esc(answer.transcript)+'</p></div>';
+    html += '</div>';
+  }
+  if (analyzing) html += '<div class="hesitant-note">'+ic('loader',14,'spin')+' El entrevistador está revisando tu respuesta…</div>';
+  if (state.recording && state.live) html += '<div class="transcript-box" style="margin-top:12px;color:var(--muted)">'+esc(state.live)+'</div>';
+  html += '</div>';
+
+  html += '<div class="flex-actions">';
+  if (answer && !state.recording) html += '<button class="btn btn-ghost btn-sm" data-action="re-record">'+ic('rotate',14)+' Volver a grabar</button>';
+  if (showForce) html += '<button class="btn btn-ghost btn-sm" data-action="force-followup" style="color:var(--teal)">'+ic('sparkle',14)+' Profundizar</button>';
+  html += '<button class="btn btn-primary" data-action="next-q" style="margin-left:auto" '+(analyzing?'disabled':'')+'>' +
+    (analyzing ? ic('loader',15,'spin')+' Revisando respuesta…' : nextIsFollowup ? "Ir a la repregunta "+ic('chevron',15) : state.idx < total-1 ? "Siguiente pregunta "+ic('chevron',15) : esc(lastLabel)+" "+ic('chevron',15)) +
+  '</button></div>';
+  return html;
+};
+
+Screens.review = function(){
+  var qs = state.questions, answers = state.answers, c = state.config;
+  var answeredN = qs.filter(function(q){ return answers[q.id] && (answers[q.id].transcript || answers[q.id].blobUrl); }).length;
+  var canEvaluate = Object.values(answers).some(function(a){ return a && a.transcript && a.transcript.length > 8; });
+  var html = Header();
+  html += '<div class="card" style="margin-bottom:20px">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('users',18)+'<h2 style="font-size:17px;color:var(--ink)">Respuestas del candidato</h2></div>' +
+    '<p style="font-size:13px;color:var(--muted);margin:0">'+esc(c.position)+' · código '+esc(state.code)+' · '+answeredN+' de '+qs.length+' respondidas.</p>' +
+    (state.audioOmitted ? Note("warn","Algunos audios eran muy pesados para guardarse localmente. Las transcripciones completas sí están disponibles (es lo que usa la evaluación).") : "") +
+    ErrBox() +
+    '<div class="flex-actions" style="margin-top:16px">' +
+      '<button class="btn btn-teal" id="evalBtn" '+(canEvaluate?'':'disabled')+'>'+ic('sparkle',15)+' Generar evaluación</button>' +
+      '<button class="btn btn-ghost" data-action="go-recruiterhome">'+ic('back',14)+' Volver al panel</button>' +
+    '</div>' +
+    (!canEvaluate ? '<p style="margin:12px 0 0;font-size:12px;color:var(--muted)">La evaluación necesita transcripción de al menos una respuesta. Igual podés escuchar los audios disponibles.</p>' : '') +
+  '</div>';
+  html += '<div style="display:grid;gap:12px">';
+  qs.forEach(function(q,i){
+    var a = answers[q.id]; var isF = q.isFollowup;
+    var m = a ? speechMetrics(a.transcript||"") : null;
+    var sig = a && a.signals ? ('pausa máx '+ (a.signals.longestSilence||0) +'s · duró '+(a.signals.durationSec||0)+'s') : '';
+    html += '<div class="qa-item'+(isF?' followup':'')+'">' +
+      '<div class="qa-meta">' + (isF ? '<span style="font-size:12px;font-weight:700;color:var(--purple)">↳ Repregunta</span>' : '<span style="font-size:12px;font-weight:700;color:var(--muted)">P'+(i+1)+'</span>') +
+      (!isF ? Badge(q.category, q.category) : '') + (q.lang!=='es'?Badge(LANG_LABEL[q.lang],'Repregunta'):'') +
+      (sig ? '<span style="font-size:11.5px;color:var(--muted)" class="mono">'+sig+'</span>' : '') + '</div>' +
+      '<p class="qa-text">'+esc(q.text)+'</p>' +
+      (a && a.blobUrl ? '<audio controls src="'+a.blobUrl+'"></audio>' : '') +
+      (a && a.transcript ? '<p style="margin-top:10px;font-size:13.5px;color:'+(a.blobUrl?'var(--muted)':'var(--ink)')+'">'+esc(a.transcript)+'</p>' : (!a || !a.blobUrl) ? '<p style="font-style:italic;color:var(--muted);font-size:13px">Sin responder</p>' : '') +
+      (a && a.blobUrl ? '<button class="dl-audio" data-action="download-audio" data-qid="'+esc(q.id)+'" data-name="respuesta-'+(i+1)+extForAnswer(a)+'" style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;font-weight:600;color:var(--teal);background:none;border:none;padding:0;cursor:pointer;font-family:inherit">'+ic('download',13)+' <span>Descargar audio</span></button>' : '') +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
+};
+
+Screens.report = function(){
+  var r = state.report, c = state.config;
+  var recColor = r.recommendation.indexOf("Avanzar")===0 ? 'var(--green)' : r.recommendation.indexOf("reservas")>=0 ? 'var(--amber)' : 'var(--brick)';
+  var html = Header();
+  html += '<div class="report-hero">' +
+    '<div class="report-eyebrow">Evaluación automática · '+esc(c.position)+' · solo visible para vos</div>' +
+    '<div style="display:flex;align-items:flex-end;gap:14px;margin-top:8px;flex-wrap:wrap">' +
+      '<div class="report-score">'+r.score+'<span style="font-size:20px;opacity:.6">/10</span></div>' +
+      '<span class="rec-tag" style="background:rgba(255,255,255,.14);color:inherit;border:1px solid rgba(255,255,255,.25)">'+esc(r.recommendation)+'</span>' +
+    '</div>' +
+    '<p style="margin-top:14px;font-size:13.5px;opacity:.85;line-height:1.6">'+esc(r.overall)+'</p>' +
+    '<p style="margin-top:10px;font-size:11.5px;opacity:.55">Calculada localmente a partir de duración, fluidez y contenido de las respuestas — no usa un modelo de lenguaje.</p>' +
+  '</div>';
+  html += '<div class="grid2" style="margin-top:16px">' +
+    ReportList("Fortalezas", r.strengths, "var(--green)") +
+    ReportList("A mejorar", r.improve, "var(--amber)") +
+  '</div>';
+  if (r.probes && r.probes.length) html += '<div style="margin-top:16px">' + ReportList("Repreguntas sugeridas para la próxima ronda", r.probes, "var(--teal)") + '</div>';
+  html += '<div class="flex-actions">' +
+    '<button class="btn btn-ghost" data-action="back-review">'+ic('back',14)+' Volver a las respuestas</button>' +
+    '<button class="btn btn-primary" data-action="go-recruiterhome">'+ic('home',15)+' Volver al panel</button>' +
+  '</div>';
+  return html;
+};
+function ReportList(title, items, color){
+  if (!items || !items.length) return '';
+  return '<div class="card" style="padding:20px"><p style="font-size:13.5px;font-weight:700;color:'+color+';margin:0 0 10px">'+esc(title)+'</p><ul style="margin:0;padding:0;list-style:none;display:grid;gap:8px">' +
+    items.map(function(it){ return '<li style="display:flex;gap:9px;font-size:13.5px;line-height:1.5"><span style="margin-top:7px;width:6px;height:6px;border-radius:50%;background:'+color+';flex-shrink:0"></span><span>'+esc(it)+'</span></li>'; }).join('') +
+  '</ul></div>';
+}
+
+/* ================================================================
+   NAVIGATION HELPERS
+   ================================================================ */
+function resetInterview(){ state.questions=[]; state.answers={}; state.idx=0; state.report=null; rt.analyzed={}; }
+function goHome(){ resetInterview(); state.error=null; state.screen="home"; render(); }
+function goRecruiterHome(){ resetInterview(); state.error=null; state.screen="rec-home"; render(); }
+
+/* ================================================================
+   ACTIONS
+   ================================================================ */
+function enterRecruiter(){
+  state.error=null;
+  var p = lget("voz_pin");
+  state.screen = (p && p.pin) ? "pin-enter" : "pin-set";
+  render();
+}
+function setPin(pin){ lset("voz_pin", {pin:pin}); state.screen="rec-home"; render(); }
+function checkPin(pin){
+  var p = lget("voz_pin");
+  if (p && p.pin === pin){ state.error=null; state.screen="rec-home"; }
+  else state.error="PIN incorrecto.";
+  render();
+}
+
+function generate(){
+  state.error=null; state.screen="generating"; render();
+  setTimeout(function(){
+    try{
+      var qs = buildQuestions(state.config);
+      if (!qs.length) throw new Error("empty");
+      var code = makeCode();
+      var ok = lset("voz_iv_"+code, {
+        position: state.config.position, company: state.config.company, focus: state.config.focus,
+        level: state.config.level, language: state.config.language, followups: state.config.followups,
+        questions: qs, createdAt: Date.now()
+      });
+      rt.analyzed = {};
+      state.questions = qs; state.answers = {}; state.idx = 0; state.report = null;
+      state.code = code; state.candidateEmail=""; state.storageWarn = !ok;
+      state.sendState = "idle"; state.sendError = null; state.sentMessageId = null;
+      state.screen = "share";
+      probeGmailOnce();
+    } catch(e){
+      state.error = "No pude generar la entrevista. Revisá los datos y probá de nuevo.";
+      state.screen = "config";
+    }
+    render();
+  }, 700);
+}
+
+function emailsMatch(a, b){ return (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase(); }
+
+function loadForCandidate(emailRaw, raw){
+  var code = (raw||"").toUpperCase().trim();
+  var emailIn = (emailRaw||"").trim();
+  if (!emailIn){ state.error="Ingresá el email al que te enviaron la invitación."; render(); return; }
+  if (!code){ state.error="Ingresá el código."; render(); return; }
+  state.error=null; state.screen="loading"; render();
+  setTimeout(function(){
+    var iv = lget("voz_iv_"+code);
+    if (!iv || !iv.questions || !iv.questions.length){ state.error="No encontramos una entrevista con ese código en este navegador."; state.screen="cand-code"; render(); return; }
+    if (iv.candidateEmail && !emailsMatch(iv.candidateEmail, emailIn)){
+      state.error="Ese email no coincide con el que recibió la invitación para este código."; state.screen="cand-code"; render(); return;
+    }
+    state.config = { position:iv.position, company:iv.company, focus:iv.focus||"", level:iv.level||"Semi-Senior", language:iv.language||"es", includeEnglish:false, count:"auto", followups: iv.followups !== false };
+    rt.analyzed = {};
+    state.questions = iv.questions; state.answers = {}; state.idx = 0;
+    state.code = code; state.candidateEmail = emailIn; state.interviewMode = "candidate"; state.screen = "interview";
+    render();
+  }, 350);
+}
+
+function loadResults(raw){
+  var code = (raw||"").toUpperCase().trim();
+  if (!code){ state.error="Ingresá el código."; render(); return; }
+  state.error=null; state.screen="loading"; render();
+  setTimeout(function(){
+    var iv = lget("voz_iv_"+code), ans = lget("voz_ans_"+code);
+    if (!iv){ state.error="No encontramos esa entrevista en este navegador."; state.screen="results-code"; render(); return; }
+    if (!ans){ state.error="La entrevista existe, pero el candidato todavía no respondió (en este navegador)."; state.screen="results-code"; render(); return; }
+    state.config = { position:iv.position, company:iv.company, focus:iv.focus||"", level:iv.level||"Semi-Senior", language:iv.language||"es", includeEnglish:false, count:"auto", followups:true };
+    var qs = (ans.questions && ans.questions.length) ? ans.questions : iv.questions;
+    var rebuilt = {};
+    Object.keys(ans.answers||{}).forEach(function(qid){
+      var a = ans.answers[qid];
+      rebuilt[qid] = { blobUrl: a.audio || null, transcript: a.transcript || "", signals: a.signals || null };
+    });
+    state.questions = qs; state.answers = rebuilt; state.report = null; state.code = code; state.audioOmitted = !!ans.audioOmitted;
+    state.screen = "review";
+    render();
+  }, 350);
+}
+
+function submitAnswers(){
+  state.screen = "submitting"; render();
+  var budget = 3200000, used = 0, omitted = false;
+  var qs = state.questions.slice();
+  var out = {};
+  function processNext(i){
+    if (i >= qs.length){ finish(); return; }
+    var q = qs[i], a = state.answers[q.id];
+    if (!a){ processNext(i+1); return; }
+    if (a.blobUrl && a.blobUrl.indexOf("blob:")===0){
+      fetch(a.blobUrl).then(function(r){ return r.blob(); }).then(function(blob){
+        var fr = new FileReader();
+        fr.onload = function(){
+          var d = fr.result;
+          if (used + d.length <= budget){ out[q.id] = { transcript:a.transcript||"", signals:a.signals||null, audio:d }; used += d.length; }
+          else { out[q.id] = { transcript:a.transcript||"", signals:a.signals||null, audio:null }; omitted = true; }
+          processNext(i+1);
+        };
+        fr.onerror = function(){ out[q.id] = { transcript:a.transcript||"", signals:a.signals||null, audio:null }; omitted=true; processNext(i+1); };
+        fr.readAsDataURL(blob);
+      }).catch(function(){ out[q.id] = { transcript:a.transcript||"", signals:a.signals||null, audio:null }; omitted=true; processNext(i+1); });
+    } else {
+      out[q.id] = { transcript:a.transcript||"", signals:a.signals||null, audio:null };
+      processNext(i+1);
+    }
+  }
+  function finish(){
+    var strip = qs.map(function(q){ return { id:q.id, text:q.text, category:q.category, seconds:q.seconds, lang:q.lang, isFollowup:!!q.isFollowup, rootId:q.rootId, depth:q.depth||0, reason:q.reason||"" }; });
+    lset("voz_ans_"+state.code, { questions: strip, answers: out, submittedAt: Date.now(), audioOmitted: omitted });
+    state.screen = "cand-thanks"; render();
+  }
+  processNext(0);
+}
+
+/* ---- recording ---- */
+function pickMime(){
+  var types = ["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg"];
+  for (var i=0;i<types.length;i++){ if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(types[i])) return types[i]; }
+  return "";
+}
+function startRecording(q){
+  state.error=null; state.micDenied=false;
+  navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+    rt.stream = stream;
+    var mime = pickMime();
+    var mr = new MediaRecorder(stream, mime?{mimeType:mime}:undefined);
+    rt.chunks = []; rt.activeQ = q; rt.finalText = ""; state.live = "";
+    mr.ondataavailable = function(e){ if (e.data.size>0) rt.chunks.push(e.data); };
+    mr.onstop = function(){
+      var blob = new Blob(rt.chunks, {type: mr.mimeType});
+      var url = URL.createObjectURL(blob);
+      var qid = rt.activeQ ? rt.activeQ.id : null;
+      var dur = (Date.now() - rt.startTime)/1000;
+      var s = rt.sig;
+      var signals = { longestSilence: +s.longest.toFixed(1), totalSilence: +s.total.toFixed(1), spoke: s.spoke, durationSec: +dur.toFixed(1) };
+      if (qid) state.answers[qid] = { blobUrl:url, mime:mr.mimeType, transcript: rt.finalText.trim(), signals: signals };
+      if (rt.stream) rt.stream.getTracks().forEach(function(t){ t.stop(); });
+      stopMeter();
+      render();
+      maybeFollowup();
+    };
+    rt.recorder = mr; mr.start();
+    startMeter(stream); rt.startTime = Date.now();
+    startRecognition(q);
+    state.timeLeft = q.seconds; state.recording = true;
+    render();
+    tick();
+  }).catch(function(){ state.micDenied = true; render(); });
+}
+function startRecognition(q){
+  if (!hasSpeech) return;
+  try{
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var r = new SR();
+    r.lang = RECOG_LANG[q.lang] || "es-AR"; r.continuous = true; r.interimResults = true;
+    r.onresult = function(e){
+      var interim = "";
+      for (var i=e.resultIndex;i<e.results.length;i++){
+        var t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) rt.finalText += t + " "; else interim += t;
+      }
+      state.live = (rt.finalText+interim).trim();
+      if (state.recording) render();
+    };
+    r.onerror = function(){};
+    rt.recog = r; r.start();
+  } catch(e){}
+}
+function startMeter(stream){
+  try{
+    var Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return;
+    var ctx = new Ctx(); rt.audioCtx = ctx; if (ctx.resume) ctx.resume();
+    var src = ctx.createMediaStreamSource(stream);
+    var an = ctx.createAnalyser(); an.fftSize = 2048; src.connect(an);
+    var buf = new Uint8Array(an.fftSize);
+    rt.sig = { longest:0, cur:0, total:0, spoke:false };
+    rt.meterId = setInterval(function(){
+      an.getByteTimeDomainData(buf);
+      var sum=0; for (var i=0;i<buf.length;i++){ var d=(buf[i]-128)/128; sum+=d*d; }
+      var rms = Math.sqrt(sum/buf.length), dt=0.1;
+      if (rms < 0.02){ rt.sig.cur += dt; rt.sig.total += dt; if (rt.sig.cur > rt.sig.longest) rt.sig.longest = rt.sig.cur; }
+      else { rt.sig.cur = 0; rt.sig.spoke = true; }
+    }, 100);
+  } catch(e){}
+}
+function stopMeter(){ clearInterval(rt.meterId); try{ if (rt.audioCtx) rt.audioCtx.close(); }catch(e){} rt.audioCtx=null; }
+function stopRecording(){
+  clearTimeout(rt.timerId);
+  try{ if (rt.recorder && rt.recorder.state !== "inactive") rt.recorder.stop(); }catch(e){}
+  try{ if (rt.recog) rt.recog.stop(); }catch(e){}
+  state.recording = false;
+}
+function tick(){
+  clearTimeout(rt.timerId);
+  if (!state.recording) return;
+  if (state.timeLeft <= 0){ stopRecording(); render(); return; }
+  rt.timerId = setTimeout(function(){ state.timeLeft -= 1; render(); tick(); }, 1000);
+}
+
+function maybeFollowup(){
+  if (state.screen !== "interview") return;
+  var q = state.questions[state.idx];
+  if (!q || !state.config.followups) return;
+  if ((q.depth||0) >= 2) return;
+  var a = state.answers[q.id]; if (!a || !a.blobUrl) return;
+  if (rt.analyzed[q.id]) return;
+  rt.analyzed[q.id] = true;
+  var hasContent = a.transcript && a.transcript.length >= 8;
+  var hesitant = isHesitant(a);
+  if (!hasContent && !hesitant) return;
+  runAnalyze(q, false);
+}
+function runAnalyze(q, force){
+  state.analyzingId = q.id; render();
+  setTimeout(function(){
+    var a = state.answers[q.id] || {};
+    var hesitant = isHesitant(a);
+    var m = speechMetrics(a.transcript||"");
+    var shortContent = m.words < 10;
+    var shouldFollow = force || hesitant || shortContent;
+    if (shouldFollow){
+      var reasonKind = hesitant && !shortContent ? "delivery" : "content";
+      var fu = makeFollowup(q, reasonKind);
+      var i = state.questions.findIndex(function(x){ return x.id === q.id; });
+      if (i >= 0) state.questions.splice(i+1, 0, fu);
+    }
+    state.analyzingId = null;
+    render();
+  }, 900);
+}
+
+function reRecord(q){
+  var a = state.answers[q.id];
+  if (a && a.blobUrl && a.blobUrl.indexOf("blob:")===0) URL.revokeObjectURL(a.blobUrl);
+  delete state.answers[q.id];
+  startRecording(q);
+}
+function nextQuestion(){
+  if (state.recording) stopRecording();
+  if (state.idx < state.questions.length-1){ state.idx += 1; render(); }
+  else if (state.interviewMode === "candidate") submitAnswers();
+  else { state.screen = "review"; render(); }
+}
+function evaluate(){
+  state.screen = "evaluating"; state.error=null; render();
+  setTimeout(function(){
+    try{ state.report = evaluateLocally(state.questions, state.answers, state.config); state.screen = "report"; }
+    catch(e){ state.error = "No pude generar la evaluación. Probá de nuevo."; state.screen = "review"; }
+    render();
+  }, 900);
+}
+
+/* ================================================================
+   BINDING
+   ================================================================ */
+function copyText(txt, cb){
+  if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(cb).catch(function(){}); }
+}
+function bind(){
+  app.querySelectorAll("[data-action]").forEach(function(el){
+    el.addEventListener("click", function(){
+      var act = el.getAttribute("data-action");
+      if (act === "home") goHome();
+      else if (act === "go-recruiter") enterRecruiter();
+      else if (act === "go-candcode"){ state.error=null; state.screen="cand-code"; render(); }
+      else if (act === "go-recruiterhome") goRecruiterHome();
+      else if (act === "go-config"){ state.error=null; state.screen="config"; render(); }
+      else if (act === "go-resultscode"){ state.error=null; state.screen="results-code"; render(); }
+      else if (act === "preview"){ rt.analyzed={}; state.answers={}; state.idx=0; state.interviewMode="preview"; state.screen="interview"; render(); }
+      else if (act === "start-rec") startRecording(state.questions[state.idx]);
+      else if (act === "stop-rec") { stopRecording(); render(); }
+      else if (act === "re-record") reRecord(state.questions[state.idx]);
+      else if (act === "force-followup") runAnalyze(state.questions[state.idx], true);
+      else if (act === "next-q") nextQuestion();
+      else if (act === "back-review"){ state.screen="review"; render(); }
+      else if (act === "copy-code"){ copyText(state.code, function(){ var l=document.getElementById("copyCodeLbl"); if(l){ l.textContent="¡Copiado!"; setTimeout(function(){ if(l) l.textContent="Copiar código"; },1400);} }); }
+      else if (act === "copy-msg"){
+        copyText(buildShareMessage(), function(){ var l=document.getElementById("copyMsgLbl"); if(l){ l.textContent="¡Copiado!"; setTimeout(function(){ if(l) l.textContent="Copiar mensaje"; },1400);} });
+      }
+      else if (act === "download-audio"){
+        var qid = el.getAttribute("data-qid"), name = el.getAttribute("data-name");
+        var ans = state.answers[qid];
+        if (ans && ans.blobUrl) downloadAudio(ans.blobUrl, name || "respuesta.webm");
+      }
+      else if (act === "send-gmail") sendViaGmail();
+    });
+  });
+
+  /* config screen inputs (uncontrolled -> update state without full re-render) */
+  var f;
+  if ((f=document.getElementById("f_pos"))) f.addEventListener("input", function(e){ state.config.position=e.target.value; syncGenBtn(); });
+  if ((f=document.getElementById("f_company"))) f.addEventListener("input", function(e){ state.config.company=e.target.value; syncGenBtn(); });
+  if ((f=document.getElementById("f_focus"))) f.addEventListener("input", function(e){ state.config.focus=e.target.value; });
+  if ((f=document.getElementById("f_level"))) f.addEventListener("change", function(e){ state.config.level=e.target.value; });
+  if ((f=document.getElementById("f_lang"))) f.addEventListener("change", function(e){ state.config.language=e.target.value; render(); });
+  if ((f=document.getElementById("f_count"))) f.addEventListener("change", function(e){ state.config.count=e.target.value; });
+  if ((f=document.getElementById("f_followups"))) f.addEventListener("change", function(e){ state.config.followups=e.target.checked; });
+  if ((f=document.getElementById("f_english"))) f.addEventListener("change", function(e){ state.config.includeEnglish=e.target.checked; });
+  if ((f=document.getElementById("genBtn"))) f.addEventListener("click", function(){ if (state.config.position.trim() && state.config.company.trim()) generate(); });
+  function syncGenBtn(){ var b=document.getElementById("genBtn"); if (b) b.disabled = !(state.config.position.trim() && state.config.company.trim()); }
+
+  /* pin screens */
+  if ((f=document.getElementById("pin1"))){
+    var p1=document.getElementById("pin1"), p2=document.getElementById("pin2"), btn=document.getElementById("pinSetBtn");
+    function syncPin(){ var v1=p1.value.replace(/\D/g,"").slice(0,8); var v2=p2.value.replace(/\D/g,"").slice(0,8); if(p1.value!==v1)p1.value=v1; if(p2.value!==v2)p2.value=v2; btn.disabled = !(v1.length>=4 && v1===v2); }
+    p1.addEventListener("input", syncPin); p2.addEventListener("input", syncPin);
+    btn.addEventListener("click", function(){ if (!btn.disabled) setPin(p1.value); });
+  }
+  if (document.getElementById("pinE")){
+    (function(){
+      var pinEl = document.getElementById("pinE");
+      pinEl.addEventListener("input", function(){ pinEl.value = pinEl.value.replace(/\D/g,"").slice(0,8); });
+      document.getElementById("pinEnterBtn").addEventListener("click", function(){ checkPin(pinEl.value); });
+      pinEl.addEventListener("keydown", function(e){ if (e.key==="Enter") checkPin(pinEl.value); });
+    })();
+  }
+
+  /* code screens */
+  if (document.getElementById("codeVal")){
+    (function(){
+      var codeEl = document.getElementById("codeVal");
+      var emailEl = document.getElementById("emailVal");
+      codeEl.addEventListener("input", function(){ codeEl.value = codeEl.value.toUpperCase().slice(0,8); });
+      var submitCode = function(){
+        var v = codeEl.value;
+        if (state.screen==="cand-code") loadForCandidate(emailEl ? emailEl.value : "", v);
+        else loadResults(v);
+      };
+      document.getElementById("codeBtn").addEventListener("click", submitCode);
+      codeEl.addEventListener("keydown", function(e){ if (e.key==="Enter") submitCode(); });
+      if (emailEl) emailEl.addEventListener("keydown", function(e){ if (e.key==="Enter") submitCode(); });
+      (emailEl || codeEl).focus();
+    })();
+  }
+
+  /* share screen */
+  function syncMailHref(){ var m=document.getElementById("mailBtn"); if (m) m.setAttribute("href", mailtoHref()); }
+  function persistCandidateEmail(){
+    if (!state.code) return;
+    var iv = lget("voz_iv_"+state.code);
+    if (!iv) return;
+    iv.candidateEmail = state.candidateEmail || "";
+    lset("voz_iv_"+state.code, iv);
+  }
+  if ((f=document.getElementById("f_email"))) f.addEventListener("input", function(e){ state.candidateEmail=e.target.value; syncMailHref(); persistCandidateEmail(); });
+  if ((f=document.getElementById("f_link"))) f.addEventListener("input", function(e){ state.shareLink=e.target.value; syncMailHref(); });
+
+  /* review screen */
+  if ((f=document.getElementById("evalBtn"))) f.addEventListener("click", evaluate);
+}
+
+render();
+})();
+</script>
