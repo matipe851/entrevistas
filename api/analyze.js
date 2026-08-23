@@ -7,6 +7,24 @@
 const MODEL = "gemini-2.0-flash";
 var CATEGORIES = ["Presentación", "Experiencia", "Competencias", "Situacional", "Motivación y cultura", "Cierre"];
 
+// --- Anti-abuso simple en memoria (por instancia del servidor) ---
+// Frena loops que quemarían la cuota de Gemini. Sin dependencias ni costo.
+var _rlStore = global.__voz_rl || (global.__voz_rl = {});
+function rateLimited(key, max, windowMs) {
+  var now = Date.now();
+  var arr = (_rlStore[key] || []).filter(function (t) { return now - t < windowMs; });
+  arr.push(now);
+  _rlStore[key] = arr;
+  if (Math.random() < 0.02) {
+    for (var k in _rlStore) { var a = _rlStore[k]; if (!a.length || now - a[a.length - 1] > windowMs) delete _rlStore[k]; }
+  }
+  return arr.length > max;
+}
+function clientIp(req) {
+  var xf = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return xf || req.headers["x-real-ip"] || "unknown";
+}
+
 var DIFFICULTY = {
   "Junior": "Nivel JUNIOR: preguntas de base y motivación. Evaluá ganas de aprender, conocimientos fundamentales, actitud y situaciones simples del día a día. No exijas experiencia previa profunda.",
   "Semi-Senior": "Nivel SEMI-SENIOR: preguntas de experiencia práctica concreta. Pedí ejemplos reales de problemas resueltos, autonomía, manejo de herramientas y resultados.",
@@ -118,10 +136,35 @@ module.exports = async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "method_not_allowed" }); return; }
   var key = process.env.GEMINI_API_KEY;
   if (!key) { res.status(200).json({ ok: false, error: "no_key" }); return; }
+
+  // Rate limit: máx. 25 llamadas cada 10 minutos por IP (protege la cuota de Gemini).
+  if (rateLimited("ai:" + clientIp(req), 25, 10 * 60 * 1000)) {
+    res.status(429).json({ ok: false, error: "rate_limited" }); return;
+  }
+
   try {
     var body = req.body;
     if (typeof body === "string") { try { body = JSON.parse(body); } catch (e) { body = {}; } }
     if (!body || typeof body !== "object") body = {};
+
+    // Validación / saneo de entrada para no mandar payloads gigantes al modelo.
+    if (body.position) body.position = String(body.position).slice(0, 200);
+    if (body.company) body.company = String(body.company).slice(0, 400);
+    if (body.focus) body.focus = String(body.focus).slice(0, 600);
+    if (body.level) body.level = String(body.level).slice(0, 40);
+    if (body.cvText) body.cvText = String(body.cvText).slice(0, 12000);
+    if (body.companyUrl) body.companyUrl = String(body.companyUrl).slice(0, 300);
+    if (Array.isArray(body.questions)) {
+      body.questions = body.questions.slice(0, 15).map(function (q) {
+        q = q || {};
+        return {
+          text: String(q.text || "").slice(0, 1000),
+          category: String(q.category || "").slice(0, 60),
+          transcript: String(q.transcript || "").slice(0, 6000),
+          durationSec: (typeof q.durationSec === "number" ? q.durationSec : null)
+        };
+      });
+    }
 
     if (body.task === "questions") {
       var companyWeb = body.companyUrl ? await fetchCompanyWeb(body.companyUrl) : "";
