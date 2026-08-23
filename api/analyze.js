@@ -32,6 +32,29 @@ var DIFFICULTY = {
   "Gerencial": "Nivel GERENCIAL: preguntas de liderazgo y estrategia. Evaluá conducción de equipos, gestión de conflictos, toma de decisiones de alto impacto, indicadores/resultados, presupuesto y visión de negocio."
 };
 
+function screeningPrompt(position, description, cvs) {
+  var lines = [];
+  lines.push("Sos un reclutador senior con 20 años de experiencia haciendo screening y preselección de CVs.");
+  lines.push("Puesto a cubrir: " + (position || "(sin título)") + ".");
+  if (description) {
+    lines.push("Descripción del puesto y de lo que se busca (usala como criterio principal):");
+    lines.push('"""' + description + '"""');
+  }
+  lines.push("");
+  lines.push("Te paso " + cvs.length + " CV(s) de candidatos. Evaluá cada uno SOLO por su encaje real con este puesto y esta descripción.");
+  lines.push("Sé exigente y honesto: si un CV no tiene relación con lo buscado, ponele puntaje bajo. No infles puntajes. Valorá experiencia concreta, tecnologías/herramientas, logros medibles, seniority y coincidencia con los requisitos.");
+  lines.push("");
+  cvs.forEach(function (c) {
+    lines.push("### CANDIDATO id=" + c.id + (c.name ? (" (archivo: " + c.name + ")") : "") + ":");
+    lines.push('"""' + (c.text || "(CV vacío o ilegible)") + '"""');
+    lines.push("");
+  });
+  lines.push("Devolvé EXCLUSIVAMENTE un JSON con esta forma, ORDENADO del MÁS adecuado (primero) al MENOS adecuado (último). Incluí TODOS los candidatos:");
+  lines.push('{ "ranking": [ { "id": (el id exacto del candidato), "name": (nombre y apellido detectado en el CV, o "" si no se ve), "score": (0 a 100), "fit": ("Alto"|"Medio"|"Bajo"), "summary": (1-2 oraciones de por qué encaja o no con el puesto), "pros": [..hasta 4 puntos fuertes para este puesto..], "cons": [..hasta 4 faltantes o dudas..] } ] }');
+  lines.push("Español rioplatense, profesional. Nada de texto fuera del JSON.");
+  return lines.join("\n");
+}
+
 function analysisPrompt(body) {
   var c = body || {};
   var qs = Array.isArray(c.questions) ? c.questions : [];
@@ -164,6 +187,23 @@ module.exports = async function handler(req, res) {
           durationSec: (typeof q.durationSec === "number" ? q.durationSec : null)
         };
       });
+    }
+
+    if (body.task === "screen") {
+      var pos = String(body.position || "").slice(0, 200);
+      var desc = String(body.description || "").slice(0, 4000);
+      var cvs = Array.isArray(body.cvs) ? body.cvs.slice(0, 25).map(function (c) {
+        c = c || {};
+        return { id: String(c.id || "").slice(0, 80), name: String(c.name || "").slice(0, 140), text: String(c.text || "").slice(0, 4000) };
+      }).filter(function (c) { return c.id; }) : [];
+      if (!cvs.length) { res.status(200).json({ ok: false, error: "no_cvs" }); return; }
+      var gs = await callGemini(key, [{ text: screeningPrompt(pos, desc, cvs) }], 8192, 0.3);
+      if (!gs.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gs.data && gs.data.error && gs.data.error.message) || ("HTTP " + gs.status) }); return; }
+      var parsedS = parseJson(extractText(gs.data));
+      var ranked = parsedS && Array.isArray(parsedS.ranking) ? parsedS.ranking : null;
+      if (!ranked || !ranked.length) { res.status(200).json({ ok: false, error: "parse_error" }); return; }
+      res.status(200).json({ ok: true, ranking: ranked });
+      return;
     }
 
     if (body.task === "questions") {
