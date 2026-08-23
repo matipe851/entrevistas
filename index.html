@@ -417,8 +417,10 @@ function supaSignup(email, password, captchaToken){
   return fetch(supaBase()+"/auth/v1/signup", { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, "Content-Type":"application/json" }, body:JSON.stringify(payload) })
     .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, j:j }; }); });
 }
-function supaLogin(email, password){
-  return fetch(supaBase()+"/auth/v1/token?grant_type=password", { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, "Content-Type":"application/json" }, body:JSON.stringify({ email:email, password:password }) })
+function supaLogin(email, password, captchaToken){
+  var payload={ email:email, password:password };
+  if(captchaToken) payload.gotrue_meta_security={ captcha_token: captchaToken };
+  return fetch(supaBase()+"/auth/v1/token?grant_type=password", { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, "Content-Type":"application/json" }, body:JSON.stringify(payload) })
     .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, j:j }; }); });
 }
 function supaRefresh(){
@@ -967,6 +969,7 @@ Screens["rec-login"] = function(){
     ErrBox() +
     '<label class="field" style="display:block;margin-bottom:12px"><span class="field-label">Email</span>'+fieldInput("authEmail","tu@empresa.com","","mail")+'</label>' +
     '<div class="input-row" style="margin-bottom:16px">'+ic('lock',15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"')+'<input id="authPass" type="password" placeholder="Contraseña"></div>' +
+    (captchaConfigured() ? '<div id="cf-turnstile" style="margin:0 0 16px;min-height:65px"></div>' : '') +
     '<button class="btn btn-primary btn-block" id="loginBtn" '+(state.busy?'disabled':'')+'>'+(state.busy?ic('loader',15,'spin')+' Ingresando…':ic('chevron',15)+' Ingresar')+'</button>' +
     '<p style="margin:16px 0 0;font-size:13px;color:var(--muted);text-align:center">¿No tenés cuenta? <a href="#" data-action="go-signup" style="color:var(--teal);font-weight:600">Registrate gratis</a></p>' +
   '</div>';
@@ -1713,11 +1716,12 @@ function checkPin(pin){
 }
 
 /* ---- auth (Supabase) ---- */
-function doLogin(email, password){
+function doLogin(email, password, captchaToken){
   email=(email||"").trim(); password=password||"";
   if(!email || !password){ state.error="Ingresá tu email y contraseña."; render(); return; }
+  if(captchaConfigured() && !captchaToken){ state.error="Completá la verificación de seguridad."; render(); return; }
   state.busy=true; state.error=null; render();
-  supaLogin(email, password).then(function(res){
+  supaLogin(email, password, captchaToken).then(function(res){
     state.busy=false;
     if(res.ok && res.j && res.j.access_token){ storeSessionFromToken(res.j); state.error=null; routeAfterAuth(); }
     else { state.error = (res.j && (res.j.error_description||res.j.msg||res.j.error)) || "Email o contraseña incorrectos."; render(); }
@@ -2296,7 +2300,20 @@ function bind(){
   if (document.getElementById("loginBtn")){
     (function(){
       var em=document.getElementById("authEmail"), pw=document.getElementById("authPass");
-      var go=function(){ doLogin(em?em.value:"", pw?pw.value:""); };
+      var tsToken="";
+      if(captchaConfigured() && document.getElementById("cf-turnstile")){
+        ensureTurnstile(function(){
+          try{
+            window.turnstile.render("#cf-turnstile", {
+              sitekey: TURNSTILE_SITE_KEY,
+              callback: function(t){ tsToken=t; },
+              "expired-callback": function(){ tsToken=""; },
+              "error-callback": function(){ tsToken=""; }
+            });
+          }catch(e){}
+        });
+      }
+      var go=function(){ doLogin(em?em.value:"", pw?pw.value:"", tsToken); };
       document.getElementById("loginBtn").addEventListener("click", go);
       if(pw) pw.addEventListener("keydown",function(e){ if(e.key==="Enter") go(); });
       if(em) em.focus();
