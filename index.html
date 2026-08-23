@@ -753,12 +753,12 @@ function waveBars(n, cls){
 var state = {
   screen: "home",
   error: null, busy: false, storageWarn: false,
-  config: { position:"", company:"", focus:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:true, recruiterEmail:"" },
+  config: { position:"", company:"", focus:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:false, recruiterEmail:"" },
   questions: [], idx: 0, answers: {}, report: null,
   audioUrls: {},
   invite: null,
   code: "", candidateEmail: "", shareLink: "", interviewMode: "candidate",
-  audioOmitted: false, recording:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
+  audioOmitted: false, recording:false, qTiming:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
   gmailStatus: null, sendState: "idle", sendError: null, sentMessageId: null,
   autoSendState: "idle", autoSendError: null
 };
@@ -766,7 +766,7 @@ var rt = { // runtime refs, not persisted / not re-rendered on
   recorder:null, chunks:[], stream:null, recog:null, finalText:"", timerId:null,
   meterId:null, audioCtx:null, startTime:0, activeQ:null,
   sig:{ longest:0, cur:0, total:0, spoke:false }, analyzed:{}, gmailProbed:false,
-  autoStartedFor:{}
+  autoStartedFor:{}, cvData:null
 };
 
 var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -867,19 +867,19 @@ Screens.config = function(){
       '</label>' +
       '<label class="field"><span class="field-label">Competencias o focos (opcional)</span>' + fieldInput("f_focus","Ej: orientación al cliente, manejo de objeciones", c.focus, "list") + '</label>' +
       '<label class="field" style="background:var(--teal-tint);border:1px solid var(--border-soft);border-radius:14px;padding:14px 16px"><span class="field-label">Tu email (para recibir las respuestas)</span>' + fieldInput("f_recruiter","reclutador@empresa.com", c.recruiterEmail, "mail") + '<span class="field-hint">Cuando el candidato termine, sus respuestas y la evaluación te llegan a este correo. Recomendado.</span></label>' +
+      '<label class="field"><span class="field-label">CV del candidato (opcional, PDF)</span><input id="f_cv" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)"><span class="field-hint">Si lo subís, la IA lo lee y adapta algunas preguntas a la experiencia real del candidato. Máx. 8 MB. Requiere la IA activada.</span><span id="cvStatus" style="display:block;font-size:12px;color:var(--teal);margin-top:4px"></span></label>' +
       '<div class="grid3">' +
         '<label class="field"><span class="field-label">Seniority</span><select class="bare" id="f_level">' + LEVELS.map(function(l){return '<option'+(l===c.level?' selected':'')+'>'+l+'</option>';}).join('') + '</select></label>' +
         '<label class="field"><span class="field-label">Idioma</span><select class="bare" id="f_lang">' + LANGS.map(function(l){return '<option value="'+l[0]+'"'+(l[0]===c.language?' selected':'')+'>'+l[1]+'</option>';}).join('') + '</select></label>' +
         '<label class="field"><span class="field-label">Cantidad</span><select class="bare" id="f_count"><option value="auto"'+(c.count==='auto'?' selected':'')+'>Automático</option>' + [5,8,10,12].map(function(n){return '<option value="'+n+'"'+(String(c.count)===String(n)?' selected':'')+'>'+n+' preguntas</option>';}).join('') + '</select></label>' +
       '</div>' +
-      '<label class="check-row" for="f_followups"><input type="checkbox" id="f_followups"' + (c.followups?' checked':'') + '><span><span class="check-title">Repreguntas automáticas</span><span class="check-sub">El entrevistador profundiza cuando una respuesta queda breve, genérica o dubitativa (pausas, muletillas). Hasta 2 por pregunta.</span></span></label>' +
       (c.language==='es' ? '<label class="check-row" for="f_english" style="background:var(--teal-tint);border-color:var(--border-soft)"><input type="checkbox" id="f_english"' + (c.includeEnglish?' checked':'') + '><span class="check-title">Sumar 2 preguntas en inglés para evaluar el nivel del idioma</span></label>' : '') +
     '</div>' +
     '<button class="btn btn-primary btn-block" id="genBtn" style="margin-top:26px" '+(ready?'':'disabled')+'>'+ic('sparkle',15)+' Generar entrevista</button>' +
   '</div>';
 };
 
-Screens.generating = function(){ return Header() + Centered(ic('loader',30,'spin'), "Armando la entrevista", "Redactando preguntas a medida del puesto…"); };
+Screens.generating = function(){ return Header() + Centered(ic('loader',30,'spin'), "Armando la entrevista", "La IA está redactando preguntas a medida del puesto" + (rt.cvData?" y del CV":"") + "… puede tardar unos segundos."); };
 Screens.loading = function(){ return Header() + Centered(ic('loader',30,'spin'), "Buscando…", "Un momento."); };
 Screens.submitting = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "No cierres esta ventana."); };
 Screens.evaluating = function(){ return Header() + Centered(ic('sparkle',30), "Evaluando respuestas", "Analizando duración, fluidez y contenido de cada respuesta…"); };
@@ -1000,6 +1000,23 @@ function analyzeWithAI(){
   return fetch(AI_ANALYZE_ENDPOINT, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) })
     .then(function(r){ return r.json(); })
     .then(function(j){ if (j && j.ok && j.analysis) return j.analysis; throw new Error((j && j.error) || "sin_analisis"); });
+}
+function generateQuestions(){
+  var c = state.config;
+  var target = c.count === "auto" ? (c.level==="Junior"?7:c.level==="Senior"?8:c.level==="Gerencial"?9:7) : (parseInt(c.count,10)||7);
+  var payload = { task:"questions", position:c.position, company:c.company, focus:c.focus, level:c.level, language:c.language, count:target, includeEnglish: !!c.includeEnglish };
+  if (rt.cvData && rt.cvData.data) payload.cv = { data: rt.cvData.data, mimeType: rt.cvData.mimeType };
+  return fetch(AI_ANALYZE_ENDPOINT, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if (j && j.ok && Array.isArray(j.questions) && j.questions.length) return j.questions; throw new Error((j && j.error) || "sin_preguntas"); });
+}
+function mapAIQuestions(list, lang){
+  return list.slice(0,14).map(function(q,i){
+    var cat = q.category || "Experiencia";
+    if (!SECONDS_BY_CAT[cat]) cat = "Experiencia";
+    var ql = (q.lang==="en") ? "en" : (lang||"es");
+    return { id:"q"+i, text:String(q.text||"").trim(), category:cat, seconds: SECONDS_BY_CAT[cat]||120, lang: ql };
+  }).filter(function(q){ return q.text; });
 }
 function reportFromAI(ai){
   function arr(x){ return Array.isArray(x) ? x.filter(function(v){ return v!=null && String(v).trim(); }).map(String) : []; }
@@ -1157,7 +1174,7 @@ Screens["invite-landing"] = function(){
   '<div class="card" style="max-width:460px;margin:0 auto">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('mic',20)+'<h2 style="font-size:19px;color:var(--ink)">Fuiste invitado a una entrevista</h2></div>' +
     '<p style="font-size:14px;color:var(--muted);margin:0 0 18px">Puesto: <strong style="color:var(--ink)">'+esc(inv.position||"")+'</strong>'+(empresa && empresa!=="la empresa"?(' · '+esc(empresa)):'')+'</p>' +
-    '<div class="note note-info">'+ic('alert',15)+'<span>Vas a responder '+(n?('<strong>'+n+' preguntas</strong>'):'unas preguntas')+' grabando audio. <strong>El cronómetro arranca en cuanto aparece cada pregunta</strong> (incluye tiempo para leerla y pensarla) y la grabación se hace sola. No se puede volver atrás ni regrabar. Permití el acceso al micrófono (funciona mejor en Chrome).</span></div>' +
+    '<div class="note note-info">'+ic('alert',15)+'<span>Grabás tus respuestas por audio. <strong>El cronómetro de cada pregunta arranca apenas aparece</strong> (leé y pensá), y cuando estés listo tocás <strong>Grabar</strong> para responder. No se puede volver atrás ni regrabar. Necesitás permitir el micrófono (funciona mejor en Chrome).</span></div>' +
     ErrBox() +
     '<label class="field" style="display:block;margin:16px 0 12px"><span class="field-label">Tu email</span>' + fieldInput("inviteEmail","nombre@correo.com","","mail") + '<span class="field-hint">Debe ser el email al que te llegó la invitación.</span></label>' +
     '<label class="field" style="display:block;margin:0 0 16px"><span class="field-label">Código de verificación</span><div class="input-row"><input id="inviteCode" class="mono" style="letter-spacing:.18em;text-transform:uppercase" placeholder="Ej: AB7K2Q" maxlength="8"></div><span class="field-hint">Está en el correo de la invitación. Es de un solo uso.</span></label>' +
@@ -1182,14 +1199,13 @@ Screens.interview = function(){
   var nextIsFollowup = !!(nx && nx.isFollowup && nx.rootId === root);
   var answer = state.answers[q.id];
   var answered = !!(answer && answer.blobUrl);
-  var analyzing = state.analyzingId === q.id;
-  var showForce = answered && !state.recording && !analyzing && (q.depth||0) < 2 && !nextIsFollowup && state.interviewMode !== "candidate";
+  var timedOut = !!(answer && answer.noAnswer);
   var isCandidate = state.interviewMode === "candidate";
   var lastLabel = isCandidate ? "Enviar respuestas" : "Terminar entrevista";
 
   var ring = 2*Math.PI*54;
-  var progress = state.recording ? state.timeLeft/(state.timeTotal || q.seconds) : 1;
-  var overtime = state.recording && state.timeLeft <= 10;
+  var progress = state.qTiming ? state.timeLeft/(state.timeTotal || q.seconds) : 1;
+  var overtime = state.qTiming && state.timeLeft <= 10;
 
   var html = Header();
   if (state.config.position) html += '<p style="font-size:12px;color:var(--muted);font-weight:600;margin:0 0 8px">Entrevista · '+esc(state.config.position)+'</p>';
@@ -1200,10 +1216,9 @@ Screens.interview = function(){
 
   html += '<div class="card">';
   html += '<div class="qa-meta">' + Badge(q.category, q.category) +
-    '<span class="pill-time">'+ic('clock',12)+' '+fmt(questionTime(q, isCandidate))+(isCandidate?' (incluye leer y pensar)':' para responder')+'</span>' +
-    (q.lang!=="es" ? Badge(LANG_LABEL[q.lang], "Repregunta") : '') +
+    '<span class="pill-time">'+ic('clock',12)+' '+fmt(questionTime(q, isCandidate))+(isCandidate?' en total':' para responder')+'</span>' +
+    (q.lang!=="es" ? Badge(LANG_LABEL[q.lang], q.lang==="en"?"Inglés":"Otro idioma") : '') +
   '</div>';
-  if (q.isFollowup && q.reason) html += '<div class="followup-reason">El entrevistador repregunta para profundizar: '+esc(q.reason)+'</div>';
   html += '<p style="font-size:17px;line-height:1.55;font-family:Fraunces,Georgia,serif;font-weight:500;margin:0">'+esc(q.text)+'</p>';
 
   html += '<div class="rec-wrap"><div class="rec-ring">' +
@@ -1215,39 +1230,40 @@ Screens.interview = function(){
     html += '<button class="rec-btn rec-active" data-action="stop-rec">'+ic('square',20)+'<span class="mono" style="font-size:17px;font-weight:600">'+fmt(state.timeLeft)+'</span></button>';
   } else if (answered){
     html += '<div class="rec-btn rec-done">'+ic('check',24)+'<span style="font-size:12px;font-weight:600">Grabado</span></div>';
-  } else if (isCandidate){
-    if (state.micDenied){
-      html += '<button class="rec-btn rec-idle" data-action="retry-rec" style="color:var(--brick)">'+ic('mic',22)+'<span style="font-size:11px;font-weight:600">Reintentar</span></button>';
-    } else {
-      html += '<div class="rec-btn rec-idle">'+ic('loader',20,'spin')+'<span style="font-size:11px;font-weight:600">Preparando…</span></div>';
-    }
+  } else if (timedOut){
+    html += '<div class="rec-btn rec-done" style="color:var(--brick)">'+ic('alert',24)+'<span style="font-size:11px;font-weight:600">Sin respuesta</span></div>';
+  } else if (state.micDenied){
+    html += '<button class="rec-btn rec-idle" data-action="retry-rec" style="color:var(--brick)">'+ic('mic',22)+'<span style="font-size:11px;font-weight:600">Reintentar</span></button>';
   } else {
     html += '<button class="rec-btn rec-idle" data-action="start-rec">'+ic('mic',22)+'<span style="font-size:12px;font-weight:600">Grabar</span></button>';
   }
+  html += '</div>';
+  // Reloj visible (el tiempo corre desde que apareció la pregunta)
+  if (state.qTiming && !state.recording && !answered && !timedOut){
+    html += '<p class="rec-hint" style="font-weight:700;color:'+(overtime?'var(--brick)':'var(--ink)')+'"><span class="mono">'+fmt(state.timeLeft)+'</span> restantes — tocá <strong>Grabar</strong> cuando estés listo</p>';
+  }
   var hintTxt;
-  if (state.recording) hintTxt = isCandidate ? "Grabando. Cuando termines de responder, tocá el cuadrado para pasar a la siguiente. Si no, se corta solo al llegar a 0." : "Grabando… tocá el cuadrado para terminar antes.";
+  if (state.recording) hintTxt = isCandidate ? "Grabando. Tocá el cuadrado cuando termines de responder." : "Grabando… tocá el cuadrado para terminar antes.";
   else if (answered) hintTxt = isCandidate ? "Respuesta guardada. No se puede volver a grabar; continuá con la siguiente." : "Podés escuchar tu respuesta o volver a grabar.";
-  else if (isCandidate) hintTxt = state.micDenied ? "Necesitamos el micrófono para grabar tu respuesta. Dale permiso y tocá Reintentar." : "El cronómetro arranca en cuanto aparece la pregunta. Leé, pensá un momento y respondé.";
+  else if (timedOut) hintTxt = "Se acabó el tiempo de esta pregunta sin una respuesta grabada. Podés continuar.";
+  else if (state.micDenied) hintTxt = "Necesitamos el micrófono para grabar. Dale permiso al navegador y tocá Reintentar.";
+  else if (isCandidate) hintTxt = "El tiempo ya corre. Leé y pensá la respuesta; cuando estés listo tocá Grabar. No se puede regrabar.";
   else hintTxt = "Tocá el micrófono y el cronómetro arranca. Se corta solo al llegar a 0.";
-  html += '</div><p class="rec-hint">' + hintTxt + '</p></div>';
-
-  if (state.micDenied && !isCandidate) html += Note("err","No pude acceder al micrófono. Dale permiso al navegador e intentá de nuevo.");
+  html += '<p class="rec-hint">' + hintTxt + '</p></div>';
 
   if (answer && answer.blobUrl && !state.recording && !isCandidate){
     html += '<div class="transcript-box"><audio controls src="'+answer.blobUrl+'"></audio>';
     if (answer.transcript) html += '<div style="margin-top:12px"><div class="transcript-label">'+ic('msg',12)+' Transcripción aproximada</div><p style="margin:0;font-size:13.5px">'+esc(answer.transcript)+'</p></div>';
     html += '</div>';
   }
-  if (analyzing) html += '<div class="hesitant-note">'+ic('loader',14,'spin')+' El entrevistador está revisando tu respuesta…</div>';
   if (state.recording && state.live) html += '<div class="transcript-box" style="margin-top:12px;color:var(--muted)">'+esc(state.live)+'</div>';
   html += '</div>';
 
   html += '<div class="flex-actions">';
-  if (answer && !state.recording && !isCandidate) html += '<button class="btn btn-ghost btn-sm" data-action="re-record">'+ic('rotate',14)+' Volver a grabar</button>';
-  if (showForce) html += '<button class="btn btn-ghost btn-sm" data-action="force-followup" style="color:var(--teal)">'+ic('sparkle',14)+' Profundizar</button>';
-  var showNext = isCandidate ? (answered || analyzing) : true;
-  if (showNext) html += '<button class="btn btn-primary" data-action="next-q" style="margin-left:auto" '+(analyzing?'disabled':'')+'>' +
-    (analyzing ? ic('loader',15,'spin')+' Revisando respuesta…' : nextIsFollowup ? "Ir a la repregunta "+ic('chevron',15) : state.idx < total-1 ? "Siguiente pregunta "+ic('chevron',15) : esc(lastLabel)+" "+ic('chevron',15)) +
+  if (answer && answer.blobUrl && !state.recording && !isCandidate) html += '<button class="btn btn-ghost btn-sm" data-action="re-record">'+ic('rotate',14)+' Volver a grabar</button>';
+  var showNext = isCandidate ? (answered || timedOut) : true;
+  if (showNext) html += '<button class="btn btn-primary" data-action="next-q" style="margin-left:auto">' +
+    (state.idx < total-1 ? "Siguiente pregunta "+ic('chevron',15) : esc(lastLabel)+" "+ic('chevron',15)) +
   '</button>';
   html += '</div>';
   return html;
@@ -1355,14 +1371,14 @@ function checkPin(pin){
 
 function generate(){
   state.error=null; state.screen="generating"; render();
-  setTimeout(function(){
+  function finishGen(qs){
     try{
-      var qs = buildQuestions(state.config);
+      if (!qs || !qs.length) qs = buildQuestions(state.config);
       if (!qs.length) throw new Error("empty");
       var code = makeCode();
       var ok = lset("voz_iv_"+code, {
         position: state.config.position, company: state.config.company, focus: state.config.focus,
-        level: state.config.level, language: state.config.language, followups: state.config.followups,
+        level: state.config.level, language: state.config.language, followups: false,
         questions: qs, createdAt: Date.now()
       });
       rt.analyzed = {};
@@ -1377,7 +1393,11 @@ function generate(){
       state.screen = "config";
     }
     render();
-  }, 700);
+  }
+  // Preguntas a medida con IA (Gemini). Si falla o no hay IA, se usan plantillas.
+  generateQuestions()
+    .then(function(list){ finishGen(mapAIQuestions(list, state.config.language)); })
+    .catch(function(){ finishGen(buildQuestions(state.config)); });
 }
 
 function emailsMatch(a, b){ return (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase(); }
@@ -1552,15 +1572,39 @@ function startRecording(q){
       if (rt.stream) rt.stream.getTracks().forEach(function(t){ t.stop(); });
       stopMeter();
       render();
-      maybeFollowup();
     };
     rt.recorder = mr; mr.start();
     startMeter(stream); rt.startTime = Date.now();
     startRecognition(q);
-    state.timeLeft = questionTime(q, state.interviewMode === "candidate"); state.timeTotal = state.timeLeft; state.recording = true;
-    render();
-    tick();
+    state.recording = true;
+    if (state.interviewMode === "candidate"){
+      // El cronómetro ya viene corriendo desde que apareció la pregunta.
+      if (!state.qTiming) startQuestionTimer(q);
+      render();
+    } else {
+      // Preview del reclutador: el reloj arranca al grabar.
+      state.timeLeft = questionTime(q, false); state.timeTotal = state.timeLeft; state.qTiming = true;
+      render(); tick();
+    }
   }).catch(function(){ state.micDenied = true; render(); });
+}
+/* Cronómetro de la pregunta: arranca cuando la pregunta aparece (modo candidato). */
+function startQuestionTimer(q){
+  clearTimeout(rt.timerId);
+  state.timeLeft = questionTime(q, state.interviewMode === "candidate");
+  state.timeTotal = state.timeLeft;
+  state.qTiming = true;
+  render();
+  tick();
+}
+function onQuestionTimeUp(){
+  state.qTiming = false;
+  var q = state.questions[state.idx];
+  if (state.recording){ stopRecorderOnly(); return; } // onstop guarda la respuesta grabada
+  if (q && !state.answers[q.id]){
+    state.answers[q.id] = { noAnswer:true, transcript:"", signals:{ durationSec:0, longestSilence:0, totalSilence:0, spoke:false } };
+  }
+  render();
 }
 function startRecognition(q){
   if (!hasSpeech) return;
@@ -1599,16 +1643,20 @@ function startMeter(stream){
   } catch(e){}
 }
 function stopMeter(){ clearInterval(rt.meterId); try{ if (rt.audioCtx) rt.audioCtx.close(); }catch(e){} rt.audioCtx=null; }
-function stopRecording(){
-  clearTimeout(rt.timerId);
+function stopRecorderOnly(){
   try{ if (rt.recorder && rt.recorder.state !== "inactive") rt.recorder.stop(); }catch(e){}
   try{ if (rt.recog) rt.recog.stop(); }catch(e){}
   state.recording = false;
 }
+function stopRecording(){
+  clearTimeout(rt.timerId);
+  state.qTiming = false;
+  stopRecorderOnly();
+}
 function tick(){
   clearTimeout(rt.timerId);
-  if (!state.recording) return;
-  if (state.timeLeft <= 0){ stopRecording(); render(); return; }
+  if (!state.qTiming) return;
+  if (state.timeLeft <= 0){ onQuestionTimeUp(); return; }
   rt.timerId = setTimeout(function(){ state.timeLeft -= 1; render(); tick(); }, 1000);
 }
 
@@ -1681,14 +1729,13 @@ function bind(){
       else if (act === "go-recruiter") enterRecruiter();
       else if (act === "go-candcode"){ state.error=null; state.screen="cand-code"; render(); }
       else if (act === "go-recruiterhome") goRecruiterHome();
-      else if (act === "go-config"){ state.error=null; state.screen="config"; render(); }
+      else if (act === "go-config"){ state.error=null; rt.cvData=null; state.screen="config"; render(); }
       else if (act === "go-resultscode"){ state.error=null; state.screen="results-code"; render(); }
       else if (act === "preview"){ rt.analyzed={}; state.answers={}; state.idx=0; state.interviewMode="preview"; state.screen="interview"; render(); }
       else if (act === "start-rec") startRecording(state.questions[state.idx]);
       else if (act === "retry-rec") { state.micDenied=false; render(); startRecording(state.questions[state.idx]); }
       else if (act === "stop-rec") { stopRecording(); render(); }
       else if (act === "re-record") reRecord(state.questions[state.idx]);
-      else if (act === "force-followup") runAnalyze(state.questions[state.idx], true);
       else if (act === "next-q") nextQuestion();
       else if (act === "back-review"){ state.screen="review"; render(); }
       else if (act === "copy-code"){ copyText(state.code, function(){ var l=document.getElementById("copyCodeLbl"); if(l){ l.textContent="¡Copiado!"; setTimeout(function(){ if(l) l.textContent="Copiar código"; },1400);} }); }
@@ -1713,10 +1760,29 @@ function bind(){
   if ((f=document.getElementById("f_company"))) f.addEventListener("input", function(e){ state.config.company=e.target.value; syncGenBtn(); });
   if ((f=document.getElementById("f_focus"))) f.addEventListener("input", function(e){ state.config.focus=e.target.value; });
   if ((f=document.getElementById("f_recruiter"))) f.addEventListener("input", function(e){ state.config.recruiterEmail=e.target.value; });
+  if ((f=document.getElementById("f_cv"))) f.addEventListener("change", function(e){
+    var file = e.target.files && e.target.files[0];
+    var st = document.getElementById("cvStatus");
+    rt.cvData = null;
+    if (!file){ if(st) st.textContent=""; return; }
+    if (file.size > 8*1024*1024){ if(st){ st.style.color="var(--brick)"; st.textContent="El archivo supera los 8 MB."; } return; }
+    if(st){ st.style.color="var(--muted)"; st.textContent="Leyendo el CV…"; }
+    var reader = new FileReader();
+    reader.onload = function(){
+      try{
+        var res = String(reader.result||"");
+        var comma = res.indexOf(",");
+        var b64 = comma>=0 ? res.slice(comma+1) : res;
+        rt.cvData = { data:b64, mimeType:(file.type||"application/pdf"), name:file.name };
+        if(st){ st.style.color="var(--teal)"; st.textContent="CV cargado: "+file.name+" (las preguntas se adaptarán a él)."; }
+      }catch(err){ if(st){ st.style.color="var(--brick)"; st.textContent="No pude leer el CV."; } }
+    };
+    reader.onerror = function(){ if(st){ st.style.color="var(--brick)"; st.textContent="No pude leer el CV."; } };
+    reader.readAsDataURL(file);
+  });
   if ((f=document.getElementById("f_level"))) f.addEventListener("change", function(e){ state.config.level=e.target.value; });
   if ((f=document.getElementById("f_lang"))) f.addEventListener("change", function(e){ state.config.language=e.target.value; render(); });
   if ((f=document.getElementById("f_count"))) f.addEventListener("change", function(e){ state.config.count=e.target.value; });
-  if ((f=document.getElementById("f_followups"))) f.addEventListener("change", function(e){ state.config.followups=e.target.checked; });
   if ((f=document.getElementById("f_english"))) f.addEventListener("change", function(e){ state.config.includeEnglish=e.target.checked; });
   if ((f=document.getElementById("genBtn"))) f.addEventListener("click", function(){ if (state.config.position.trim() && state.config.company.trim()) generate(); });
   function syncGenBtn(){ var b=document.getElementById("genBtn"); if (b) b.disabled = !(state.config.position.trim() && state.config.company.trim()); }
@@ -1784,17 +1850,12 @@ function bind(){
   /* review screen */
   if ((f=document.getElementById("evalBtn"))) f.addEventListener("click", evaluate);
 
-  /* candidate: the clock starts as soon as the question appears — auto-start recording */
+  /* candidate: the clock starts as soon as the question appears (recording is manual) */
   if (state.screen === "interview" && state.interviewMode === "candidate"){
     var cq = state.questions[state.idx];
-    if (cq && !state.answers[cq.id] && !state.recording && state.analyzingId !== cq.id && !state.micDenied && !rt.autoStartedFor[cq.id]){
+    if (cq && !state.answers[cq.id] && !state.qTiming && !rt.autoStartedFor[cq.id]){
       rt.autoStartedFor[cq.id] = true;
-      setTimeout(function(){
-        var now = state.questions[state.idx];
-        if (state.screen === "interview" && state.interviewMode === "candidate" && now && now.id === cq.id && !state.recording && !state.answers[cq.id] && !state.micDenied){
-          startRecording(cq);
-        }
-      }, 500);
+      startQuestionTimer(cq);
     }
   }
 }
