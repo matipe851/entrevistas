@@ -1057,7 +1057,8 @@ var state = {
   admin: { loading:false, items:null, error:null },
   audioOmitted: false, recording:false, qTiming:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
   gmailStatus: null, sendState: "idle", sendError: null, sentMessageId: null,
-  autoSendState: "idle", autoSendError: null
+  autoSendState: "idle", autoSendError: null,
+  aiFallback: null
 };
 var rt = { // runtime refs, not persisted / not re-rendered on
   recorder:null, chunks:[], stream:null, recog:null, finalText:"", timerId:null,
@@ -1527,7 +1528,8 @@ Screens["edit-questions"] = function(){
   html += '<div class="card">' +
     backlink("go-config","Volver a la configuración") +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('sparkle',19)+'<h2 style="font-size:18px;color:var(--ink)">Revisá y editá las preguntas</h2></div>' +
-    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">La IA armó '+state.questions.length+' preguntas para <strong>'+esc(state.config.position||"")+'</strong> ('+esc(state.config.level||"")+'). Podés cambiarlas, borrarlas o agregar nuevas antes de crear la entrevista.</p>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">'+(state.aiFallback?('Se prepararon '+state.questions.length+' preguntas base para <strong>'+esc(state.config.position||"")+'</strong> ('+esc(state.config.level||"")+').'):('La IA armó '+state.questions.length+' preguntas a medida para <strong>'+esc(state.config.position||"")+'</strong> ('+esc(state.config.level||"")+'), analizando el puesto'+((rt.cvText&&rt.cvText.length>40)?' y el CV':'')+'.'))+' Podés cambiarlas, borrarlas o agregar nuevas antes de crear la entrevista.</p>' +
+    (state.aiFallback ? Note("err", esc(state.aiFallback)) : "") +
     ErrBox();
   html += '<div style="display:grid;gap:12px">';
   state.questions.forEach(function(q,i){
@@ -2143,10 +2145,22 @@ function generate(){
     state.questions = qs;
     state.screen = "edit-questions"; render();
   }
-  // Preguntas a medida con IA (Gemini). Si falla o no hay IA, se usan plantillas.
+  // Preguntas a medida con IA (Gemini). Si falla o no hay IA, se usan plantillas (y te avisamos).
+  state.aiFallback = null;
   generateQuestions()
-    .then(function(list){ toEdit(mapAIQuestions(list, state.config.language)); })
-    .catch(function(){ toEdit(buildQuestions(state.config)); });
+    .then(function(list){ state.aiFallback = null; toEdit(mapAIQuestions(list, state.config.language)); })
+    .catch(function(e){ var code=(e&&e.message)||"network"; if(/fetch|network|load failed|failed to/i.test(code)) code="network"; state.aiFallback = aiErrorMessage(code); toEdit(buildQuestions(state.config)); });
+}
+function aiErrorMessage(code){
+  var m = {
+    "no_key": "la IA no está configurada (falta la GEMINI_API_KEY en Vercel)",
+    "gemini_error": "Gemini devolvió un error — probablemente la API key esté inválida, revocada o sin cuota",
+    "parse_error": "la IA respondió en un formato inesperado",
+    "sin_preguntas": "la IA no devolvió preguntas",
+    "network": "no pude conectarme con la IA"
+  };
+  var reason = m[code] || (code ? ("motivo: "+code) : "motivo desconocido");
+  return "⚠ Estas preguntas son de PLANTILLA (no personalizadas por IA), porque "+reason+". Revisá la GEMINI_API_KEY en Vercel para que las preguntas se generen a medida del puesto y del CV.";
 }
 function addQuestion(){
   var i = state.questions.length;
