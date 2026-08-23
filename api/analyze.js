@@ -4,7 +4,7 @@
 //   - (por defecto)      -> analiza las respuestas de la entrevista
 // Clave en la variable de entorno GEMINI_API_KEY (se configura en Vercel).
 
-const MODEL = "gemini-2.0-flash";
+const MODEL = "gemini-3.6-flash";
 var CATEGORIES = ["Presentación", "Experiencia", "Competencias", "Situacional", "Motivación y cultura", "Cierre"];
 
 // --- Anti-abuso simple en memoria (por instancia del servidor) ---
@@ -145,14 +145,32 @@ function questionsPrompt(body, companyWeb) {
   return lines.join("\n");
 }
 
-async function callGemini(key, parts, maxTokens, temp) {
-  var url = "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent?key=" + encodeURIComponent(key);
+// Modelo principal + respaldos por si Google retira alguno.
+var MODEL_FALLBACKS = [MODEL, "gemini-flash-latest", "gemini-2.5-flash"];
+async function callOneModel(model, key, parts, maxTokens, temp) {
+  var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
   var r = await fetch(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contents: [{ parts: parts }], generationConfig: { temperature: (temp == null ? 0.5 : temp), responseMimeType: "application/json", maxOutputTokens: maxTokens || 2048 } })
   });
   var data = await r.json();
   return { ok: r.ok, status: r.status, data: data };
+}
+function modelUnavailable(res) {
+  if (res.status === 404) return true;
+  var msg = (res.data && res.data.error && res.data.error.message) || "";
+  return /no longer available|is not found|not supported|update your code/i.test(msg);
+}
+async function callGemini(key, parts, maxTokens, temp) {
+  var last = null;
+  for (var i = 0; i < MODEL_FALLBACKS.length; i++) {
+    var res = await callOneModel(MODEL_FALLBACKS[i], key, parts, maxTokens, temp);
+    if (res.ok) return res;
+    last = res;
+    // Solo probamos el siguiente modelo si el problema es que este no existe/está retirado.
+    if (!modelUnavailable(res)) return res;
+  }
+  return last;
 }
 function parseJson(text) {
   if (!text) return null;
