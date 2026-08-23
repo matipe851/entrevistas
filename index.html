@@ -1680,7 +1680,7 @@ function generateQuestions(){
   else if (rt.cvData && rt.cvData.data) payload.cv = { data: rt.cvData.data, mimeType: rt.cvData.mimeType };
   return fetch(AI_ANALYZE_ENDPOINT, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) })
     .then(function(r){ return r.json(); })
-    .then(function(j){ if (j && j.ok && Array.isArray(j.questions) && j.questions.length) return j.questions; throw new Error((j && j.error) || "sin_preguntas"); });
+    .then(function(j){ if (j && j.ok && Array.isArray(j.questions) && j.questions.length) return j.questions; var er=new Error((j && j.error) || "sin_preguntas"); er.detail=(j && j.detail)||""; throw er; });
 }
 function mapAIQuestions(list, lang){
   return list.slice(0,14).map(function(q,i){
@@ -2149,9 +2149,9 @@ function generate(){
   state.aiFallback = null;
   generateQuestions()
     .then(function(list){ state.aiFallback = null; toEdit(mapAIQuestions(list, state.config.language)); })
-    .catch(function(e){ var code=(e&&e.message)||"network"; if(/fetch|network|load failed|failed to/i.test(code)) code="network"; state.aiFallback = aiErrorMessage(code); toEdit(buildQuestions(state.config)); });
+    .catch(function(e){ var code=(e&&e.message)||"network"; if(/fetch|network|load failed|failed to/i.test(code)) code="network"; state.aiFallback = aiErrorMessage(code, e&&e.detail); toEdit(buildQuestions(state.config)); });
 }
-function aiErrorMessage(code){
+function aiErrorMessage(code, detail){
   var m = {
     "no_key": "la IA no está configurada (falta la GEMINI_API_KEY en Vercel)",
     "gemini_error": "Gemini devolvió un error — probablemente la API key esté inválida, revocada o sin cuota",
@@ -2160,7 +2160,8 @@ function aiErrorMessage(code){
     "network": "no pude conectarme con la IA"
   };
   var reason = m[code] || (code ? ("motivo: "+code) : "motivo desconocido");
-  return "⚠ Estas preguntas son de PLANTILLA (no personalizadas por IA), porque "+reason+". Revisá la GEMINI_API_KEY en Vercel para que las preguntas se generen a medida del puesto y del CV.";
+  var d = (detail && String(detail).trim()) ? (" — Detalle de Gemini: “"+String(detail).slice(0,300)+"”") : "";
+  return "⚠ Estas preguntas son de PLANTILLA (no personalizadas por IA), porque "+reason+d+". Revisá la GEMINI_API_KEY en Vercel para que las preguntas se generen a medida del puesto y del CV.";
 }
 function addQuestion(){
   var i = state.questions.length;
