@@ -377,6 +377,23 @@ function markInterviewUsed(code, email){ if(!code) return; lset("voz_used_"+Stri
    ================================================================ */
 var SUPABASE_URL = "https://wxegfxixyzmshhhjrdrq.supabase.co";
 var SUPABASE_ANON_KEY = "sb_publishable_UXZlhNcgZkOYoX3GXbW7pA__S5T0HT1";
+// Captcha (Cloudflare Turnstile) para el registro de reclutadores. Pegá acá tu Site Key
+// (empieza con 0x...). Si queda vacío, no se muestra captcha y el registro funciona igual.
+var TURNSTILE_SITE_KEY = "";
+function captchaConfigured(){ return typeof TURNSTILE_SITE_KEY === "string" && TURNSTILE_SITE_KEY.length > 8; }
+var _tsLoaded=false, _tsLoading=false, _tsQueue=[];
+function ensureTurnstile(cb){
+  if(_tsLoaded && window.turnstile){ cb(); return; }
+  _tsQueue.push(cb);
+  if(_tsLoading) return;
+  _tsLoading=true;
+  var s=document.createElement("script");
+  s.src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+  s.async=true; s.defer=true;
+  s.onload=function(){ _tsLoaded=true; var q=_tsQueue; _tsQueue=[]; q.forEach(function(f){ try{f();}catch(e){} }); };
+  s.onerror=function(){ _tsLoading=false; };
+  document.head.appendChild(s);
+}
 /* Email(es) del/los dueño(s) que pueden aprobar reclutadores. Solo controla mostrar
    el panel de admin; la seguridad real está en la función /api/admin (ADMIN_EMAILS). */
 var ADMIN_EMAILS = ["matipealv@gmail.com"];
@@ -394,8 +411,10 @@ function storeSessionFromToken(j){
   setSession({ access_token:j.access_token, refresh_token:j.refresh_token, expires_at:j.expires_at, user:j.user || (getSession()&&getSession().user) || null });
   return true;
 }
-function supaSignup(email, password){
-  return fetch(supaBase()+"/auth/v1/signup", { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, "Content-Type":"application/json" }, body:JSON.stringify({ email:email, password:password }) })
+function supaSignup(email, password, captchaToken){
+  var payload={ email:email, password:password };
+  if(captchaToken) payload.gotrue_meta_security={ captcha_token: captchaToken };
+  return fetch(supaBase()+"/auth/v1/signup", { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, "Content-Type":"application/json" }, body:JSON.stringify(payload) })
     .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, j:j }; }); });
 }
 function supaLogin(email, password){
@@ -962,6 +981,7 @@ Screens["rec-signup"] = function(){
     '<label class="field" style="display:block;margin-bottom:12px"><span class="field-label">Email</span>'+fieldInput("authEmail","tu@empresa.com","","mail")+'</label>' +
     '<div class="input-row" style="margin-bottom:6px">'+ic('lock',15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"')+'<input id="authPass" type="password" placeholder="Contraseña (mín. 6 caracteres)"></div>' +
     '<div class="input-row" style="margin:10px 0 16px">'+ic('lock',15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"')+'<input id="authPass2" type="password" placeholder="Repetí la contraseña"></div>' +
+    (captchaConfigured() ? '<div id="cf-turnstile" style="margin:0 0 16px;min-height:65px"></div>' : '') +
     '<button class="btn btn-primary btn-block" id="signupBtn" '+(state.busy?'disabled':'')+'>'+(state.busy?ic('loader',15,'spin')+' Creando…':ic('users',15)+' Crear cuenta')+'</button>' +
     '<p style="margin:16px 0 0;font-size:13px;color:var(--muted);text-align:center">¿Ya tenés cuenta? <a href="#" data-action="go-login" style="color:var(--teal);font-weight:600">Iniciá sesión</a></p>' +
   '</div>';
@@ -1703,11 +1723,11 @@ function doLogin(email, password){
     else { state.error = (res.j && (res.j.error_description||res.j.msg||res.j.error)) || "Email o contraseña incorrectos."; render(); }
   }).catch(function(){ state.busy=false; state.error="No pude conectar. Revisá tu conexión."; render(); });
 }
-function doSignup(email, password){
+function doSignup(email, password, captchaToken){
   email=(email||"").trim(); password=password||"";
   if(!email || password.length<6){ state.error="Email válido y contraseña de al menos 6 caracteres."; render(); return; }
   state.busy=true; state.error=null; render();
-  supaSignup(email, password).then(function(res){
+  supaSignup(email, password, captchaToken).then(function(res){
     if(res.ok && res.j && res.j.access_token){ state.busy=false; storeSessionFromToken(res.j); state.error=null; routeAfterAuth(); return; }
     if(res.ok && res.j && (res.j.id || res.j.user)){
       // Cuenta creada pero requiere confirmar email: intentamos loguear igual.
@@ -2285,7 +2305,24 @@ function bind(){
   if (document.getElementById("signupBtn")){
     (function(){
       var em=document.getElementById("authEmail"), pw=document.getElementById("authPass"), pw2=document.getElementById("authPass2");
-      var go=function(){ if(pw&&pw2&&pw.value!==pw2.value){ state.error="Las contraseñas no coinciden."; render(); return; } doSignup(em?em.value:"", pw?pw.value:""); };
+      var tsToken="";
+      if(captchaConfigured() && document.getElementById("cf-turnstile")){
+        ensureTurnstile(function(){
+          try{
+            window.turnstile.render("#cf-turnstile", {
+              sitekey: TURNSTILE_SITE_KEY,
+              callback: function(t){ tsToken=t; },
+              "expired-callback": function(){ tsToken=""; },
+              "error-callback": function(){ tsToken=""; }
+            });
+          }catch(e){}
+        });
+      }
+      var go=function(){
+        if(pw&&pw2&&pw.value!==pw2.value){ state.error="Las contraseñas no coinciden."; render(); return; }
+        if(captchaConfigured() && !tsToken){ state.error="Completá la verificación de seguridad."; render(); return; }
+        doSignup(em?em.value:"", pw?pw.value:"", tsToken);
+      };
       document.getElementById("signupBtn").addEventListener("click", go);
       if(pw2) pw2.addEventListener("keydown",function(e){ if(e.key==="Enter") go(); });
       if(em) em.focus();
