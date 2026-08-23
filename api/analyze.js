@@ -147,11 +147,15 @@ function questionsPrompt(body, companyWeb) {
 
 // Modelo principal + respaldos por si Google retira alguno.
 var MODEL_FALLBACKS = [MODEL, "gemini-flash-latest", "gemini-2.5-flash"];
-async function callOneModel(model, key, parts, maxTokens, temp) {
+async function callOneModel(model, key, parts, maxTokens, temp, thinkingOff) {
   var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
+  var gen = { temperature: (temp == null ? 0.5 : temp), responseMimeType: "application/json", maxOutputTokens: maxTokens || 4096 };
+  // Los modelos "pensantes" (2.5 / 3.x) gastan tokens en razonar y pueden cortar la respuesta.
+  // Para tareas de JSON directo apagamos ese modo así devuelven el resultado completo.
+  if (thinkingOff) gen.thinkingConfig = { thinkingBudget: 0 };
   var r = await fetch(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: [{ parts: parts }], generationConfig: { temperature: (temp == null ? 0.5 : temp), responseMimeType: "application/json", maxOutputTokens: maxTokens || 2048 } })
+    body: JSON.stringify({ contents: [{ parts: parts }], generationConfig: gen })
   });
   var data = await r.json();
   return { ok: r.ok, status: r.status, data: data };
@@ -164,7 +168,13 @@ function modelUnavailable(res) {
 async function callGemini(key, parts, maxTokens, temp) {
   var last = null;
   for (var i = 0; i < MODEL_FALLBACKS.length; i++) {
-    var res = await callOneModel(MODEL_FALLBACKS[i], key, parts, maxTokens, temp);
+    var model = MODEL_FALLBACKS[i];
+    // 1) Intento con el modo "pensante" apagado (respuesta directa, más confiable para JSON).
+    var res = await callOneModel(model, key, parts, maxTokens, temp, true);
+    // Si el modelo no acepta thinkingConfig (400), reintento sin ese campo.
+    if (!res.ok && res.status === 400) {
+      res = await callOneModel(model, key, parts, maxTokens, temp, false);
+    }
     if (res.ok) return res;
     last = res;
     // Solo probamos el siguiente modelo si el problema es que este no existe/está retirado.
@@ -178,7 +188,14 @@ function parseJson(text) {
   var cleaned = String(text).replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
   try { return JSON.parse(cleaned); } catch (e2) { return null; }
 }
-function extractText(data) { try { return data.candidates[0].content.parts[0].text || ""; } catch (e) { return ""; } }
+function extractText(data) {
+  try {
+    var parts = (data.candidates[0].content.parts) || [];
+    var t = "";
+    for (var i = 0; i < parts.length; i++) { if (parts[i] && typeof parts[i].text === "string") t += parts[i].text; }
+    return t;
+  } catch (e) { return ""; }
+}
 
 async function fetchCompanyWeb(u) {
   try {
@@ -260,7 +277,7 @@ module.exports = async function handler(req, res) {
       if ((!body.cvText || body.cvText.length < 40) && body.cv && body.cv.data && body.cv.data.length < 3500000) {
         parts.push({ inline_data: { mime_type: (body.cv.mimeType || "application/pdf"), data: body.cv.data } });
       }
-      var g = await callGemini(key, parts, 2048, 0.85);
+      var g = await callGemini(key, parts, 8192, 0.85);
       if (!g.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (g.data && g.data.error && g.data.error.message) || ("HTTP " + g.status) }); return; }
       var parsedQ = parseJson(extractText(g.data));
       var qsr = parsedQ && Array.isArray(parsedQ.questions) ? parsedQ.questions : null;
@@ -269,7 +286,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    var ga = await callGemini(key, [{ text: analysisPrompt(body) }], 2048, 0.4);
+    var ga = await callGemini(key, [{ text: analysisPrompt(body) }], 8192, 0.4);
     if (!ga.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (ga.data && ga.data.error && ga.data.error.message) || ("HTTP " + ga.status) }); return; }
     var parsed = parseJson(extractText(ga.data));
     if (!parsed) { res.status(200).json({ ok: false, error: "parse_error" }); return; }
