@@ -115,9 +115,15 @@ function questionsPrompt(body, companyWeb) {
   lines.push("DIFICULTAD SEGÚN EL NIVEL. " + (DIFFICULTY[level] || DIFFICULTY["Semi-Senior"]));
   lines.push("Adaptá claramente la profundidad y exigencia de las preguntas a ese nivel: un puesto gerencial debe tener preguntas mucho más complejas y estratégicas que uno junior.");
   lines.push("");
-  lines.push("Generá exactamente " + n + " preguntas ESENCIALES y ORIGINALES. Requisitos:");
-  lines.push("- Variá el enfoque y la redacción; NO repitas estructura ni hagas preguntas genéricas de relleno. Que se note que son a medida de ESTE puesto y nivel.");
-  lines.push("- Cubrí: experiencia real y logros, competencias del rol, un caso situacional acorde al nivel, y motivación/encaje con la empresa.");
+  lines.push("REGLAS DE COHERENCIA (MUY IMPORTANTE, no las rompas):");
+  lines.push("- Antes de escribir cada pregunta, verificá que tenga sentido REAL para alguien en ESTE puesto y ESTE nivel. Si una pregunta no aplicaría a esta persona en la vida real, NO la hagas.");
+  lines.push("- Coherencia jerárquica: si el puesto es gerencial/de jefatura, la persona LIDERA y es la máxima instancia de su área: preguntá por conducción de equipos, decisiones de alto impacto, presupuesto, indicadores, manejo de conflictos y estrategia. NUNCA le preguntes qué haría 'si un cliente quiere hablar con un superior' ni la trates como si tuviera un jefe operativo por encima para escalar cada tema.");
+  lines.push("- Si el puesto es junior/sin gente a cargo, NO preguntes sobre liderar equipos, despedir personal, definir presupuestos ni decisiones estratégicas que no le corresponden.");
+  lines.push("- Coherencia con el rubro y las tareas: las preguntas tienen que ser propias del día a día de ESE puesto (un vendedor de mostrador, un desarrollador, un gerente y un administrativo viven realidades distintas). Nada de preguntas genéricas que sirvan para cualquier trabajo.");
+  lines.push("");
+  lines.push("Generá exactamente " + n + " preguntas ESENCIALES, ORIGINALES y REALISTAS, como en una entrevista real de este puesto. Requisitos:");
+  lines.push("- Que cada entrevista sea DISTINTA: variá el enfoque, el orden y la redacción. No uses fórmulas ni preguntas de relleno repetidas.");
+  lines.push("- Cubrí: experiencia real y logros concretos, competencias específicas del rol, uno o dos casos situacionales reales del puesto y su nivel, y motivación/encaje con la empresa.");
   if (companyWeb) {
     lines.push("");
     lines.push("INFORMACIÓN DE LA EMPRESA (extraída de su web). Usala para 1-2 preguntas sobre el encaje y el conocimiento de la empresa por parte del candidato:");
