@@ -511,9 +511,9 @@ function extractPdfText(file){
   });
 }
 /* Llama a la IA para rankear CVs contra un puesto. */
-function screenCVsAPI(position, description, cvs){
+function screenCVsAPI(position, description, cvs, must, nice){
   return fetch("/api/analyze", { method:"POST", headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({ task:"screen", position:position, description:description, cvs:cvs }) })
+    body:JSON.stringify({ task:"screen", position:position, description:description, cvs:cvs, must:must||"", nice:nice||"" }) })
     .then(function(r){ return r.json(); }).catch(function(){ return { ok:false, error:"network" }; });
 }
 function loadCVBank(){
@@ -540,7 +540,7 @@ function refreshCVBankQuiet(){
 }
 function goCVHome(){ state.error=null; state.searches.current=null; state.searches.error2=null; state.searches.note=null; state.screen="cv-home"; render(); loadSearches(); }
 function goCVBank(){ state.error=null; state.cvbank.msg=""; state.screen="cv-bank"; render(); loadCVBank(); }
-function goNewSearch(){ state.searches.error2=null; state.searches.note=null; state.newsearch={ title:"", description:"" }; state.screen="cv-newsearch"; render(); if(state.cvbank.cvs===null) loadCVBank(); }
+function goNewSearch(){ state.searches.error2=null; state.searches.note=null; state.newsearch={ title:"", description:"", must:"", nice:"" }; state.screen="cv-newsearch"; render(); if(state.cvbank.cvs===null) loadCVBank(); }
 
 /* Sube uno o varios CVs (PDF) al repositorio. */
 function uploadCVFiles(fileList){
@@ -579,20 +579,21 @@ function cvPayloadFrom(cvs){
 function doAnalyzeNewSearch(){
   var ns=state.newsearch;
   var title=(ns.title||"").trim(); var desc=(ns.description||"").trim();
+  var must=(ns.must||"").trim(); var nice=(ns.nice||"").trim();
   if(!title){ state.searches.error2="Poné el puesto a cubrir."; render(); return; }
   var cvs=state.cvbank.cvs||[];
   var payload=cvPayloadFrom(cvs);
   if(!payload.length){ state.searches.error2="No hay CVs con texto legible para analizar. Cargá algunos primero."; render(); return; }
   state.searches.note=(cvs.length>25)?("Se analizaron los primeros 25 de "+cvs.length+" CVs (por límite de una tanda). Podés dividir en más búsquedas si necesitás."):null;
   state.searches.analyzing=true; state.searches.error2=null; render();
-  dbCreateSearch({ title:title, description:desc }).then(function(row){
-    return screenCVsAPI(title, desc, payload).then(function(res){
+  dbCreateSearch({ title:title, description:desc, must_have:must||null, nice_to_have:nice||null }).then(function(row){
+    return screenCVsAPI(title, desc, payload, must, nice).then(function(res){
       if(!res || !res.ok) throw new Error((res&&res.error)||"analyze_failed");
       var when=new Date().toISOString();
       return dbUpdateSearch(row.id, { results:res.ranking, analyzed_at:when }).then(function(updated){
         state.searches.analyzing=false;
         state.searches.current = updated || Object.assign({}, row, { results:res.ranking, analyzed_at:when });
-        state.newsearch={ title:"", description:"" };
+        state.newsearch={ title:"", description:"", must:"", nice:"" };
         state.searches.items=null;
         state.screen="cv-ranking"; render();
       });
@@ -611,7 +612,7 @@ function doReanalyze(){
     if(!payload.length){ state.searches.error2="No hay CVs con texto para analizar."; render(); return; }
     state.searches.note=(cvs.length>25)?("Se analizaron los primeros 25 de "+cvs.length+" CVs."):null;
     state.searches.analyzing=true; state.searches.error2=null; render();
-    screenCVsAPI(x.title||"", x.description||"", payload).then(function(res){
+    screenCVsAPI(x.title||"", x.description||"", payload, x.must_have||"", x.nice_to_have||"").then(function(res){
       if(!res || !res.ok) throw new Error((res&&res.error)||"fail");
       var when=new Date().toISOString();
       return dbUpdateSearch(x.id, { results:res.ranking, analyzed_at:when }).then(function(updated){
@@ -1050,7 +1051,7 @@ var state = {
   dash: { loading:false, items:null, error:null, detail:null },
   cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"" },
   searches: { loading:false, items:null, error:null, current:null, analyzing:false, error2:null, note:null },
-  newsearch: { title:"", description:"" },
+  newsearch: { title:"", description:"", must:"", nice:"" },
   brand: { name:"", logo:"" },
   myApproved: null,
   admin: { loading:false, items:null, error:null },
@@ -1364,8 +1365,16 @@ Screens["cv-newsearch"] = function(){
     '<div style="display:grid;gap:16px">' +
       '<label class="field"><span class="field-label">Puesto a cubrir</span>'+fieldInput("f_searchtitle","Ej: Vendedor de mostrador, Desarrollador backend Ssr", ns.title, "briefcase")+'</label>' +
       '<label class="field"><span class="field-label">Descripción del puesto y qué buscás</span>' +
-        '<div class="input-row" style="align-items:flex-start"><span style="color:var(--muted);margin-top:2px">'+ic('list',15)+'</span><textarea id="f_searchdesc" rows="6" placeholder="Ej: Buscamos alguien con 2+ años en atención al cliente, manejo de caja, orientación comercial. Valoramos experiencia en retail y disponibilidad full time. Excluir perfiles sin experiencia presencial.">'+esc(ns.description)+'</textarea></div>' +
-        '<span class="field-hint">Requisitos, experiencia, tecnologías, lo que suma y lo que descarta.</span>' +
+        '<div class="input-row" style="align-items:flex-start"><span style="color:var(--muted);margin-top:2px">'+ic('list',15)+'</span><textarea id="f_searchdesc" rows="5" placeholder="Ej: Buscamos alguien con experiencia en atención al cliente, orientación comercial y trabajo en equipo. Tareas: caja, reposición, asesoramiento.">'+esc(ns.description)+'</textarea></div>' +
+        '<span class="field-hint">Descripción general del rol y las tareas.</span>' +
+      '</label>' +
+      '<label class="field"><span class="field-label" style="color:var(--brick)">Requisitos excluyentes (opcional)</span>' +
+        '<div class="input-row" style="align-items:flex-start"><span style="color:var(--brick);margin-top:2px">'+ic('alert',15)+'</span><textarea id="f_searchmust" rows="3" placeholder="Ej: 2+ años en retail presencial. Disponibilidad full time. Secundario completo.">'+esc(ns.must)+'</textarea></div>' +
+        '<span class="field-hint">Si un CV no los cumple, la IA lo manda al fondo del ranking (puntaje muy bajo).</span>' +
+      '</label>' +
+      '<label class="field"><span class="field-label" style="color:var(--green)">Requisitos que suman puntos (opcional)</span>' +
+        '<div class="input-row" style="align-items:flex-start"><span style="color:var(--green);margin-top:2px">'+ic('sparkle',15)+'</span><textarea id="f_searchnice" rows="3" placeholder="Ej: Experiencia con sistemas de caja, inglés, manejo de redes sociales.">'+esc(ns.nice)+'</textarea></div>' +
+        '<span class="field-hint">No excluyen: suman al puntaje del candidato que los tenga.</span>' +
       '</label>' +
     '</div>' +
     (nCv===0
@@ -1385,6 +1394,8 @@ Screens["cv-ranking"] = function(){
     '<div class="report-eyebrow">Búsqueda</div>' +
     '<h2 style="font-size:20px;margin:6px 0 0">'+esc(x.title||'(sin título)')+'</h2>' +
     (x.description?'<p style="margin-top:10px;font-size:13px;opacity:.85;line-height:1.6">'+esc(x.description)+'</p>':'') +
+    (x.must_have?'<p style="margin-top:8px;font-size:12px;opacity:.85"><strong>Excluyentes:</strong> '+esc(x.must_have)+'</p>':'') +
+    (x.nice_to_have?'<p style="margin-top:4px;font-size:12px;opacity:.85"><strong>Suman:</strong> '+esc(x.nice_to_have)+'</p>':'') +
     '<p style="margin-top:10px;font-size:11.5px;opacity:.6">'+(r.length?(r.length+' candidatos · analizado '+esc(fmtDate(x.analyzed_at))):'Sin analizar')+'</p>' +
   '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 16px">' +
@@ -1438,6 +1449,7 @@ Screens["interview-detail"] = function(){
     '<p style="margin-top:10px;font-size:11.5px;opacity:.6">'+esc(x.candidate_email||'')+' · '+esc(fmtDate(x.completed_at))+'</p>' +
   '</div>';
   html += '<div class="grid2" style="margin-top:16px">' + ReportList("Fortalezas", r.strengths, "var(--green)") + ReportList("A mejorar", r.improve, "var(--amber)") + '</div>';
+  html += LanguageBox(r.language);
   if (r.probes && r.probes.length) html += '<div style="margin-top:16px">'+ReportList("Repreguntas sugeridas", r.probes, "var(--teal)")+'</div>';
   var perMap = {}; if (r.perQuestion) r.perQuestion.forEach(function(p){ if(p&&p.n!=null) perMap[p.n]=p; });
   html += '<div style="display:flex;align-items:center;gap:8px;margin:20px 0 10px;color:var(--teal)">'+ic('mic',18)+'<h3 style="font-size:15px;color:var(--ink)">Respuestas</h3></div>';
@@ -1651,7 +1663,7 @@ function analyzeWithAI(){
     level: state.config.level, language: state.config.language,
     questions: state.questions.map(function(q,i){
       var a = state.answers[q.id] || {};
-      return { n:i+1, text:q.text, category:q.category, transcript:(a.transcript||""), durationSec:(a.signals&&a.signals.durationSec)||0 };
+      return { n:i+1, text:q.text, category:q.category, lang:q.lang||"es", transcript:(a.transcript||""), durationSec:(a.signals&&a.signals.durationSec)||0 };
     })
   };
   return fetch(AI_ANALYZE_ENDPOINT, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) })
@@ -1688,8 +1700,30 @@ function reportFromAI(ai){
     improve: arr(ai.improve),
     probes: arr(ai.probes),
     perQuestion: per,
+    language: (ai.language && typeof ai.language==="object") ? {
+      lang: String(ai.language.lang||""),
+      level: String(ai.language.level||""),
+      answeredInLanguage: ai.language.answeredInLanguage,
+      comment: String(ai.language.comment||"")
+    } : null,
     ai: true
   };
+}
+/* Color del nivel de idioma para los reportes. */
+function langLevelColor(lv){
+  lv=(lv||"").toLowerCase();
+  if(lv.indexOf("avanz")>=0||lv.indexOf("nativ")>=0||lv.indexOf("biling")>=0) return "var(--green)";
+  if(lv.indexOf("interm")>=0) return "var(--amber)";
+  return "var(--brick)";
+}
+function LanguageBox(L){
+  if(!L || !L.level) return "";
+  var col=langLevelColor(L.level);
+  return '<div class="card" style="padding:16px;margin-top:16px;border-left:3px solid '+col+'">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+ic('globe',16).replace('<svg','<svg style="color:'+col+'"')+'<p style="margin:0;font-size:13.5px;font-weight:700;color:var(--ink)">Nivel de idioma'+(L.lang?(' ('+esc(L.lang)+')'):'')+': <span style="color:'+col+'">'+esc(L.level)+'</span></p></div>' +
+    (L.answeredInLanguage===false?'<p style="margin:0 0 6px;font-size:12px;color:var(--brick)">⚠ No respondió en el idioma pedido.</p>':'') +
+    (L.comment?'<p style="margin:0;font-size:13px;color:var(--muted);line-height:1.5">'+esc(L.comment)+'</p>':'') +
+  '</div>';
 }
 
 /* ---------------- envío automático de resultados (sin acción del candidato) ----------------
@@ -1989,6 +2023,7 @@ Screens.report = function(){
     ReportList("Fortalezas", r.strengths, "var(--green)") +
     ReportList("A mejorar", r.improve, "var(--amber)") +
   '</div>';
+  html += LanguageBox(r.language);
   if (r.ai && r.perQuestion && r.perQuestion.length){
     var ratingColor = function(rt){ rt=(rt||"").toLowerCase(); return rt.indexOf("sólida")>=0||rt.indexOf("solida")>=0?"var(--green)":rt.indexOf("acept")>=0?"var(--blue)":rt.indexOf("floja")>=0?"var(--amber)":"var(--brick)"; };
     html += '<div class="card" style="padding:20px;margin-top:16px"><p style="font-size:13.5px;font-weight:700;color:var(--ink);margin:0 0 12px">Análisis por respuesta</p><div style="display:grid;gap:12px">';
@@ -2546,6 +2581,8 @@ function bind(){
   /* screening de CVs */
   if ((f=document.getElementById("f_searchtitle"))) f.addEventListener("input", function(e){ state.newsearch.title=e.target.value; });
   if ((f=document.getElementById("f_searchdesc"))) f.addEventListener("input", function(e){ state.newsearch.description=e.target.value; });
+  if ((f=document.getElementById("f_searchmust"))) f.addEventListener("input", function(e){ state.newsearch.must=e.target.value; });
+  if ((f=document.getElementById("f_searchnice"))) f.addEventListener("input", function(e){ state.newsearch.nice=e.target.value; });
   if (document.getElementById("analyzeBtn")) document.getElementById("analyzeBtn").addEventListener("click", doAnalyzeNewSearch);
   if ((f=document.getElementById("f_cvfiles"))) f.addEventListener("change", function(e){ var files=e.target.files; if(files&&files.length) uploadCVFiles(files); });
   if ((f=document.getElementById("f_cvpick"))) f.addEventListener("change", function(e){
