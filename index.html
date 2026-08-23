@@ -528,6 +528,16 @@ function loadSearches(){
   dbListSearches().then(function(items){ state.searches.loading=false; state.searches.items=items; render(); })
     .catch(function(){ state.searches.loading=false; state.searches.error="No pude cargar las búsquedas."; render(); });
 }
+/* Refresca el repositorio de CVs en segundo plano (para el selector de la config). */
+function refreshCVBankQuiet(){
+  if(!supaConfigured() || !isLoggedIn()) return;
+  var wasNull=(state.cvbank.cvs===null); var prevLen=(state.cvbank.cvs||[]).length;
+  dbListCVs().then(function(items){
+    var changed = wasNull || items.length!==prevLen;
+    state.cvbank.cvs=items;
+    if(changed && state.screen==="config") render();
+  }).catch(function(){});
+}
 function goCVHome(){ state.error=null; state.searches.current=null; state.searches.error2=null; state.searches.note=null; state.screen="cv-home"; render(); loadSearches(); }
 function goCVBank(){ state.error=null; state.cvbank.msg=""; state.screen="cv-bank"; render(); loadCVBank(); }
 function goNewSearch(){ state.searches.error2=null; state.searches.note=null; state.newsearch={ title:"", description:"" }; state.screen="cv-newsearch"; render(); if(state.cvbank.cvs===null) loadCVBank(); }
@@ -1052,7 +1062,7 @@ var rt = { // runtime refs, not persisted / not re-rendered on
   recorder:null, chunks:[], stream:null, recog:null, finalText:"", timerId:null,
   meterId:null, audioCtx:null, startTime:0, activeQ:null,
   sig:{ longest:0, cur:0, total:0, spoke:false }, analyzed:{}, gmailProbed:false,
-  autoStartedFor:{}, cvData:null, cvText:""
+  autoStartedFor:{}, cvData:null, cvText:"", cvId:null, cvName:""
 };
 
 var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -1469,7 +1479,15 @@ Screens.config = function(){
       '<label class="field"><span class="field-label">Competencias o focos (opcional)</span>' + fieldInput("f_focus","Ej: orientación al cliente, manejo de objeciones", c.focus, "list") + '</label>' +
       '<label class="field"><span class="field-label">Web o perfil de la empresa (opcional)</span>' + fieldInput("f_companyurl","https://empresa.com", c.companyUrl, "globe") + '<span class="field-hint">Si la cargás, la IA lee la web y arma preguntas sobre el encaje con la empresa. Requiere la IA activada.</span></label>' +
       '<label class="field" style="background:var(--teal-tint);border:1px solid var(--border-soft);border-radius:14px;padding:14px 16px"><span class="field-label">Tu email (para recibir las respuestas)</span>' + fieldInput("f_recruiter","reclutador@empresa.com", c.recruiterEmail, "mail") + '<span class="field-hint">Cuando el candidato termine, sus respuestas y la evaluación te llegan a este correo. Recomendado.</span></label>' +
-      '<label class="field"><span class="field-label">CV del candidato (opcional, PDF)</span><input id="f_cv" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)"><span class="field-hint">Si lo subís, la IA lo lee y adapta algunas preguntas a la experiencia real del candidato. Máx. 10 MB. Requiere la IA activada.</span><span id="cvStatus" style="display:block;font-size:12px;color:var(--teal);margin-top:4px"></span></label>' +
+      '<label class="field"><span class="field-label">CV del candidato (opcional)</span>' +
+        ((state.cvbank.cvs && state.cvbank.cvs.length) ?
+          '<select class="bare" id="f_cvpick" style="width:100%;margin-bottom:8px"><option value="">— Elegí un CV de tu repositorio —</option>' +
+            state.cvbank.cvs.map(function(cv){ return '<option value="'+esc(cv.id)+'"'+(rt.cvId===cv.id?' selected':'')+'>'+esc(cv.candidate_name||cv.file_name||'CV')+'</option>'; }).join('') +
+          '</select><span class="field-hint" style="display:block;margin-bottom:6px">…o subí uno nuevo:</span>' : '') +
+        '<input id="f_cv" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)">' +
+        '<span class="field-hint">La IA lo lee y adapta algunas preguntas a la experiencia real del candidato. Máx. 10 MB. Requiere la IA activada.</span>' +
+        '<span id="cvStatus" style="display:block;font-size:12px;color:var(--teal);margin-top:4px">'+((rt.cvText&&rt.cvText.length>40)?('CV cargado'+(rt.cvName?(': '+esc(rt.cvName)):'')+' — las preguntas se adaptarán a él.'):'')+'</span>' +
+      '</label>' +
       '<div class="field" style="background:var(--surface-2);border-radius:14px;padding:14px 16px"><span class="field-label" style="margin-bottom:8px;display:block">Tu marca en las invitaciones (opcional)</span>' +
         '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">'+(state.brand.logo?'<img src="'+esc(state.brand.logo)+'" alt="logo" style="height:38px;max-width:120px;object-fit:contain;border-radius:6px;background:var(--surface);padding:2px">':'')+
         '<input id="f_brandname" placeholder="Nombre de tu empresa/marca" value="'+esc(state.brand.name||"")+'" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--ink);font-family:inherit;font-size:14px"></div>' +
@@ -2469,7 +2487,7 @@ function bind(){
       else if (act === "reload-dash") loadDashboard();
       else if (act === "open-detail"){ var id=el.getAttribute("data-id"); var it=(state.dash.items||[]).filter(function(z){return z.id===id;})[0]; if(it){ state.dash.detail=it; state.screen="interview-detail"; render(); } }
       else if (act === "del-interview"){ var did=el.getAttribute("data-id"); if(confirm("¿Quitar esta entrevista pendiente?")){ dbDeleteInterview(did).then(function(){ loadDashboard(); }); } }
-      else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; state.screen="config"; render(); }
+      else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.screen="config"; render(); refreshCVBankQuiet(); }
       else if (act === "go-cvhome") goCVHome();
       else if (act === "go-cvbank") goCVBank();
       else if (act === "go-newsearch") goNewSearch();
@@ -2477,7 +2495,7 @@ function bind(){
       else if (act === "del-cv"){ var cid=el.getAttribute("data-id"); if(confirm("¿Quitar este CV del repositorio?")){ dbDeleteCV(cid).then(function(){ loadCVBank(); }); } }
       else if (act === "del-search"){ var xid=el.getAttribute("data-id"); if(confirm("¿Eliminar esta búsqueda y su ranking?")){ dbDeleteSearch(xid).then(function(){ goCVHome(); }); } }
       else if (act === "reanalyze") doReanalyze();
-      else if (act === "invite-from-cv"){ state.error=null; rt.cvData=null; rt.cvText=""; state.config.position=el.getAttribute("data-pos")||state.config.position; state.screen="config"; render(); }
+      else if (act === "invite-from-cv"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.config.position=el.getAttribute("data-pos")||state.config.position; state.screen="config"; render(); refreshCVBankQuiet(); }
       else if (act === "add-question") addQuestion();
       else if (act === "del-question"){ delQuestion(parseInt(el.getAttribute("data-idx"),10)); }
       else if (act === "go-resultscode"){ state.error=null; state.screen="results-code"; render(); }
@@ -2525,12 +2543,27 @@ function bind(){
   if ((f=document.getElementById("f_searchdesc"))) f.addEventListener("input", function(e){ state.newsearch.description=e.target.value; });
   if (document.getElementById("analyzeBtn")) document.getElementById("analyzeBtn").addEventListener("click", doAnalyzeNewSearch);
   if ((f=document.getElementById("f_cvfiles"))) f.addEventListener("change", function(e){ var files=e.target.files; if(files&&files.length) uploadCVFiles(files); });
+  if ((f=document.getElementById("f_cvpick"))) f.addEventListener("change", function(e){
+    var id=e.target.value; var st=document.getElementById("cvStatus");
+    var fileInput=document.getElementById("f_cv"); if(fileInput) fileInput.value="";
+    rt.cvData=null;
+    if(!id){ rt.cvText=""; rt.cvId=null; rt.cvName=""; if(st) st.textContent=""; return; }
+    var cv=(state.cvbank.cvs||[]).filter(function(z){return z.id===id;})[0];
+    if(cv){
+      rt.cvText=(cv.cv_text||"").slice(0,15000); rt.cvId=cv.id; rt.cvName=cv.candidate_name||cv.file_name||"CV";
+      if(st){
+        if(rt.cvText.length>40){ st.style.color="var(--teal)"; st.textContent="CV elegido: "+rt.cvName+" — las preguntas se adaptarán a él."; }
+        else { st.style.color="var(--amber)"; st.textContent="Ese CV no tiene texto legible guardado. Probá subirlo de nuevo desde el repositorio."; }
+      }
+    }
+  });
 
   if ((f=document.getElementById("f_recruiter"))) f.addEventListener("input", function(e){ state.config.recruiterEmail=e.target.value; });
   if ((f=document.getElementById("f_cv"))) f.addEventListener("change", function(e){
     var file = e.target.files && e.target.files[0];
     var st = document.getElementById("cvStatus");
-    rt.cvData = null; rt.cvText = "";
+    var pick=document.getElementById("f_cvpick"); if(pick) pick.value="";
+    rt.cvData = null; rt.cvText = ""; rt.cvId = null; rt.cvName = file?file.name:"";
     if (!file){ if(st) st.textContent=""; return; }
     if (file.size > 10*1024*1024){ if(st){ st.style.color="var(--brick)"; st.textContent="El archivo supera los 10 MB."; } return; }
     var isPdf = /pdf/i.test(file.type) || /\.pdf$/i.test(file.name);
