@@ -32,13 +32,23 @@ var DIFFICULTY = {
   "Gerencial": "Nivel GERENCIAL: preguntas de liderazgo y estrategia. Evaluá conducción de equipos, gestión de conflictos, toma de decisiones de alto impacto, indicadores/resultados, presupuesto y visión de negocio."
 };
 
-function screeningPrompt(position, description, cvs) {
+function screeningPrompt(position, description, cvs, must, nice) {
   var lines = [];
   lines.push("Sos un reclutador senior con 20 años de experiencia haciendo screening y preselección de CVs.");
   lines.push("Puesto a cubrir: " + (position || "(sin título)") + ".");
   if (description) {
     lines.push("Descripción del puesto y de lo que se busca (usala como criterio principal):");
     lines.push('"""' + description + '"""');
+  }
+  if (must) {
+    lines.push("");
+    lines.push("REQUISITOS EXCLUYENTES (obligatorios). Si en el CV NO hay evidencia clara de que el candidato los cumple, su encaje es \"Bajo\" y el puntaje debe ser MUY bajo (0-30), sin importar lo bueno que sea el resto del CV. En \"cons\" indicá cuál requisito excluyente no cumple:");
+    lines.push('"""' + must + '"""');
+  }
+  if (nice) {
+    lines.push("");
+    lines.push("REQUISITOS QUE SUMAN PUNTOS (deseables, NO excluyentes). Si el candidato los cumple, subile el puntaje y mencionalos en \"pros\". Si no los cumple, NO lo descartes por eso:");
+    lines.push('"""' + nice + '"""');
   }
   lines.push("");
   lines.push("Te paso " + cvs.length + " CV(s) de candidatos. Evaluá cada uno SOLO por su encaje real con este puesto y esta descripción.");
@@ -64,18 +74,29 @@ function analysisPrompt(body) {
   if (c.focus) lines.push("Competencias/foco a evaluar: " + c.focus + ".");
   if (c.level) lines.push("Seniority buscado: " + c.level + ".");
   lines.push("");
+  var LANGNAME = { en: "inglés", pt: "portugués", fr: "francés", it: "italiano", de: "alemán" };
+  var otherLangs = {};
   lines.push("Preguntas y respuestas del candidato (transcripción automática por voz; puede tener errores menores, evaluá contenido e intención):");
   lines.push("");
   qs.forEach(function (q, i) {
-    lines.push("Pregunta " + (i + 1) + " [" + (q.category || "") + "]: " + (q.text || ""));
+    var lg = (q.lang && q.lang !== "es") ? q.lang : null;
+    if (lg) otherLangs[lg] = true;
+    var langTag = lg ? (" [PREGUNTA EN " + ((LANGNAME[lg] || lg).toUpperCase()) + " — la respuesta DEBE estar en " + (LANGNAME[lg] || lg) + "]") : "";
+    lines.push("Pregunta " + (i + 1) + " [" + (q.category || "") + "]" + langTag + ": " + (q.text || ""));
     var t = (q.transcript || "").trim();
     lines.push("Respuesta: " + (t ? t : "(sin respuesta / no respondió)"));
     if (q.durationSec != null) lines.push("(duración: " + q.durationSec + "s)");
     lines.push("");
   });
   lines.push("Analizá con criterio profesional y exigente, acorde al seniority. No infles puntajes: una respuesta vacía, de una palabra o que no responde debe puntuar muy bajo.");
+  var langList = Object.keys(otherLangs).map(function (k) { return LANGNAME[k] || k; });
+  if (langList.length) {
+    lines.push("");
+    lines.push("EVALUACIÓN DE IDIOMA. Algunas preguntas están en " + langList.join(", ") + " y el candidato DEBE responderlas en ese idioma. Para esas preguntas evaluá SERIAMENTE el nivel real del candidato en ese idioma: fluidez, gramática, vocabulario, coherencia y naturalidad (según la transcripción). REGLAS: si respondió en español, muy en cortado, con una sola palabra, o no respondió una pregunta que estaba en otro idioma, su nivel en ese idioma es bajo o 'No demostrado', y eso debe reflejarse. No regales nivel: solo un nivel alto si realmente respondió con soltura en ese idioma.");
+    lines.push("Completá el campo \"language\" del JSON con esa evaluación. Si NO hubiera preguntas en otro idioma, poné \"language\": null.");
+  }
   lines.push("Devolvé EXCLUSIVAMENTE un JSON con esta forma:");
-  lines.push('{ "score": (1 a 10, medio punto ok), "recommendation": ("Avanzar"|"Con reservas"|"No avanzar"), "overall": (2-4 oraciones), "perQuestion": [ { "n": (número), "rating": ("sólida"|"aceptable"|"floja"|"insuficiente"), "assessment": (1-2 oraciones) } ], "strengths": [..max 5..], "improve": [..max 5..], "probes": [..2-3..] }');
+  lines.push('{ "score": (1 a 10, medio punto ok), "recommendation": ("Avanzar"|"Con reservas"|"No avanzar"), "overall": (2-4 oraciones), "perQuestion": [ { "n": (número), "rating": ("sólida"|"aceptable"|"floja"|"insuficiente"), "assessment": (1-2 oraciones) } ], "strengths": [..max 5..], "improve": [..max 5..], "probes": [..2-3..], "language": ' + (langList.length ? '{ "lang": ("' + langList.join('"|"') + '"), "level": ("No demostrado"|"Básico"|"Intermedio"|"Avanzado"|"Nativo/Bilingüe"), "answeredInLanguage": (true|false), "comment": (1-2 oraciones sobre el nivel real) }' : "null") + " }");
   lines.push("Español rioplatense, profesional. Nada de texto fuera del JSON.");
   return lines.join("\n");
 }
@@ -197,7 +218,9 @@ module.exports = async function handler(req, res) {
         return { id: String(c.id || "").slice(0, 80), name: String(c.name || "").slice(0, 140), text: String(c.text || "").slice(0, 4000) };
       }).filter(function (c) { return c.id; }) : [];
       if (!cvs.length) { res.status(200).json({ ok: false, error: "no_cvs" }); return; }
-      var gs = await callGemini(key, [{ text: screeningPrompt(pos, desc, cvs) }], 8192, 0.3);
+      var mustReq = String(body.must || "").slice(0, 1500);
+      var niceReq = String(body.nice || "").slice(0, 1500);
+      var gs = await callGemini(key, [{ text: screeningPrompt(pos, desc, cvs, mustReq, niceReq) }], 8192, 0.3);
       if (!gs.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gs.data && gs.data.error && gs.data.error.message) || ("HTTP " + gs.status) }); return; }
       var parsedS = parseJson(extractText(gs.data));
       var ranked = parsedS && Array.isArray(parsedS.ranking) ? parsedS.ranking : null;
