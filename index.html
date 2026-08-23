@@ -368,6 +368,86 @@ function lset(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); re
 function isInterviewUsed(code){ if(!code) return false; return !!lget("voz_used_"+String(code).toUpperCase()); }
 function markInterviewUsed(code, email){ if(!code) return; lset("voz_used_"+String(code).toUpperCase(), { at: Date.now(), email: email||"" }); }
 
+/* ================================================================
+   SUPABASE — cuentas de reclutadores + base de datos de entrevistas
+   Pegá tu Project URL y tu anon key (ambas PÚBLICAS, seguras de exponer).
+   Si quedan vacías, la app usa el modo PIN local (una sola cuenta por navegador).
+   ================================================================ */
+var SUPABASE_URL = "https://wxegfxixyzmshhhjrdrq.supabase.co";
+var SUPABASE_ANON_KEY = "sb_publishable_UXZlhNcgZkOYoX3GXbW7pA__S5T0HT1";
+function supaConfigured(){ return !!(SUPABASE_URL && SUPABASE_ANON_KEY); }
+function supaBase(){ return SUPABASE_URL.replace(/\/+$/,""); }
+
+function getSession(){ return lget("voz_session"); }
+function setSession(s){ try{ if(s) localStorage.setItem("voz_session", JSON.stringify(s)); else localStorage.removeItem("voz_session"); }catch(e){} }
+function currentUser(){ var s=getSession(); return (s && s.user) ? s.user : null; }
+function isLoggedIn(){ return !!(getSession() && getSession().access_token); }
+
+function storeSessionFromToken(j){
+  if (!j || !j.access_token) return false;
+  setSession({ access_token:j.access_token, refresh_token:j.refresh_token, expires_at:j.expires_at, user:j.user || (getSession()&&getSession().user) || null });
+  return true;
+}
+function supaSignup(email, password){
+  return fetch(supaBase()+"/auth/v1/signup", { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, "Content-Type":"application/json" }, body:JSON.stringify({ email:email, password:password }) })
+    .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, j:j }; }); });
+}
+function supaLogin(email, password){
+  return fetch(supaBase()+"/auth/v1/token?grant_type=password", { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, "Content-Type":"application/json" }, body:JSON.stringify({ email:email, password:password }) })
+    .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, j:j }; }); });
+}
+function supaRefresh(){
+  var s=getSession(); if(!s||!s.refresh_token) return Promise.resolve(false);
+  return fetch(supaBase()+"/auth/v1/token?grant_type=refresh_token", { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, "Content-Type":"application/json" }, body:JSON.stringify({ refresh_token:s.refresh_token }) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j.access_token){ storeSessionFromToken(j); return true; } return false; }); }).catch(function(){ return false; });
+}
+function supaLogout(){ setSession(null); }
+function supaFetch(path, opts){
+  opts = opts || {};
+  var s = getSession();
+  var headers = { apikey:SUPABASE_ANON_KEY, "Content-Type":"application/json" };
+  if (opts.headers) for (var k in opts.headers) headers[k]=opts.headers[k];
+  if (s && s.access_token) headers["Authorization"] = "Bearer "+s.access_token;
+  var o = { method:opts.method||"GET", headers:headers };
+  if (opts.body) o.body = opts.body;
+  return fetch(supaBase()+path, o).then(function(r){
+    if (r.status === 401 && s && s.refresh_token){
+      return supaRefresh().then(function(ok){
+        if(!ok) return r;
+        var s2=getSession(); headers["Authorization"]="Bearer "+s2.access_token;
+        return fetch(supaBase()+path, { method:o.method, headers:headers, body:o.body });
+      });
+    }
+    return r;
+  });
+}
+function dbCreateInterview(row){
+  return supaFetch("/rest/v1/interviews", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbListInterviews(){
+  return supaFetch("/rest/v1/interviews?select=*&order=created_at.desc")
+    .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); });
+}
+function dbDeleteInterview(id){
+  return supaFetch("/rest/v1/interviews?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; });
+}
+function submitToDB(){
+  if (!state.interviewId) return Promise.resolve(false);
+  var answers = state.questions.map(function(q,i){ var a=state.answers[q.id]||{}; return { n:i+1, text:q.text, transcript:a.transcript||"", audio:(state.audioUrls&&state.audioUrls[q.id])||null, durationSec:(a.signals&&a.signals.durationSec)||0 }; });
+  var payload = {
+    id: state.interviewId, code: state.code,
+    candidateName: state.candidateName||"", candidateEmail: state.candidateEmail||"",
+    score: (state.report && typeof state.report.score==="number") ? state.report.score : null,
+    recommendation: (state.report && state.report.recommendation) || null,
+    report: state.report || null,
+    answers: answers,
+    audioUrls: state.audioUrls || {}
+  };
+  return fetch("/api/submit", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(payload) })
+    .then(function(r){ return r.json(); }).then(function(j){ return !!(j && j.ok); }).catch(function(){ return false; });
+}
+
 /* ---------------- self-contained invite link (works on any device, no server) ---------------- */
 function encodePayload(obj){
   try{
@@ -390,7 +470,7 @@ function stripQuestions(qs){
 function buildInvitePayload(){
   var c = state.config;
   return {
-    v:1, code:state.code,
+    v:1, code:state.code, id:state.interviewId||"",
     position:c.position, company:c.company, focus:c.focus||"",
     level:c.level||"Semi-Senior", language:c.language||"es", followups:c.followups!==false,
     recruiterEmail:c.recruiterEmail||"",
@@ -757,7 +837,8 @@ var state = {
   questions: [], idx: 0, answers: {}, report: null,
   audioUrls: {},
   invite: null,
-  code: "", candidateEmail: "", shareLink: "", interviewMode: "candidate",
+  code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate",
+  dash: { loading:false, items:null, error:null, detail:null },
   audioOmitted: false, recording:false, qTiming:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
   gmailStatus: null, sendState: "idle", sendError: null, sentMessageId: null,
   autoSendState: "idle", autoSendError: null
@@ -805,7 +886,7 @@ var Screens = {};
 Screens.home = function(){
   return Header() +
   '<div class="grid2">' +
-    '<button class="tile tile-dark" data-action="go-recruiter">' + ic('shield',24) + '<h3>Panel del reclutador</h3><p>Creá entrevistas a medida del puesto y compartí un enlace listo para enviar. Protegido con tu PIN.</p></button>' +
+    '<button class="tile tile-dark" data-action="go-recruiter">' + ic('shield',24) + '<h3>Panel del reclutador</h3><p>Ingresá con tu cuenta para crear entrevistas y ver todas tus evaluaciones en un panel.</p></button>' +
     '<button class="tile tile-light" data-action="go-candcode">' + ic('mic',24) + '<h3>Tengo una entrevista</h3><p>Abrí el enlace que te compartieron, o ingresá tu código, y respondé las preguntas por audio.</p></button>' +
   '</div>' +
   '<p class="footer-note">Entrevistas por voz con preguntas a medida y evaluación automática. El enlace de cada entrevista funciona en cualquier dispositivo.</p>';
@@ -836,13 +917,131 @@ Screens["pin-enter"] = function(){
   '</div>';
 };
 
+Screens["rec-login"] = function(){
+  return Header() +
+  '<div class="card" style="max-width:420px;margin:0 auto">' +
+    backlink("home","Volver") +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('lock',19)+'<h2 style="font-size:17px;color:var(--ink)">Ingresá a tu cuenta</h2></div>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Panel de reclutador. Cada cuenta ve solo sus propias entrevistas.</p>' +
+    ErrBox() +
+    '<label class="field" style="display:block;margin-bottom:12px"><span class="field-label">Email</span>'+fieldInput("authEmail","tu@empresa.com","","mail")+'</label>' +
+    '<div class="input-row" style="margin-bottom:16px">'+ic('lock',15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"')+'<input id="authPass" type="password" placeholder="Contraseña"></div>' +
+    '<button class="btn btn-primary btn-block" id="loginBtn" '+(state.busy?'disabled':'')+'>'+(state.busy?ic('loader',15,'spin')+' Ingresando…':ic('chevron',15)+' Ingresar')+'</button>' +
+    '<p style="margin:16px 0 0;font-size:13px;color:var(--muted);text-align:center">¿No tenés cuenta? <a href="#" data-action="go-signup" style="color:var(--teal);font-weight:600">Registrate gratis</a></p>' +
+  '</div>';
+};
+Screens["rec-signup"] = function(){
+  return Header() +
+  '<div class="card" style="max-width:420px;margin:0 auto">' +
+    backlink("go-login","Volver") +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('users',19)+'<h2 style="font-size:17px;color:var(--ink)">Creá tu cuenta</h2></div>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Registrate para crear entrevistas y ver todas tus evaluaciones en un panel.</p>' +
+    ErrBox() +
+    '<label class="field" style="display:block;margin-bottom:12px"><span class="field-label">Email</span>'+fieldInput("authEmail","tu@empresa.com","","mail")+'</label>' +
+    '<div class="input-row" style="margin-bottom:6px">'+ic('lock',15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"')+'<input id="authPass" type="password" placeholder="Contraseña (mín. 6 caracteres)"></div>' +
+    '<div class="input-row" style="margin:10px 0 16px">'+ic('lock',15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"')+'<input id="authPass2" type="password" placeholder="Repetí la contraseña"></div>' +
+    '<button class="btn btn-primary btn-block" id="signupBtn" '+(state.busy?'disabled':'')+'>'+(state.busy?ic('loader',15,'spin')+' Creando…':ic('users',15)+' Crear cuenta')+'</button>' +
+    '<p style="margin:16px 0 0;font-size:13px;color:var(--muted);text-align:center">¿Ya tenés cuenta? <a href="#" data-action="go-login" style="color:var(--teal);font-weight:600">Iniciá sesión</a></p>' +
+  '</div>';
+};
+
+function scoreColorVar(sc){ return sc>=7?"var(--green)":sc>=5?"var(--amber)":"var(--brick)"; }
+function scoreTintVar(sc){ return sc>=7?"var(--green-tint)":sc>=5?"var(--amber-tint)":"var(--brick-tint)"; }
+function fmtDate(iso){ if(!iso) return ""; try{ var d=new Date(iso); return d.toLocaleDateString('es-AR')+" "+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ""; } }
+
+function DashboardList(){
+  var d = state.dash;
+  if (d.loading || d.items===null) return '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando entrevistas…</p></div>';
+  if (d.error) return Note("err", esc(d.error)) + '<button class="btn btn-ghost btn-sm" data-action="reload-dash">'+ic('rotate',14)+' Reintentar</button>';
+  if (!d.items.length) return '<div class="center-block" style="padding:30px 12px">'+ic('list',26)+'<h2 style="font-size:16px">Todavía no hay entrevistas</h2><p>Creá tu primera entrevista y compartí el enlace al candidato.</p></div>';
+  var completed = d.items.filter(function(x){return x.status==='completed';});
+  var pend = d.items.filter(function(x){return x.status!=='completed';});
+  var html = '';
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">' +
+    '<span class="pill-time" style="background:var(--green-tint);color:var(--green)">'+completed.filter(function(x){return x.score>=7;}).length+' aprobados</span>' +
+    '<span class="pill-time" style="background:var(--amber-tint);color:var(--amber)">'+completed.filter(function(x){return x.score>=5&&x.score<7;}).length+' medios</span>' +
+    '<span class="pill-time" style="background:var(--brick-tint);color:var(--brick)">'+completed.filter(function(x){return x.score<5;}).length+' desaprobados</span>' +
+    '<span class="pill-time">'+pend.length+' pendientes</span>' +
+  '</div>';
+  html += '<div style="display:grid;gap:10px">';
+  d.items.forEach(function(x){
+    var done = x.status==='completed';
+    var sc = (typeof x.score==='number')?x.score:null;
+    var name = x.candidate_name || (done?'(sin nombre)':'Pendiente');
+    var badge = done && sc!=null
+      ? '<span style="flex-shrink:0;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;background:'+scoreTintVar(sc)+';color:'+scoreColorVar(sc)+'" class="mono">'+sc+'</span>'
+      : '<span style="flex-shrink:0;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);color:var(--muted)">'+ic('clock',18)+'</span>';
+    html += '<div class="qa-item" '+(done?'data-action="open-detail" data-id="'+esc(x.id)+'" style="cursor:pointer;display:flex;align-items:center;gap:14px"':'style="display:flex;align-items:center;gap:14px;opacity:.85"')+'>' +
+      badge +
+      '<div style="flex:1;min-width:0">' +
+        '<p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(name)+'</p>' +
+        '<p style="margin:2px 0 0;font-size:12.5px;color:var(--muted)">'+esc(x.position||'')+(done?(' · '+esc(x.recommendation||'')):' · pendiente')+'</p>' +
+        '<p style="margin:2px 0 0;font-size:11.5px;color:var(--muted)">'+esc(fmtDate(x.completed_at||x.created_at))+' · código '+esc(x.code||'')+'</p>' +
+      '</div>' +
+      (done ? ic('chevron',16) : '<button class="dl-audio" data-action="del-interview" data-id="'+esc(x.id)+'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px">quitar</button>') +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
 Screens["rec-home"] = function(){
+  if (supaConfigured()){
+    var u = currentUser();
+    return Header() +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px;flex-wrap:wrap">' +
+      '<div><h2 style="font-size:18px">Panel de reclutador</h2><p style="font-size:12.5px;color:var(--muted);margin:2px 0 0">'+esc(u&&u.email||'')+'</p></div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button class="btn btn-primary btn-sm" data-action="go-config">'+ic('sparkle',14)+' Nueva entrevista</button>' +
+        '<button class="btn btn-ghost btn-sm" data-action="reload-dash">'+ic('rotate',14)+'</button>' +
+        '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--teal)">'+ic('eye',18)+'<h3 style="font-size:15px;color:var(--ink)">Entrevistas realizadas</h3></div>' +
+    DashboardList();
+  }
   return Header() +
   Note("info", ic('shield',13)+' &nbsp;Sesión de reclutador — solo vos ves la configuración y las evaluaciones en este navegador.') +
   '<div class="grid2">' +
     '<button class="tile tile-dark" data-action="go-config">'+ic('sparkle',22)+'<h3>Crear nueva entrevista</h3><p>Cargá el puesto y la empresa. Obtenés un código para compartirle al candidato.</p></button>' +
     '<button class="tile tile-light" data-action="go-resultscode">'+ic('eye',22)+'<h3>Ver respuestas y evaluación</h3><p>Con el código, escuchá las respuestas y generá la evaluación automática.</p></button>' +
   '</div>';
+};
+
+Screens["interview-detail"] = function(){
+  var x = state.dash.detail;
+  if (!x) return Header() + Centered(ic('alert',26), "No encontré la entrevista", "Volvé al panel.");
+  var sc = (typeof x.score==='number')?x.score:null;
+  var r = x.report || {};
+  var answers = Array.isArray(x.answers) ? x.answers : [];
+  var html = Header();
+  html += backlink("go-recruiterhome","Volver al panel");
+  html += '<div class="report-hero">' +
+    '<div class="report-eyebrow">'+esc(x.candidate_name||'(sin nombre)')+' · '+esc(x.position||'')+'</div>' +
+    '<div style="display:flex;align-items:flex-end;gap:14px;margin-top:8px;flex-wrap:wrap">' +
+      (sc!=null?'<div class="report-score">'+sc+'<span style="font-size:20px;opacity:.6">/10</span></div>':'') +
+      '<span class="rec-tag" style="background:rgba(255,255,255,.14);color:inherit;border:1px solid rgba(255,255,255,.25)">'+esc(x.recommendation||'')+'</span>' +
+    '</div>' +
+    (r.overall?'<p style="margin-top:14px;font-size:13.5px;opacity:.85;line-height:1.6">'+esc(r.overall)+'</p>':'') +
+    '<p style="margin-top:10px;font-size:11.5px;opacity:.6">'+esc(x.candidate_email||'')+' · '+esc(fmtDate(x.completed_at))+'</p>' +
+  '</div>';
+  html += '<div class="grid2" style="margin-top:16px">' + ReportList("Fortalezas", r.strengths, "var(--green)") + ReportList("A mejorar", r.improve, "var(--amber)") + '</div>';
+  if (r.probes && r.probes.length) html += '<div style="margin-top:16px">'+ReportList("Repreguntas sugeridas", r.probes, "var(--teal)")+'</div>';
+  var perMap = {}; if (r.perQuestion) r.perQuestion.forEach(function(p){ if(p&&p.n!=null) perMap[p.n]=p; });
+  html += '<div style="display:flex;align-items:center;gap:8px;margin:20px 0 10px;color:var(--teal)">'+ic('mic',18)+'<h3 style="font-size:15px;color:var(--ink)">Respuestas</h3></div>';
+  html += '<div style="display:grid;gap:12px">';
+  answers.forEach(function(a){
+    var p = perMap[a.n];
+    html += '<div class="qa-item">' +
+      '<p style="margin:0;font-size:12px;font-weight:700;color:var(--muted)">Pregunta '+esc(String(a.n||''))+(p&&p.rating?(' · <span style="color:'+(function(rt){rt=(rt||'').toLowerCase();return rt.indexOf('sól')>=0||rt.indexOf('sol')>=0?'var(--green)':rt.indexOf('acept')>=0?'var(--blue)':rt.indexOf('floja')>=0?'var(--amber)':'var(--brick)';})(p.rating)+'">'+esc(p.rating)+'</span>'):'')+'</p>' +
+      '<p class="qa-text">'+esc(a.text||'')+'</p>' +
+      (a.audio ? '<audio controls src="'+esc(a.audio)+'" style="width:100%;margin-top:8px"></audio>' : '') +
+      (p&&p.assessment ? '<p style="margin:8px 0 0;font-size:13px;color:var(--ink)"><strong style="color:var(--muted)">IA:</strong> '+esc(p.assessment)+'</p>' : '') +
+      (!a.audio && a.transcript ? '<p style="margin:8px 0 0;font-size:13px;color:var(--muted)">'+esc(a.transcript)+'</p>' : '') +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
 };
 
 function fieldInput(id, placeholder, val, icon){
@@ -945,7 +1144,8 @@ function buildResultsMessage(){
   var L = [];
   L.push("Respuestas de entrevista por voz");
   L.push("Puesto: " + (c.position||"-"));
-  L.push("Candidato: " + (state.candidateEmail || "(sin email)"));
+  L.push("Candidato: " + (state.candidateName || "(sin nombre)"));
+  L.push("Email: " + (state.candidateEmail || "(sin email)"));
   if (state.code) L.push("Código: " + state.code);
   L.push("");
   var perMap = {};
@@ -978,7 +1178,7 @@ function buildResultsMessage(){
   else L.push("— Nota: la transcripción es automática y puede tener errores. La evaluación mide completitud, desarrollo y fluidez (por reglas, no interpreta el contenido).");
   return L.join("\n");
 }
-function resultsSubject(){ return "Respuestas de entrevista – " + (state.config.position||"") + (state.candidateEmail?(" – "+state.candidateEmail):""); }
+function resultsSubject(){ return "Entrevista – " + (state.config.position||"") + (state.candidateName?(" – "+state.candidateName):(state.candidateEmail?(" – "+state.candidateEmail):"")); }
 function resultsGmailHref(){
   return "https://mail.google.com/mail/?view=cm&fs=1&to="+encodeURIComponent(state.config.recruiterEmail||"")+"&su="+encodeURIComponent(resultsSubject())+"&body="+encodeURIComponent(buildResultsMessage());
 }
@@ -1083,7 +1283,8 @@ function sendResultsAuto(){
       from_name: "voz. entrevistas",
       replyto: state.candidateEmail || "",
       message: buildResultsMessage(),
-      candidato: state.candidateEmail || "",
+      candidato: state.candidateName || "",
+      email_candidato: state.candidateEmail || "",
       puesto: state.config.position || "",
       codigo: state.code || ""
     })
@@ -1176,7 +1377,8 @@ Screens["invite-landing"] = function(){
     '<p style="font-size:14px;color:var(--muted);margin:0 0 18px">Puesto: <strong style="color:var(--ink)">'+esc(inv.position||"")+'</strong>'+(empresa && empresa!=="la empresa"?(' · '+esc(empresa)):'')+'</p>' +
     '<div class="note note-info">'+ic('alert',15)+'<span>Grabás tus respuestas por audio. <strong>El cronómetro de cada pregunta arranca apenas aparece</strong> (leé y pensá), y cuando estés listo tocás <strong>Grabar</strong> para responder. No se puede volver atrás ni regrabar. Necesitás permitir el micrófono (funciona mejor en Chrome).</span></div>' +
     ErrBox() +
-    '<label class="field" style="display:block;margin:16px 0 12px"><span class="field-label">Tu email</span>' + fieldInput("inviteEmail","nombre@correo.com","","mail") + '<span class="field-hint">Debe ser el email al que te llegó la invitación.</span></label>' +
+    '<label class="field" style="display:block;margin:16px 0 12px"><span class="field-label">Nombre y apellido</span>' + fieldInput("inviteName","Ej: Juan Pérez","","users") + '<span class="field-hint">Con este nombre se identifican tus respuestas.</span></label>' +
+    '<label class="field" style="display:block;margin:0 0 12px"><span class="field-label">Tu email</span>' + fieldInput("inviteEmail","nombre@correo.com","","mail") + '<span class="field-hint">Debe ser el email al que te llegó la invitación.</span></label>' +
     '<label class="field" style="display:block;margin:0 0 16px"><span class="field-label">Código de verificación</span><div class="input-row"><input id="inviteCode" class="mono" style="letter-spacing:.18em;text-transform:uppercase" placeholder="Ej: AB7K2Q" maxlength="8"></div><span class="field-hint">Está en el correo de la invitación. Es de un solo uso.</span></label>' +
     '<button class="btn btn-primary btn-block" id="inviteStartBtn">'+ic('mic',15)+' Comenzar entrevista</button>' +
     '<p style="margin:14px 0 0;font-size:11.5px;color:var(--muted)">Solo podés realizar esta entrevista una vez. Al terminar, tus respuestas se envían automáticamente al reclutador.</p>' +
@@ -1350,13 +1552,18 @@ function ReportList(title, items, color){
    ================================================================ */
 function resetInterview(){ state.questions=[]; state.answers={}; state.idx=0; state.report=null; rt.analyzed={}; rt.autoStartedFor={}; }
 function goHome(){ resetInterview(); state.error=null; state.screen="home"; render(); }
-function goRecruiterHome(){ resetInterview(); state.error=null; state.screen="rec-home"; render(); }
+function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="rec-home"; render(); if (supaConfigured() && isLoggedIn()) loadDashboard(); }
 
 /* ================================================================
    ACTIONS
    ================================================================ */
 function enterRecruiter(){
   state.error=null;
+  if (supaConfigured()){
+    if (isLoggedIn()){ state.screen="rec-home"; render(); loadDashboard(); }
+    else { state.screen="rec-login"; render(); }
+    return;
+  }
   var p = lget("voz_pin");
   state.screen = (p && p.pin) ? "pin-enter" : "pin-set";
   render();
@@ -1369,30 +1576,76 @@ function checkPin(pin){
   render();
 }
 
+/* ---- auth (Supabase) ---- */
+function doLogin(email, password){
+  email=(email||"").trim(); password=password||"";
+  if(!email || !password){ state.error="Ingresá tu email y contraseña."; render(); return; }
+  state.busy=true; state.error=null; render();
+  supaLogin(email, password).then(function(res){
+    state.busy=false;
+    if(res.ok && res.j && res.j.access_token){ storeSessionFromToken(res.j); state.error=null; state.screen="rec-home"; render(); loadDashboard(); }
+    else { state.error = (res.j && (res.j.error_description||res.j.msg||res.j.error)) || "Email o contraseña incorrectos."; render(); }
+  }).catch(function(){ state.busy=false; state.error="No pude conectar. Revisá tu conexión."; render(); });
+}
+function doSignup(email, password){
+  email=(email||"").trim(); password=password||"";
+  if(!email || password.length<6){ state.error="Email válido y contraseña de al menos 6 caracteres."; render(); return; }
+  state.busy=true; state.error=null; render();
+  supaSignup(email, password).then(function(res){
+    if(res.ok && res.j && res.j.access_token){ state.busy=false; storeSessionFromToken(res.j); state.error=null; state.screen="rec-home"; render(); loadDashboard(); return; }
+    if(res.ok && res.j && (res.j.id || res.j.user)){
+      // Cuenta creada pero requiere confirmar email: intentamos loguear igual.
+      supaLogin(email, password).then(function(r2){
+        state.busy=false;
+        if(r2.ok && r2.j && r2.j.access_token){ storeSessionFromToken(r2.j); state.screen="rec-home"; render(); loadDashboard(); }
+        else { state.error="Cuenta creada. Revisá tu email para confirmarla y luego iniciá sesión."; state.screen="rec-login"; render(); }
+      });
+      return;
+    }
+    state.busy=false;
+    state.error = (res.j && (res.j.error_description||res.j.msg||res.j.error)) || "No pude crear la cuenta.";
+    render();
+  }).catch(function(){ state.busy=false; state.error="No pude conectar. Revisá tu conexión."; render(); });
+}
+function doLogout(){ supaLogout(); state.dash={loading:false,items:null,error:null,detail:null}; state.screen="home"; render(); }
+function loadDashboard(){
+  if(!supaConfigured() || !isLoggedIn()) return;
+  state.dash.loading=true; state.dash.error=null; render();
+  dbListInterviews().then(function(items){ state.dash.loading=false; state.dash.items=items; render(); })
+    .catch(function(){ state.dash.loading=false; state.dash.error="No pude cargar las entrevistas."; render(); });
+}
+
 function generate(){
   state.error=null; state.screen="generating"; render();
   function finishGen(qs){
-    try{
-      if (!qs || !qs.length) qs = buildQuestions(state.config);
-      if (!qs.length) throw new Error("empty");
-      var code = makeCode();
-      var ok = lset("voz_iv_"+code, {
-        position: state.config.position, company: state.config.company, focus: state.config.focus,
-        level: state.config.level, language: state.config.language, followups: false,
-        questions: qs, createdAt: Date.now()
-      });
-      rt.analyzed = {};
-      state.questions = qs; state.answers = {}; state.idx = 0; state.report = null;
-      state.code = code; state.candidateEmail=""; state.storageWarn = !ok;
-      state.sendState = "idle"; state.sendError = null; state.sentMessageId = null;
-      state.shareLink = computeInviteLink();
-      state.screen = "share";
-      probeGmailOnce();
-    } catch(e){
-      state.error = "No pude generar la entrevista. Revisá los datos y probá de nuevo.";
-      state.screen = "config";
+    if (!qs || !qs.length) qs = buildQuestions(state.config);
+    if (!qs.length){ state.error = "No pude generar la entrevista. Revisá los datos y probá de nuevo."; state.screen = "config"; render(); return; }
+    var code = makeCode();
+    var ok = lset("voz_iv_"+code, {
+      position: state.config.position, company: state.config.company, focus: state.config.focus,
+      level: state.config.level, language: state.config.language, followups: false,
+      questions: qs, createdAt: Date.now()
+    });
+    rt.analyzed = {};
+    state.questions = qs; state.answers = {}; state.idx = 0; state.report = null;
+    state.code = code; state.interviewId = ""; state.candidateEmail=""; state.candidateName=""; state.storageWarn = !ok;
+    state.sendState = "idle"; state.sendError = null; state.sentMessageId = null;
+
+    function toShare(){ state.shareLink = computeInviteLink(); state.screen = "share"; probeGmailOnce(); render(); }
+
+    if (supaConfigured() && isLoggedIn()){
+      var u = currentUser();
+      var row = {
+        recruiter_id: u && u.id, code: code,
+        position: state.config.position, company: state.config.company, focus: state.config.focus||"",
+        level: state.config.level, language: state.config.language,
+        questions: stripQuestions(qs), status: "pending"
+      };
+      dbCreateInterview(row).then(function(saved){ state.interviewId = saved.id || ""; toShare(); })
+        .catch(function(){ state.storageWarn = true; toShare(); });
+    } else {
+      toShare();
     }
-    render();
   }
   // Preguntas a medida con IA (Gemini). Si falla o no hay IA, se usan plantillas.
   generateQuestions()
@@ -1402,10 +1655,12 @@ function generate(){
 
 function emailsMatch(a, b){ return (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase(); }
 
-function startInviteInterview(emailRaw, codeRaw){
+function startInviteInterview(emailRaw, codeRaw, nameRaw){
   var inv = state.invite; if (!inv || !inv.questions) return;
   var emailIn = (emailRaw||"").trim();
   var codeIn = (codeRaw||"").trim().toUpperCase();
+  var nameIn = (nameRaw||"").trim().replace(/\s+/g," ");
+  if (!nameIn || nameIn.length < 3 || nameIn.indexOf(" ") < 1){ state.error="Ingresá tu nombre y apellido."; render(); return; }
   if (!emailIn || emailIn.indexOf("@") < 1){ state.error="Ingresá un email válido para comenzar."; render(); return; }
   if (!codeIn){ state.error="Ingresá el código de verificación que está en el correo de la invitación."; render(); return; }
   if (inv.code && codeIn !== String(inv.code).toUpperCase()){ state.error="El código no es correcto. Revisá el correo de la invitación."; render(); return; }
@@ -1422,7 +1677,9 @@ function startInviteInterview(emailRaw, codeRaw){
     state.questions = inv.questions.slice();
     state.answers = {}; state.idx = 0; state.report = null; state.audioUrls = {};
     state.code = inv.code || "";
+    state.interviewId = inv.id || "";
     state.candidateEmail = emailIn;
+    state.candidateName = nameIn;
     state.interviewMode = "candidate";
     state.autoSendState = "idle"; state.autoSendError = null;
     state.micDenied = false;
@@ -1524,25 +1781,21 @@ function submitAnswers(){
   processNext(0);
 }
 
-/* Sube audios, pide el análisis con IA y luego envía los resultados al reclutador. */
+/* Sube audios, pide el análisis con IA, guarda en la base y/o envía por mail. */
 function finalizeCandidate(){
-  state.autoSendState = "idle"; state.autoSendError = null;
-  var needsSend = autoSendConfigured();
-
-  state.autoSendState = "sending"; state.screen = "cand-autosend"; render();
-  // 1) Subir audios (si está configurado)
+  state.autoSendState = "sending"; state.autoSendError = null; state.screen = "cand-autosend"; render();
   uploadAllAudios()
-    // 2) Análisis con IA (si la función serverless está disponible); si falla, se conserva el análisis por reglas.
-    .then(function(){
-      return analyzeWithAI().then(function(ai){ state.report = reportFromAI(ai); }).catch(function(){ /* respaldo: análisis local ya calculado */ });
-    })
-    // 3) Enviar al reclutador
-    .then(function(){
-      if (!needsSend){ state.autoSendState = "idle"; state.screen = "cand-send"; render(); return; }
-      return sendResultsAuto().then(function(){
-        state.autoSendState = "sent"; state.screen = "cand-done"; render();
-      }).catch(function(err){
-        state.autoSendState = "error"; state.autoSendError = err; state.screen = "cand-send"; render();
+    .then(function(){ return analyzeWithAI().then(function(ai){ state.report = reportFromAI(ai); }).catch(function(){ /* respaldo: análisis local ya calculado */ }); })
+    .then(function(){ return submitToDB(); }) // guarda en la base (bool)
+    .then(function(dbSaved){
+      var hasDB = !!state.interviewId;
+      var needsSend = autoSendConfigured();
+      var emailP = needsSend ? sendResultsAuto().then(function(){ return true; }).catch(function(){ return false; }) : Promise.resolve(false);
+      return emailP.then(function(emailSent){
+        var delivered = (hasDB && dbSaved) || emailSent;
+        if (delivered){ state.autoSendState = "sent"; state.screen = "cand-done"; render(); }
+        else if (!hasDB && !needsSend){ state.autoSendState = "idle"; state.screen = "cand-send"; render(); }
+        else { state.autoSendState = "error"; state.autoSendError = { message: "No se pudieron entregar los resultados automáticamente." }; state.screen = "cand-send"; render(); }
       });
     });
 }
@@ -1729,6 +1982,12 @@ function bind(){
       else if (act === "go-recruiter") enterRecruiter();
       else if (act === "go-candcode"){ state.error=null; state.screen="cand-code"; render(); }
       else if (act === "go-recruiterhome") goRecruiterHome();
+      else if (act === "go-login"){ state.error=null; state.screen="rec-login"; render(); }
+      else if (act === "go-signup"){ state.error=null; state.screen="rec-signup"; render(); }
+      else if (act === "logout") doLogout();
+      else if (act === "reload-dash") loadDashboard();
+      else if (act === "open-detail"){ var id=el.getAttribute("data-id"); var it=(state.dash.items||[]).filter(function(z){return z.id===id;})[0]; if(it){ state.dash.detail=it; state.screen="interview-detail"; render(); } }
+      else if (act === "del-interview"){ var did=el.getAttribute("data-id"); if(confirm("¿Quitar esta entrevista pendiente?")){ dbDeleteInterview(did).then(function(){ loadDashboard(); }); } }
       else if (act === "go-config"){ state.error=null; rt.cvData=null; state.screen="config"; render(); }
       else if (act === "go-resultscode"){ state.error=null; state.screen="results-code"; render(); }
       else if (act === "preview"){ rt.analyzed={}; state.answers={}; state.idx=0; state.interviewMode="preview"; state.screen="interview"; render(); }
@@ -1808,12 +2067,34 @@ function bind(){
     (function(){
       var em = document.getElementById("inviteEmail");
       var cd = document.getElementById("inviteCode");
+      var nm = document.getElementById("inviteName");
       if (cd) cd.addEventListener("input", function(){ cd.value = cd.value.toUpperCase().slice(0,8); });
-      var go = function(){ startInviteInterview(em ? em.value : "", cd ? cd.value : ""); };
+      var go = function(){ startInviteInterview(em ? em.value : "", cd ? cd.value : "", nm ? nm.value : ""); };
       document.getElementById("inviteStartBtn").addEventListener("click", go);
+      if (nm) nm.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); });
       if (em) em.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); });
       if (cd) cd.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); });
-      if (em) em.focus();
+      if (nm) nm.focus();
+    })();
+  }
+
+  /* auth screens (Supabase) */
+  if (document.getElementById("loginBtn")){
+    (function(){
+      var em=document.getElementById("authEmail"), pw=document.getElementById("authPass");
+      var go=function(){ doLogin(em?em.value:"", pw?pw.value:""); };
+      document.getElementById("loginBtn").addEventListener("click", go);
+      if(pw) pw.addEventListener("keydown",function(e){ if(e.key==="Enter") go(); });
+      if(em) em.focus();
+    })();
+  }
+  if (document.getElementById("signupBtn")){
+    (function(){
+      var em=document.getElementById("authEmail"), pw=document.getElementById("authPass"), pw2=document.getElementById("authPass2");
+      var go=function(){ if(pw&&pw2&&pw.value!==pw2.value){ state.error="Las contraseñas no coinciden."; render(); return; } doSignup(em?em.value:"", pw?pw.value:""); };
+      document.getElementById("signupBtn").addEventListener("click", go);
+      if(pw2) pw2.addEventListener("keydown",function(e){ if(e.key==="Enter") go(); });
+      if(em) em.focus();
     })();
   }
 
