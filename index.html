@@ -536,7 +536,7 @@ function refreshCVBankQuiet(){
     var changed = wasNull || items.length!==prevLen;
     state.cvbank.cvs=items;
     if(changed && state.screen==="config") render();
-  }).catch(function(){});
+  }).catch(function(){ if(wasNull){ state.cvbank.cvs=[]; if(state.screen==="config") render(); } });
 }
 function goCVHome(){ state.error=null; state.searches.current=null; state.searches.error2=null; state.searches.note=null; state.screen="cv-home"; render(); loadSearches(); }
 function goCVBank(){ state.error=null; state.cvbank.msg=""; state.screen="cv-bank"; render(); loadCVBank(); }
@@ -1480,10 +1480,15 @@ Screens.config = function(){
       '<label class="field"><span class="field-label">Web o perfil de la empresa (opcional)</span>' + fieldInput("f_companyurl","https://empresa.com", c.companyUrl, "globe") + '<span class="field-hint">Si la cargás, la IA lee la web y arma preguntas sobre el encaje con la empresa. Requiere la IA activada.</span></label>' +
       '<label class="field" style="background:var(--teal-tint);border:1px solid var(--border-soft);border-radius:14px;padding:14px 16px"><span class="field-label">Tu email (para recibir las respuestas)</span>' + fieldInput("f_recruiter","reclutador@empresa.com", c.recruiterEmail, "mail") + '<span class="field-hint">Cuando el candidato termine, sus respuestas y la evaluación te llegan a este correo. Recomendado.</span></label>' +
       '<label class="field"><span class="field-label">CV del candidato (opcional)</span>' +
-        ((state.cvbank.cvs && state.cvbank.cvs.length) ?
-          '<select class="bare" id="f_cvpick" style="width:100%;margin-bottom:8px"><option value="">— Elegí un CV de tu repositorio —</option>' +
-            state.cvbank.cvs.map(function(cv){ return '<option value="'+esc(cv.id)+'"'+(rt.cvId===cv.id?' selected':'')+'>'+esc(cv.candidate_name||cv.file_name||'CV')+'</option>'; }).join('') +
-          '</select><span class="field-hint" style="display:block;margin-bottom:6px">…o subí uno nuevo:</span>' : '') +
+        ((supaConfigured() && isLoggedIn()) ? (
+          (state.cvbank.cvs===null)
+            ? '<span class="field-hint" style="display:block;margin-bottom:8px">'+ic('loader',12,'spin')+' Cargando tus CVs guardados…</span>'
+            : (state.cvbank.cvs.length
+                ? '<select class="bare" id="f_cvpick" style="width:100%;margin-bottom:6px"><option value="">— Elegí uno de tus '+state.cvbank.cvs.length+' CVs guardados —</option>' +
+                    state.cvbank.cvs.map(function(cv){ return '<option value="'+esc(cv.id)+'"'+(rt.cvId===cv.id?' selected':'')+'>'+esc(cv.candidate_name||cv.file_name||'CV')+'</option>'; }).join('') +
+                  '</select><span class="field-hint" style="display:block;margin-bottom:6px">…o subí uno nuevo:</span>'
+                : '<span class="field-hint" style="display:block;margin-bottom:8px">Todavía no tenés CVs en tu repositorio. Subí uno acá abajo, o cargá varios desde <b>Screening de CVs</b>.</span>')
+        ) : '') +
         '<input id="f_cv" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)">' +
         '<span class="field-hint">La IA lo lee y adapta algunas preguntas a la experiencia real del candidato. Máx. 10 MB. Requiere la IA activada.</span>' +
         '<span id="cvStatus" style="display:block;font-size:12px;color:var(--teal);margin-top:4px">'+((rt.cvText&&rt.cvText.length>40)?('CV cargado'+(rt.cvName?(': '+esc(rt.cvName)):'')+' — las preguntas se adaptarán a él.'):'')+'</span>' +
