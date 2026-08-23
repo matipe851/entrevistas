@@ -326,7 +326,7 @@ function sendViaGmail(){
       var c = state.config;
       var result = await mcp.callTool("Gmail", "send_message", {
         to: [state.candidateEmail.trim()],
-        subject: "Entrevista para " + c.position,
+        subject: inviteSubject(),
         body: buildShareMessage()
       });
       state.sendState = "sent";
@@ -492,6 +492,7 @@ function buildInvitePayload(){
     position:c.position, company:c.company, focus:c.focus||"",
     level:c.level||"Semi-Senior", language:c.language||"es", followups:c.followups!==false,
     recruiterEmail:c.recruiterEmail||"",
+    brandName: (state.brand&&state.brand.name)||"", brandLogo: (state.brand&&state.brand.logo)||"",
     questions: stripQuestions(state.questions)
   };
 }
@@ -857,6 +858,7 @@ var state = {
   invite: null,
   code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate",
   dash: { loading:false, items:null, error:null, detail:null },
+  brand: { name:"", logo:"" },
   myApproved: null,
   admin: { loading:false, items:null, error:null },
   audioOmitted: false, recording:false, qTiming:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
@@ -1140,7 +1142,12 @@ Screens.config = function(){
       '<label class="field"><span class="field-label">Competencias o focos (opcional)</span>' + fieldInput("f_focus","Ej: orientación al cliente, manejo de objeciones", c.focus, "list") + '</label>' +
       '<label class="field"><span class="field-label">Web o perfil de la empresa (opcional)</span>' + fieldInput("f_companyurl","https://empresa.com", c.companyUrl, "globe") + '<span class="field-hint">Si la cargás, la IA lee la web y arma preguntas sobre el encaje con la empresa. Requiere la IA activada.</span></label>' +
       '<label class="field" style="background:var(--teal-tint);border:1px solid var(--border-soft);border-radius:14px;padding:14px 16px"><span class="field-label">Tu email (para recibir las respuestas)</span>' + fieldInput("f_recruiter","reclutador@empresa.com", c.recruiterEmail, "mail") + '<span class="field-hint">Cuando el candidato termine, sus respuestas y la evaluación te llegan a este correo. Recomendado.</span></label>' +
-      '<label class="field"><span class="field-label">CV del candidato (opcional, PDF)</span><input id="f_cv" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)"><span class="field-hint">Si lo subís, la IA lo lee y adapta algunas preguntas a la experiencia real del candidato. Máx. 8 MB. Requiere la IA activada.</span><span id="cvStatus" style="display:block;font-size:12px;color:var(--teal);margin-top:4px"></span></label>' +
+      '<label class="field"><span class="field-label">CV del candidato (opcional, PDF)</span><input id="f_cv" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)"><span class="field-hint">Si lo subís, la IA lo lee y adapta algunas preguntas a la experiencia real del candidato. Máx. 10 MB. Requiere la IA activada.</span><span id="cvStatus" style="display:block;font-size:12px;color:var(--teal);margin-top:4px"></span></label>' +
+      '<div class="field" style="background:var(--surface-2);border-radius:14px;padding:14px 16px"><span class="field-label" style="margin-bottom:8px;display:block">Tu marca en las invitaciones (opcional)</span>' +
+        '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">'+(state.brand.logo?'<img src="'+esc(state.brand.logo)+'" alt="logo" style="height:38px;max-width:120px;object-fit:contain;border-radius:6px;background:var(--surface);padding:2px">':'')+
+        '<input id="f_brandname" placeholder="Nombre de tu empresa/marca" value="'+esc(state.brand.name||"")+'" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--ink);font-family:inherit;font-size:14px"></div>' +
+        '<input id="f_brandlogo" type="file" accept="image/*" style="width:100%;font-size:12.5px;color:var(--muted)"><span class="field-hint">Logo (opcional). Se muestra a los candidatos en la invitación. Requiere Cloudinary configurado.</span><span id="brandStatus" style="display:block;font-size:12px;color:var(--teal);margin-top:4px"></span>' +
+      '</div>' +
       '<div class="grid3">' +
         '<label class="field"><span class="field-label">Seniority</span><select class="bare" id="f_level">' + LEVELS.map(function(l){return '<option'+(l===c.level?' selected':'')+'>'+l+'</option>';}).join('') + '</select></label>' +
         '<label class="field"><span class="field-label">Idioma</span><select class="bare" id="f_lang">' + LANGS.map(function(l){return '<option value="'+l[0]+'"'+(l[0]===c.language?' selected':'')+'>'+l[1]+'</option>';}).join('') + '</select></label>' +
@@ -1153,6 +1160,31 @@ Screens.config = function(){
 };
 
 Screens.generating = function(){ return Header() + Centered(ic('loader',30,'spin'), "Armando la entrevista", "La IA está redactando preguntas a medida del puesto y del nivel" + ((rt.cvText||rt.cvData)?", y del CV":"") + "… puede tardar unos segundos."); };
+Screens["edit-questions"] = function(){
+  var html = Header();
+  html += '<div class="card">' +
+    backlink("go-config","Volver a la configuración") +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('sparkle',19)+'<h2 style="font-size:18px;color:var(--ink)">Revisá y editá las preguntas</h2></div>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">La IA armó '+state.questions.length+' preguntas para <strong>'+esc(state.config.position||"")+'</strong> ('+esc(state.config.level||"")+'). Podés cambiarlas, borrarlas o agregar nuevas antes de crear la entrevista.</p>' +
+    ErrBox();
+  html += '<div style="display:grid;gap:12px">';
+  state.questions.forEach(function(q,i){
+    html += '<div class="qa-item">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
+        '<span style="font-size:12px;font-weight:700;color:var(--muted)">Pregunta '+(i+1)+' · '+esc(q.category||"")+'</span>' +
+        '<button class="dl-audio" data-action="del-question" data-idx="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:12px;font-weight:600">Borrar</button>' +
+      '</div>' +
+      '<textarea class="q-edit" data-idx="'+i+'" rows="2" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--ink);font-family:inherit;font-size:14px;resize:vertical">'+esc(q.text||"")+'</textarea>' +
+    '</div>';
+  });
+  html += '</div>';
+  html += '<div class="flex-actions">' +
+    '<button class="btn btn-ghost btn-sm" data-action="add-question">'+ic('sparkle',14)+' Agregar pregunta</button>' +
+    '<button class="btn btn-primary" id="createIvBtn" style="margin-left:auto">'+ic('check',15)+' Crear entrevista</button>' +
+  '</div>';
+  html += '</div>';
+  return html;
+};
 Screens.loading = function(){ return Header() + Centered(ic('loader',30,'spin'), "Buscando…", "Un momento."); };
 Screens.submitting = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "No cierres esta ventana."); };
 Screens.evaluating = function(){ return Header() + Centered(ic('sparkle',30), "Evaluando respuestas", "Analizando duración, fluidez y contenido de cada respuesta…"); };
@@ -1207,11 +1239,11 @@ function buildShareMessage(){
 }
 function mailtoHref(){
   var c = state.config;
-  return "mailto:"+encodeURIComponent(state.candidateEmail||"")+"?subject="+encodeURIComponent("Entrevista para "+c.position)+"&body="+encodeURIComponent(buildShareMessage());
+  return "mailto:"+encodeURIComponent(state.candidateEmail||"")+"?subject="+encodeURIComponent(inviteSubject())+"&body="+encodeURIComponent(buildShareMessage());
 }
 function gmailComposeHref(){
   var c = state.config;
-  return "https://mail.google.com/mail/?view=cm&fs=1&to="+encodeURIComponent(state.candidateEmail||"")+"&su="+encodeURIComponent("Entrevista para "+c.position)+"&body="+encodeURIComponent(buildShareMessage());
+  return "https://mail.google.com/mail/?view=cm&fs=1&to="+encodeURIComponent(state.candidateEmail||"")+"&su="+encodeURIComponent(inviteSubject())+"&body="+encodeURIComponent(buildShareMessage());
 }
 function buildResultsMessage(){
   var c = state.config, r = state.report;
@@ -1252,7 +1284,8 @@ function buildResultsMessage(){
   else L.push("— Nota: la transcripción es automática y puede tener errores. La evaluación mide completitud, desarrollo y fluidez (por reglas, no interpreta el contenido).");
   return L.join("\n");
 }
-function resultsSubject(){ return "Entrevista – " + (state.config.position||"") + (state.candidateName?(" – "+state.candidateName):(state.candidateEmail?(" – "+state.candidateEmail):"")); }
+function resultsSubject(){ return ("Entrevista – " + (state.config.position||"") + (state.candidateName?(" – "+state.candidateName):(state.candidateEmail?(" – "+state.candidateEmail):""))).toUpperCase(); }
+function inviteSubject(){ var b = (state.brand && state.brand.name) ? (state.brand.name + " – ") : ""; return (b + "Entrevista para " + (state.config.position||"")).toUpperCase(); }
 function resultsGmailHref(){
   return "https://mail.google.com/mail/?view=cm&fs=1&to="+encodeURIComponent(state.config.recruiterEmail||"")+"&su="+encodeURIComponent(resultsSubject())+"&body="+encodeURIComponent(buildResultsMessage());
 }
@@ -1434,21 +1467,29 @@ function CodeScreen(opts){
 Screens["cand-code"] = function(){ return CodeScreen({ title:"Ingresá a tu entrevista", subtitle:"Escribí el email al que te enviaron la invitación y el código que te compartieron junto con él. Vas a responder por audio, con un tiempo límite por pregunta.", cta:"Empezar entrevista", back:"home", icon:"mic", needsEmail:true }); };
 Screens["results-code"] = function(){ return CodeScreen({ title:"Ver respuestas y evaluación", subtitle:"Ingresá el código de la entrevista que compartiste con el candidato.", cta:"Abrir resultados", back:"go-recruiterhome", icon:"eye" }); };
 
+function BrandBanner(inv){
+  if (!inv || (!inv.brandName && !inv.brandLogo)) return '';
+  return '<div style="display:flex;align-items:center;gap:12px;justify-content:center;margin:0 auto 18px;max-width:460px">' +
+    (inv.brandLogo ? '<img src="'+esc(inv.brandLogo)+'" alt="logo" style="height:46px;max-width:170px;object-fit:contain;border-radius:8px">' : '') +
+    (inv.brandName ? '<span style="font-family:Fraunces,Georgia,serif;font-weight:600;font-size:19px;color:var(--ink)">'+esc(inv.brandName)+'</span>' : '') +
+  '</div>';
+}
 Screens["invite-landing"] = function(){
   var inv = state.invite || {};
   var n = (inv.questions && inv.questions.length) ? inv.questions.length : 0;
   var empresa = shortEmpresa(inv.company||"");
   var used = inv.code && isInterviewUsed(inv.code);
   if (used){
-    return Header() +
+    return Header() + BrandBanner(inv) +
     '<div class="card" style="max-width:460px;margin:0 auto">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--brick)">'+ic('alert',20)+'<h2 style="font-size:19px;color:var(--ink)">Esta entrevista ya fue realizada</h2></div>' +
       '<p style="font-size:14px;color:var(--muted);margin:0">Este enlace es de un solo uso y ya se completó en este dispositivo. Si creés que es un error, escribile a quien te envió la invitación.</p>' +
     '</div>';
   }
-  return Header() +
+  var titulo = inv.brandName ? (esc(inv.brandName)+' te invita a una entrevista') : 'Fuiste invitado a una entrevista';
+  return Header() + BrandBanner(inv) +
   '<div class="card" style="max-width:460px;margin:0 auto">' +
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('mic',20)+'<h2 style="font-size:19px;color:var(--ink)">Fuiste invitado a una entrevista</h2></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('mic',20)+'<h2 style="font-size:19px;color:var(--ink)">'+titulo+'</h2></div>' +
     '<p style="font-size:14px;color:var(--muted);margin:0 0 18px">Puesto: <strong style="color:var(--ink)">'+esc(inv.position||"")+'</strong>'+(empresa && empresa!=="la empresa"?(' · '+esc(empresa)):'')+'</p>' +
     '<div class="note note-info">'+ic('alert',15)+'<span>Grabás tus respuestas por audio. <strong>El cronómetro de cada pregunta arranca apenas aparece</strong> (leé y pensá), y cuando estés listo tocás <strong>Grabar</strong> para responder. No se puede volver atrás ni regrabar. Necesitás permitir el micrófono (funciona mejor en Chrome).</span></div>' +
     ErrBox() +
@@ -1710,40 +1751,55 @@ function adminApprove(id, approve){
 
 function generate(){
   state.error=null; state.screen="generating"; render();
-  function finishGen(qs){
+  function toEdit(qs){
     if (!qs || !qs.length) qs = buildQuestions(state.config);
     if (!qs.length){ state.error = "No pude generar la entrevista. Revisá los datos y probá de nuevo."; state.screen = "config"; render(); return; }
-    var code = makeCode();
-    var ok = lset("voz_iv_"+code, {
-      position: state.config.position, company: state.config.company, focus: state.config.focus,
-      level: state.config.level, language: state.config.language, followups: false,
-      questions: qs, createdAt: Date.now()
-    });
-    rt.analyzed = {};
-    state.questions = qs; state.answers = {}; state.idx = 0; state.report = null;
-    state.code = code; state.interviewId = ""; state.candidateEmail=""; state.candidateName=""; state.storageWarn = !ok;
-    state.sendState = "idle"; state.sendError = null; state.sentMessageId = null;
-
-    function toShare(){ state.shareLink = computeInviteLink(); state.screen = "share"; probeGmailOnce(); render(); }
-
-    if (supaConfigured() && isLoggedIn()){
-      var u = currentUser();
-      var row = {
-        recruiter_id: u && u.id, code: code,
-        position: state.config.position, company: state.config.company, focus: state.config.focus||"",
-        level: state.config.level, language: state.config.language,
-        questions: stripQuestions(qs), status: "pending"
-      };
-      dbCreateInterview(row).then(function(saved){ state.interviewId = saved.id || ""; toShare(); })
-        .catch(function(){ state.storageWarn = true; toShare(); });
-    } else {
-      toShare();
-    }
+    state.questions = qs;
+    state.screen = "edit-questions"; render();
   }
   // Preguntas a medida con IA (Gemini). Si falla o no hay IA, se usan plantillas.
   generateQuestions()
-    .then(function(list){ finishGen(mapAIQuestions(list, state.config.language)); })
-    .catch(function(){ finishGen(buildQuestions(state.config)); });
+    .then(function(list){ toEdit(mapAIQuestions(list, state.config.language)); })
+    .catch(function(){ toEdit(buildQuestions(state.config)); });
+}
+function addQuestion(){
+  var i = state.questions.length;
+  state.questions.push({ id:"q"+i+"x"+Date.now(), text:"", category:"Experiencia", seconds: SECONDS_BY_CAT["Experiencia"]||160, lang: state.config.language||"es" });
+  render();
+}
+function delQuestion(idx){ state.questions.splice(idx,1); render(); }
+function createInterview(){
+  var qs = state.questions.filter(function(q){ return q.text && q.text.trim(); });
+  if (!qs.length){ state.error="La entrevista necesita al menos una pregunta."; render(); return; }
+  qs.forEach(function(q,i){ if(!q.id) q.id="q"+i; });
+  state.questions = qs;
+  state.error=null; state.screen="generating"; render();
+
+  var code = makeCode();
+  var ok = lset("voz_iv_"+code, {
+    position: state.config.position, company: state.config.company, focus: state.config.focus,
+    level: state.config.level, language: state.config.language, followups: false,
+    questions: qs, createdAt: Date.now()
+  });
+  rt.analyzed = {};
+  state.answers = {}; state.idx = 0; state.report = null;
+  state.code = code; state.interviewId = ""; state.candidateEmail=""; state.candidateName=""; state.storageWarn = !ok;
+  state.sendState = "idle"; state.sendError = null; state.sentMessageId = null;
+
+  function toShare(){ state.shareLink = computeInviteLink(); state.screen = "share"; probeGmailOnce(); render(); }
+  if (supaConfigured() && isLoggedIn()){
+    var u = currentUser();
+    var row = {
+      recruiter_id: u && u.id, code: code,
+      position: state.config.position, company: state.config.company, focus: state.config.focus||"",
+      level: state.config.level, language: state.config.language,
+      questions: stripQuestions(qs), status: "pending"
+    };
+    dbCreateInterview(row).then(function(saved){ state.interviewId = saved.id || ""; toShare(); })
+      .catch(function(){ state.storageWarn = true; toShare(); });
+  } else {
+    toShare();
+  }
 }
 
 function emailsMatch(a, b){ return (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase(); }
@@ -2086,6 +2142,8 @@ function bind(){
       else if (act === "open-detail"){ var id=el.getAttribute("data-id"); var it=(state.dash.items||[]).filter(function(z){return z.id===id;})[0]; if(it){ state.dash.detail=it; state.screen="interview-detail"; render(); } }
       else if (act === "del-interview"){ var did=el.getAttribute("data-id"); if(confirm("¿Quitar esta entrevista pendiente?")){ dbDeleteInterview(did).then(function(){ loadDashboard(); }); } }
       else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; state.screen="config"; render(); }
+      else if (act === "add-question") addQuestion();
+      else if (act === "del-question"){ delQuestion(parseInt(el.getAttribute("data-idx"),10)); }
       else if (act === "go-resultscode"){ state.error=null; state.screen="results-code"; render(); }
       else if (act === "preview"){ rt.analyzed={}; state.answers={}; state.idx=0; state.interviewMode="preview"; state.screen="interview"; render(); }
       else if (act === "start-rec") startRecording(state.questions[state.idx]);
@@ -2116,6 +2174,16 @@ function bind(){
   if ((f=document.getElementById("f_company"))) f.addEventListener("input", function(e){ state.config.company=e.target.value; syncGenBtn(); });
   if ((f=document.getElementById("f_focus"))) f.addEventListener("input", function(e){ state.config.focus=e.target.value; });
   if ((f=document.getElementById("f_companyurl"))) f.addEventListener("input", function(e){ state.config.companyUrl=e.target.value; });
+  if ((f=document.getElementById("f_brandname"))) f.addEventListener("input", function(e){ state.brand.name=e.target.value; saveBrand(); });
+  if ((f=document.getElementById("f_brandlogo"))) f.addEventListener("change", function(e){
+    var file = e.target.files && e.target.files[0]; var st=document.getElementById("brandStatus");
+    if(!file) return;
+    if(!audioUploadConfigured()){ if(st){ st.style.color="var(--brick)"; st.textContent="Para subir logo necesitás Cloudinary configurado."; } return; }
+    if(file.size > 3*1024*1024){ if(st){ st.style.color="var(--brick)"; st.textContent="El logo supera los 3 MB."; } return; }
+    if(st){ st.style.color="var(--muted)"; st.textContent="Subiendo logo…"; }
+    uploadAudioToCloudinary(file).then(function(url){ state.brand.logo=url; saveBrand(); if(st){ st.style.color="var(--teal)"; st.textContent="Logo cargado."; } render(); })
+      .catch(function(){ if(st){ st.style.color="var(--brick)"; st.textContent="No pude subir el logo."; } });
+  });
   if ((f=document.getElementById("f_recruiter"))) f.addEventListener("input", function(e){ state.config.recruiterEmail=e.target.value; });
   if ((f=document.getElementById("f_cv"))) f.addEventListener("change", function(e){
     var file = e.target.files && e.target.files[0];
@@ -2254,6 +2322,16 @@ function bind(){
   if ((f=document.getElementById("f_email"))) f.addEventListener("input", function(e){ state.candidateEmail=e.target.value; syncMailHref(); persistCandidateEmail(); });
   if ((f=document.getElementById("f_link"))) f.addEventListener("input", function(e){ state.shareLink=e.target.value; syncMailHref(); });
 
+  /* edit questions screen */
+  app.querySelectorAll("textarea.q-edit").forEach(function(t){
+    t.addEventListener("input", function(){ var i=parseInt(t.getAttribute("data-idx"),10); if(state.questions[i]) state.questions[i].text=t.value; });
+  });
+  if ((f=document.getElementById("createIvBtn"))) f.addEventListener("click", function(){
+    // capturar valores actuales por si acaso
+    app.querySelectorAll("textarea.q-edit").forEach(function(t){ var i=parseInt(t.getAttribute("data-idx"),10); if(state.questions[i]) state.questions[i].text=t.value; });
+    createInterview();
+  });
+
   /* review screen */
   if ((f=document.getElementById("evalBtn"))) f.addEventListener("click", evaluate);
 
@@ -2266,6 +2344,10 @@ function bind(){
     }
   }
 }
+
+/* ---- marca (white-label) guardada en este navegador ---- */
+(function loadBrand(){ try{ var b=lget("voz_brand"); if(b&&(b.name||b.logo)){ state.brand={ name:b.name||"", logo:b.logo||"" }; } }catch(e){} })();
+function saveBrand(){ try{ lset("voz_brand", { name:state.brand.name||"", logo:state.brand.logo||"" }); }catch(e){} }
 
 /* ---- entry from a shared invite link (works on any device) ---- */
 (function initFromHash(){
