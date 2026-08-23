@@ -375,6 +375,10 @@ function markInterviewUsed(code, email){ if(!code) return; lset("voz_used_"+Stri
    ================================================================ */
 var SUPABASE_URL = "https://wxegfxixyzmshhhjrdrq.supabase.co";
 var SUPABASE_ANON_KEY = "sb_publishable_UXZlhNcgZkOYoX3GXbW7pA__S5T0HT1";
+/* Email(es) del/los dueño(s) que pueden aprobar reclutadores. Solo controla mostrar
+   el panel de admin; la seguridad real está en la función /api/admin (ADMIN_EMAILS). */
+var ADMIN_EMAILS = ["matipealv@gmail.com"];
+function isAdminUser(){ var u=currentUser(); return !!(u && u.email && ADMIN_EMAILS.map(function(e){return e.toLowerCase();}).indexOf(String(u.email).toLowerCase())>=0); }
 function supaConfigured(){ return !!(SUPABASE_URL && SUPABASE_ANON_KEY); }
 function supaBase(){ return SUPABASE_URL.replace(/\/+$/,""); }
 
@@ -431,6 +435,18 @@ function dbListInterviews(){
 }
 function dbDeleteInterview(id){
   return supaFetch("/rest/v1/interviews?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; });
+}
+function loadProfile(){
+  var u = currentUser(); if(!u) return Promise.resolve(false);
+  return supaFetch("/rest/v1/profiles?select=approved&id=eq."+encodeURIComponent(u.id))
+    .then(function(r){ return r.json(); })
+    .then(function(j){ return (Array.isArray(j)&&j[0]) ? !!j[0].approved : false; })
+    .catch(function(){ return false; });
+}
+function adminCall(action, targetId){
+  var s = getSession();
+  return fetch("/api/admin", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ token:s&&s.access_token, action:action, targetId:targetId }) })
+    .then(function(r){ return r.json(); }).catch(function(){ return { ok:false, error:"network" }; });
 }
 function submitToDB(){
   if (!state.interviewId) return Promise.resolve(false);
@@ -839,6 +855,8 @@ var state = {
   invite: null,
   code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate",
   dash: { loading:false, items:null, error:null, detail:null },
+  myApproved: null,
+  admin: { loading:false, items:null, error:null },
   audioOmitted: false, recording:false, qTiming:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
   gmailStatus: null, sendState: "idle", sendError: null, sentMessageId: null,
   autoSendState: "idle", autoSendError: null
@@ -945,6 +963,58 @@ Screens["rec-signup"] = function(){
   '</div>';
 };
 
+Screens["rec-pending"] = function(){
+  var u = currentUser();
+  return Header() +
+  '<div class="card" style="max-width:460px;margin:0 auto;text-align:center">' +
+    '<div style="display:flex;justify-content:center;color:var(--amber);margin-bottom:8px">'+ic('clock',40)+'</div>' +
+    '<h2 style="font-size:19px;color:var(--ink);margin-bottom:8px">Tu cuenta está pendiente de aprobación</h2>' +
+    '<p style="font-size:14px;color:var(--muted);margin:0 0 6px">Registramos tu cuenta ('+esc(u&&u.email||'')+'). Un administrador tiene que habilitarla antes de que puedas crear entrevistas.</p>' +
+    '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Te avisaremos cuando esté activa. Podés cerrar esta ventana y volver más tarde.</p>' +
+    '<div class="flex-actions" style="justify-content:center">' +
+      '<button class="btn btn-ghost btn-sm" data-action="recheck-approval">'+ic('rotate',14)+' Ya me aprobaron, reintentar</button>' +
+      '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
+    '</div>' +
+  '</div>';
+};
+
+function AdminPanel(){
+  if (!isAdminUser()) return '';
+  var a = state.admin;
+  var html = '<div class="card" style="margin-bottom:20px;border:1px solid var(--teal)">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">' +
+      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('shield',18)+'<h3 style="font-size:15px;color:var(--ink)">Administración de reclutadores</h3></div>' +
+      '<button class="btn btn-ghost btn-sm" data-action="reload-admin">'+ic('rotate',13)+'</button>' +
+    '</div>';
+  if (a.loading || a.items===null){ html += '<p style="font-size:13px;color:var(--muted);margin:0">Cargando…</p>'; }
+  else if (a.error){ html += Note("err","No pude cargar la lista ("+esc(a.error)+")."); }
+  else if (!a.items.length){ html += '<p style="font-size:13px;color:var(--muted);margin:0">No hay reclutadores registrados.</p>'; }
+  else {
+    var pending = a.items.filter(function(p){return !p.approved;});
+    var approved = a.items.filter(function(p){return p.approved;});
+    if (pending.length){
+      html += '<p style="font-size:12.5px;font-weight:700;color:var(--amber);margin:0 0 8px">Pendientes ('+pending.length+')</p><div style="display:grid;gap:8px;margin-bottom:14px">';
+      pending.forEach(function(p){
+        html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--amber-tint);border-radius:10px">' +
+          '<span style="flex:1;min-width:0;font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.email||p.id)+'</span>' +
+          '<button class="btn btn-teal btn-sm" data-action="approve-rec" data-id="'+esc(p.id)+'">'+ic('check',13)+' Aprobar</button>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '<p style="font-size:12.5px;font-weight:700;color:var(--green);margin:0 0 8px">Aprobados ('+approved.length+')</p><div style="display:grid;gap:6px">';
+    approved.forEach(function(p){
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;font-size:12.5px;color:var(--muted)">' +
+        '<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.email||p.id)+'</span>' +
+        (isAdminUser() && currentUser() && p.email && String(p.email).toLowerCase()===String(currentUser().email).toLowerCase() ? '<span style="font-size:11px;color:var(--teal)">vos</span>' : '<button class="dl-audio" data-action="revoke-rec" data-id="'+esc(p.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">revocar</button>') +
+      '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
 function scoreColorVar(sc){ return sc>=7?"var(--green)":sc>=5?"var(--amber)":"var(--brick)"; }
 function scoreTintVar(sc){ return sc>=7?"var(--green-tint)":sc>=5?"var(--amber-tint)":"var(--brick-tint)"; }
 function fmtDate(iso){ if(!iso) return ""; try{ var d=new Date(iso); return d.toLocaleDateString('es-AR')+" "+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ""; } }
@@ -997,6 +1067,7 @@ Screens["rec-home"] = function(){
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
       '</div>' +
     '</div>' +
+    AdminPanel() +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--teal)">'+ic('eye',18)+'<h3 style="font-size:15px;color:var(--ink)">Entrevistas realizadas</h3></div>' +
     DashboardList();
   }
@@ -1560,7 +1631,7 @@ function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detai
 function enterRecruiter(){
   state.error=null;
   if (supaConfigured()){
-    if (isLoggedIn()){ state.screen="rec-home"; render(); loadDashboard(); }
+    if (isLoggedIn()){ routeAfterAuth(); }
     else { state.screen="rec-login"; render(); }
     return;
   }
@@ -1583,7 +1654,7 @@ function doLogin(email, password){
   state.busy=true; state.error=null; render();
   supaLogin(email, password).then(function(res){
     state.busy=false;
-    if(res.ok && res.j && res.j.access_token){ storeSessionFromToken(res.j); state.error=null; state.screen="rec-home"; render(); loadDashboard(); }
+    if(res.ok && res.j && res.j.access_token){ storeSessionFromToken(res.j); state.error=null; routeAfterAuth(); }
     else { state.error = (res.j && (res.j.error_description||res.j.msg||res.j.error)) || "Email o contraseña incorrectos."; render(); }
   }).catch(function(){ state.busy=false; state.error="No pude conectar. Revisá tu conexión."; render(); });
 }
@@ -1592,12 +1663,12 @@ function doSignup(email, password){
   if(!email || password.length<6){ state.error="Email válido y contraseña de al menos 6 caracteres."; render(); return; }
   state.busy=true; state.error=null; render();
   supaSignup(email, password).then(function(res){
-    if(res.ok && res.j && res.j.access_token){ state.busy=false; storeSessionFromToken(res.j); state.error=null; state.screen="rec-home"; render(); loadDashboard(); return; }
+    if(res.ok && res.j && res.j.access_token){ state.busy=false; storeSessionFromToken(res.j); state.error=null; routeAfterAuth(); return; }
     if(res.ok && res.j && (res.j.id || res.j.user)){
       // Cuenta creada pero requiere confirmar email: intentamos loguear igual.
       supaLogin(email, password).then(function(r2){
         state.busy=false;
-        if(r2.ok && r2.j && r2.j.access_token){ storeSessionFromToken(r2.j); state.screen="rec-home"; render(); loadDashboard(); }
+        if(r2.ok && r2.j && r2.j.access_token){ storeSessionFromToken(r2.j); routeAfterAuth(); }
         else { state.error="Cuenta creada. Revisá tu email para confirmarla y luego iniciá sesión."; state.screen="rec-login"; render(); }
       });
       return;
@@ -1607,12 +1678,28 @@ function doSignup(email, password){
     render();
   }).catch(function(){ state.busy=false; state.error="No pude conectar. Revisá tu conexión."; render(); });
 }
-function doLogout(){ supaLogout(); state.dash={loading:false,items:null,error:null,detail:null}; state.screen="home"; render(); }
+function doLogout(){ supaLogout(); state.dash={loading:false,items:null,error:null,detail:null}; state.admin={loading:false,items:null,error:null}; state.myApproved=null; state.screen="home"; render(); }
 function loadDashboard(){
   if(!supaConfigured() || !isLoggedIn()) return;
   state.dash.loading=true; state.dash.error=null; render();
   dbListInterviews().then(function(items){ state.dash.loading=false; state.dash.items=items; render(); })
     .catch(function(){ state.dash.loading=false; state.dash.error="No pude cargar las entrevistas."; render(); });
+}
+function routeAfterAuth(){
+  state.myApproved = null; state.screen="rec-home"; render();
+  loadProfile().then(function(approved){
+    state.myApproved = !!approved;
+    if (approved){ state.screen="rec-home"; render(); loadDashboard(); if(isAdminUser()) loadAdminList(); }
+    else { state.screen="rec-pending"; render(); }
+  });
+}
+function loadAdminList(){
+  if(!isAdminUser()) return;
+  state.admin.loading=true; state.admin.error=null; render();
+  adminCall("list").then(function(j){ state.admin.loading=false; if(j&&j.ok){ state.admin.items=j.profiles||[]; } else { state.admin.error=(j&&j.error)||"error"; } render(); });
+}
+function adminApprove(id, approve){
+  adminCall(approve?"approve":"revoke", id).then(function(j){ if(j&&j.ok){ loadAdminList(); } else { alert("No pude actualizar: "+((j&&j.error)||"error")); } });
 }
 
 function generate(){
@@ -1985,6 +2072,10 @@ function bind(){
       else if (act === "go-login"){ state.error=null; state.screen="rec-login"; render(); }
       else if (act === "go-signup"){ state.error=null; state.screen="rec-signup"; render(); }
       else if (act === "logout") doLogout();
+      else if (act === "recheck-approval") routeAfterAuth();
+      else if (act === "reload-admin") loadAdminList();
+      else if (act === "approve-rec"){ adminApprove(el.getAttribute("data-id"), true); }
+      else if (act === "revoke-rec"){ if(confirm("¿Revocar el acceso de este reclutador?")) adminApprove(el.getAttribute("data-id"), false); }
       else if (act === "reload-dash") loadDashboard();
       else if (act === "open-detail"){ var id=el.getAttribute("data-id"); var it=(state.dash.items||[]).filter(function(z){return z.id===id;})[0]; if(it){ state.dash.detail=it; state.screen="interview-detail"; render(); } }
       else if (act === "del-interview"){ var did=el.getAttribute("data-id"); if(confirm("¿Quitar esta entrevista pendiente?")){ dbDeleteInterview(did).then(function(){ loadDashboard(); }); } }
