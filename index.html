@@ -1049,7 +1049,7 @@ var state = {
   questions: [], idx: 0, answers: {}, report: null,
   audioUrls: {},
   invite: null,
-  code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate",
+  code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate", consentAt: "",
   dash: { loading:false, items:null, error:null, detail:null, filter:"all" },
   cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"" },
   searches: { loading:false, items:null, error:null, current:null, analyzing:false, error2:null, note:null },
@@ -1078,7 +1078,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v24.8-r4";
+var APP_VERSION = "v24.8-r5";
 function Header(){
   var showHome = state.screen !== "home";
   return '' +
@@ -1475,7 +1475,7 @@ Screens["interview-detail"] = function(){
       '<span class="rec-tag" style="background:rgba(255,255,255,.14);color:inherit;border:1px solid rgba(255,255,255,.25)">'+esc(x.recommendation||'')+'</span>' +
     '</div>' +
     (r.overall?'<p style="margin-top:14px;font-size:13.5px;opacity:.85;line-height:1.6">'+esc(r.overall)+'</p>':'') +
-    '<p style="margin-top:10px;font-size:11.5px;opacity:.6">'+esc(x.candidate_email||'')+' · '+esc(fmtDate(x.completed_at))+'</p>' +
+    '<p style="margin-top:10px;font-size:11.5px;opacity:.6">'+esc(x.candidate_email||'')+' · '+esc(fmtDate(x.completed_at))+(x.report&&x.report.consent&&x.report.consent.accepted?' · ✓ consentimiento aceptado'+(x.report.consent.at?(' ('+esc(fmtDate(x.report.consent.at))+')'):''):'')+'</p>' +
   '</div>';
   html += '<div class="grid2" style="margin-top:16px">' + ReportList("Fortalezas", r.strengths, "var(--green)") + ReportList("A mejorar", r.improve, "var(--amber)") + '</div>';
   html += LanguageBox(r.language);
@@ -1912,17 +1912,19 @@ Screens["invite-landing"] = function(){
     '</div>';
   }
   var titulo = inv.brandName ? (esc(inv.brandName)+' te invita a una entrevista') : 'Fuiste invitado a una entrevista';
+  var empresaConsent = (inv.brandName && inv.brandName.trim()) ? inv.brandName.trim() : ((inv.company && inv.company.trim()) ? inv.company.trim() : "la empresa reclutadora");
   return Header() + BrandBanner(inv) +
   '<div class="card" style="max-width:460px;margin:0 auto">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('mic',20)+'<h2 style="font-size:19px;color:var(--ink)">'+titulo+'</h2></div>' +
     '<p style="font-size:14px;color:var(--muted);margin:0 0 18px">Puesto: <strong style="color:var(--ink)">'+esc(inv.position||"")+'</strong>'+(empresa && empresa!=="la empresa"?(' · '+esc(empresa)):'')+'</p>' +
-    '<div class="note note-info">'+ic('alert',15)+'<span>Grabás tus respuestas por audio. <strong>El cronómetro de cada pregunta arranca apenas aparece</strong> (leé y pensá), y cuando estés listo tocás <strong>Grabar</strong> para responder. No se puede volver atrás ni regrabar. Necesitás permitir el micrófono (funciona mejor en Chrome).</span></div>' +
+    '<div class="note note-info">'+ic('alert',15)+'<span>Grabás tus respuestas por audio. <strong>El cronómetro de cada pregunta arranca apenas aparece</strong> (leé y pensá), y cuando estés listo tocás <strong>Grabar</strong> para responder. Mientras quede tiempo podés eliminar y grabar de nuevo esa pregunta. Necesitás permitir el micrófono (funciona mejor en Chrome).</span></div>' +
     ErrBox() +
     '<label class="field" style="display:block;margin:16px 0 12px"><span class="field-label">Nombre y apellido</span>' + fieldInput("inviteName","Ej: Juan Pérez","","users") + '<span class="field-hint">Con este nombre se identifican tus respuestas.</span></label>' +
     '<label class="field" style="display:block;margin:0 0 12px"><span class="field-label">Tu email</span>' + fieldInput("inviteEmail","nombre@correo.com","","mail") + '<span class="field-hint">Debe ser el email al que te llegó la invitación.</span></label>' +
     '<label class="field" style="display:block;margin:0 0 16px"><span class="field-label">Código de verificación</span><div class="input-row"><input id="inviteCode" class="mono" style="letter-spacing:.18em;text-transform:uppercase" placeholder="Ej: AB7K2Q" maxlength="8"></div><span class="field-hint">Está en el correo de la invitación. Es de un solo uso.</span></label>' +
-    '<button class="btn btn-primary btn-block" id="inviteStartBtn">'+ic('mic',15)+' Comenzar entrevista</button>' +
-    '<p style="margin:14px 0 0;font-size:11.5px;color:var(--muted)">Solo podés realizar esta entrevista una vez. Al terminar, tus respuestas se envían automáticamente al reclutador.</p>' +
+    '<label class="check-row" for="inviteConsent" style="margin:0 0 16px;background:var(--surface-2);align-items:flex-start"><input type="checkbox" id="inviteConsent"><span style="font-size:12.5px;line-height:1.5;color:var(--muted)"><strong style="color:var(--ink)">Entiendo y acepto</strong> que esta entrevista se graba en audio. Mis respuestas y su transcripción van a ser almacenadas y compartidas con '+esc(empresaConsent)+' únicamente para este proceso de selección. Un sistema de inteligencia artificial ayuda a organizar y evaluar las respuestas, pero la decisión final la toma una persona. Mi participación es voluntaria y confirmo que soy mayor de edad. Puedo pedir acceder, corregir o eliminar mis datos escribiendo a quien me contactó.</span></label>' +
+    '<button class="btn btn-primary btn-block" id="inviteStartBtn" disabled style="opacity:.5">'+ic('mic',15)+' Comenzar entrevista</button>' +
+    '<p style="margin:14px 0 0;font-size:11.5px;color:var(--muted)">Solo podés realizar esta entrevista una vez. Al terminar, tus respuestas quedan registradas para el reclutador.</p>' +
   '</div>';
 };
 
@@ -2276,6 +2278,7 @@ function startInviteInterview(emailRaw, codeRaw, nameRaw){
     state.interviewMode = "candidate";
     state.autoSendState = "idle"; state.autoSendError = null;
     state.micDenied = false;
+    state.consentAt = new Date().toISOString(); // registro del consentimiento aceptado
     // El "un solo uso" ya NO se marca al ingresar (así un corte de micrófono o una
     // recarga no dejan al candidato bloqueado sin haber respondido). Se marca al terminar.
     state.error = null; state.screen = "interview";
@@ -2406,6 +2409,7 @@ function finalizeCandidate(){
       if (rt.audioError && (!state.audioUrls || !Object.keys(state.audioUrls).length)){
         state.report = state.report || {}; state.report.audioError = rt.audioError;
       }
+      if (state.consentAt){ state.report = state.report || {}; state.report.consent = { accepted:true, at: state.consentAt }; }
       return withTimeout(submitToDB(), 30000).catch(function(){ return false; });
     })
     .then(function(dbSaved){
@@ -2789,9 +2793,15 @@ function bind(){
       var em = document.getElementById("inviteEmail");
       var cd = document.getElementById("inviteCode");
       var nm = document.getElementById("inviteName");
+      var cons = document.getElementById("inviteConsent");
+      var startBtn = document.getElementById("inviteStartBtn");
+      // El botón "Comenzar" se habilita solo cuando el candidato tilda el consentimiento.
+      function syncConsent(){ var ok = !!(cons && cons.checked); if(startBtn){ startBtn.disabled = !ok; startBtn.style.opacity = ok ? "1" : ".5"; } }
+      if (cons) cons.addEventListener("change", syncConsent);
+      syncConsent();
       if (cd) cd.addEventListener("input", function(){ cd.value = cd.value.toUpperCase().slice(0,8); });
-      var go = function(){ startInviteInterview(em ? em.value : "", cd ? cd.value : "", nm ? nm.value : ""); };
-      document.getElementById("inviteStartBtn").addEventListener("click", go);
+      var go = function(){ if(cons && !cons.checked){ state.error="Para continuar, tenés que aceptar el consentimiento."; render(); return; } startInviteInterview(em ? em.value : "", cd ? cd.value : "", nm ? nm.value : ""); };
+      startBtn.addEventListener("click", go);
       if (nm) nm.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); });
       if (em) em.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); });
       if (cd) cd.addEventListener("keydown", function(e){ if (e.key==="Enter") go(); });
