@@ -1064,7 +1064,7 @@ var rt = { // runtime refs, not persisted / not re-rendered on
   recorder:null, chunks:[], stream:null, recog:null, finalText:"", timerId:null,
   meterId:null, audioCtx:null, startTime:0, activeQ:null,
   sig:{ longest:0, cur:0, total:0, spoke:false }, analyzed:{}, gmailProbed:false,
-  autoStartedFor:{}, cvData:null, cvText:"", cvId:null, cvName:""
+  autoStartedFor:{}, cvData:null, cvText:"", cvId:null, cvName:"", audioError:""
 };
 
 var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -1560,6 +1560,7 @@ Screens["cand-done"] = function(){
     '<div style="display:flex;justify-content:center;color:var(--green);margin-bottom:8px">'+ic('check',40)+'</div>' +
     '<h2 style="font-size:20px;color:var(--ink);margin-bottom:8px">¡Listo! Terminaste la entrevista</h2>' +
     '<p style="font-size:14px;color:var(--muted);margin:0">Tus respuestas ya se enviaron al reclutador automáticamente. No tenés que hacer nada más — ya podés cerrar esta ventana. ¡Gracias por tu tiempo!</p>' +
+    ((rt.audioError && (!state.audioUrls || !Object.keys(state.audioUrls).length)) ? '<p style="font-size:11px;color:var(--muted);opacity:.7;margin:14px 0 0">Diagnóstico (audio): '+esc(rt.audioError)+'</p>' : '') +
   '</div>';
 };
 Screens["cand-send"] = function(){
@@ -1751,7 +1752,8 @@ function uploadAudioToCloudinary(blob){
 }
 /* Sube todos los audios grabados y guarda las URLs en state.audioUrls (best-effort). */
 function uploadAllAudios(){
-  if (!audioUploadConfigured()) return Promise.resolve();
+  rt.audioError = "";
+  if (!audioUploadConfigured()) { rt.audioError = "Cloudinary no está configurado para subir audios."; return Promise.resolve(); }
   var qs = state.questions.slice();
   var chain = Promise.resolve();
   state.audioUrls = state.audioUrls || {};
@@ -1760,31 +1762,31 @@ function uploadAllAudios(){
     if (!a || !a.blobUrl || a.blobUrl.indexOf("blob:") !== 0) return;
     chain = chain.then(function(){
       return fetch(a.blobUrl).then(function(r){ return r.blob(); }).then(function(blob){
-        return uploadAudioToCloudinary(blob).then(function(url){ state.audioUrls[q.id] = url; }).catch(function(){ /* seguimos con los demás */ });
-      }).catch(function(){});
+        return uploadAudioToCloudinary(blob).then(function(url){ state.audioUrls[q.id] = url; })
+          .catch(function(e){ if(!rt.audioError) rt.audioError = (e && e.message) || "Falló la subida del audio."; });
+      }).catch(function(e){ if(!rt.audioError) rt.audioError = (e && e.message) || "No pude leer el audio grabado."; });
     });
   });
   return chain;
 }
-function autoSendConfigured(){ return typeof WEB3FORMS_KEY === "string" && WEB3FORMS_KEY.length >= 20; }
+/* Ahora el envío va al email que cargó el reclutador (state.config.recruiterEmail),
+   vía nuestro endpoint /api/notify (Brevo, server-side). */
+function autoSendConfigured(){ return !!(state.config.recruiterEmail && state.config.recruiterEmail.trim()); }
 function sendResultsAuto(){
-  return fetch("https://api.web3forms.com/submit", {
+  var to = (state.config.recruiterEmail || "").trim();
+  if (!to) return Promise.reject({ message: "No hay email de destino cargado." });
+  return fetch("/api/notify", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      access_key: WEB3FORMS_KEY,
+      to: to,
       subject: resultsSubject(),
-      from_name: "voz. entrevistas",
-      replyto: state.candidateEmail || "",
       message: buildResultsMessage(),
-      candidato: state.candidateName || "",
-      email_candidato: state.candidateEmail || "",
-      puesto: state.config.position || "",
-      codigo: state.code || ""
+      replyTo: state.candidateEmail || ""
     })
   }).then(function(r){ return r.json(); }).then(function(j){
-    if (j && j.success) return true;
-    throw { message: (j && j.message) || "El servicio de envío rechazó el mensaje." };
+    if (j && j.ok) return true;
+    throw { message: (j && (j.detail || j.error)) || "El servicio de envío rechazó el mensaje." };
   });
 }
 
