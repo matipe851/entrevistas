@@ -692,10 +692,12 @@ function pageBaseUrl(){
   if (typeof window==="undefined" || !window.location) return "";
   var loc = window.location;
   if (!/^https?:$/.test(loc.protocol)) return "";
-  if (/(^|\.)vercel\.app$/.test(loc.hostname) || loc.hostname === "localhost" || /^127\./.test(loc.hostname) || loc.hostname.indexOf(".") > 0){
-    return loc.origin + loc.pathname;
-  }
-  return "";
+  var h = loc.hostname || "";
+  // Si la página corre dentro de la previsualización de claude.ai (u hosts de sandbox),
+  // la app NO está publicada ahí: caemos a PROD_BASE para que el link funcione.
+  if (/claude|anthropic|usercontent/i.test(h)) return "";
+  // En el sitio real (vercel.app o tu dominio propio) usamos el dominio actual.
+  return loc.origin + loc.pathname;
 }
 function computeInviteLink(){
   var base = pageBaseUrl() || PROD_BASE;
@@ -1699,7 +1701,7 @@ function reportFromAI(ai){
   var per = Array.isArray(ai.perQuestion) ? ai.perQuestion.map(function(p){ return { n:p.n, rating:String(p.rating||""), assessment:String(p.assessment||"") }; }) : [];
   return {
     score: sc,
-    recommendation: ai.recommendation || (sc>=7.5?"Avanzar":sc>=5?"Con reservas":"No avanzar"),
+    recommendation: String(ai.recommendation || (sc>=7.5?"Avanzar":sc>=5?"Con reservas":"No avanzar")),
     overall: String(ai.overall||""),
     strengths: arr(ai.strengths),
     improve: arr(ai.improve),
@@ -1967,7 +1969,7 @@ Screens.interview = function(){
   html += '<p class="rec-hint">' + hintTxt + '</p></div>';
 
   if (answer && answer.blobUrl && !state.recording && !isCandidate){
-    html += '<div class="transcript-box"><audio controls src="'+answer.blobUrl+'"></audio>';
+    html += '<div class="transcript-box"><audio controls src="'+esc(answer.blobUrl)+'"></audio>';
     if (answer.transcript) html += '<div style="margin-top:12px"><div class="transcript-label">'+ic('msg',12)+' Transcripción aproximada</div><p style="margin:0;font-size:13.5px">'+esc(answer.transcript)+'</p></div>';
     html += '</div>';
   }
@@ -2010,7 +2012,7 @@ Screens.review = function(){
       (!isF ? Badge(q.category, q.category) : '') + (q.lang!=='es'?Badge(LANG_LABEL[q.lang],'Repregunta'):'') +
       (sig ? '<span style="font-size:11.5px;color:var(--muted)" class="mono">'+sig+'</span>' : '') + '</div>' +
       '<p class="qa-text">'+esc(q.text)+'</p>' +
-      (a && a.blobUrl ? '<audio controls src="'+a.blobUrl+'"></audio>' : '') +
+      (a && a.blobUrl ? '<audio controls src="'+esc(a.blobUrl)+'"></audio>' : '') +
       (a && a.transcript ? '<p style="margin-top:10px;font-size:13.5px;color:'+(a.blobUrl?'var(--muted)':'var(--ink)')+'">'+esc(a.transcript)+'</p>' : (!a || !a.blobUrl) ? '<p style="font-style:italic;color:var(--muted);font-size:13px">Sin responder</p>' : '') +
       (a && a.blobUrl ? '<button class="dl-audio" data-action="download-audio" data-qid="'+esc(q.id)+'" data-name="respuesta-'+(i+1)+extForAnswer(a)+'" style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;font-weight:600;color:var(--teal);background:none;border:none;padding:0;cursor:pointer;font-family:inherit">'+ic('download',13)+' <span>Descargar audio</span></button>' : '') +
     '</div>';
@@ -2114,7 +2116,7 @@ function doSignup(email, password, captchaToken){
         state.busy=false;
         if(r2.ok && r2.j && r2.j.access_token){ storeSessionFromToken(r2.j); routeAfterAuth(); }
         else { state.error="Cuenta creada. Revisá tu email para confirmarla y luego iniciá sesión."; state.screen="rec-login"; render(); }
-      });
+      }).catch(function(){ state.busy=false; state.error="Cuenta creada. Revisá tu email para confirmarla y luego iniciá sesión."; state.screen="rec-login"; render(); });
       return;
     }
     state.busy=false;
@@ -2221,7 +2223,7 @@ function startInviteInterview(emailRaw, codeRaw, nameRaw){
   var emailIn = (emailRaw||"").trim();
   var codeIn = (codeRaw||"").trim().toUpperCase();
   var nameIn = (nameRaw||"").trim().replace(/\s+/g," ");
-  if (!nameIn || nameIn.length < 3 || nameIn.indexOf(" ") < 1){ state.error="Ingresá tu nombre y apellido."; render(); return; }
+  if (!nameIn || nameIn.length < 2){ state.error="Ingresá tu nombre y apellido."; render(); return; }
   if (!emailIn || emailIn.indexOf("@") < 1){ state.error="Ingresá un email válido para comenzar."; render(); return; }
   if (!codeIn){ state.error="Ingresá el código de verificación que está en el correo de la invitación."; render(); return; }
   if (inv.code && codeIn !== String(inv.code).toUpperCase()){ state.error="El código no es correcto. Revisá el correo de la invitación."; render(); return; }
@@ -2244,7 +2246,8 @@ function startInviteInterview(emailRaw, codeRaw, nameRaw){
     state.interviewMode = "candidate";
     state.autoSendState = "idle"; state.autoSendError = null;
     state.micDenied = false;
-    markInterviewUsed(inv.code, emailIn); // un solo uso: se marca al ingresar
+    // El "un solo uso" ya NO se marca al ingresar (así un corte de micrófono o una
+    // recarga no dejan al candidato bloqueado sin haber respondido). Se marca al terminar.
     state.error = null; state.screen = "interview";
     render();
   }
@@ -2343,29 +2346,51 @@ function submitAnswers(){
 }
 
 /* Sube audios, pide el análisis con IA, guarda en la base y/o envía por mail. */
+/* Envuelve una promesa con un límite de tiempo, para que un fetch colgado no trabe la UI. */
+function withTimeout(p, ms){
+  return new Promise(function(resolve, reject){
+    var to = setTimeout(function(){ reject(new Error("timeout")); }, ms || 30000);
+    Promise.resolve(p).then(function(v){ clearTimeout(to); resolve(v); }, function(e){ clearTimeout(to); reject(e); });
+  });
+}
+function safeLocalReport(){ try{ return evaluateLocally(state.questions, state.answers, state.config); }catch(e){ return null; } }
+
 function finalizeCandidate(){
   state.autoSendState = "sending"; state.autoSendError = null; state.screen = "cand-autosend"; render();
-  uploadAllAudios()
-    .then(function(){ return analyzeWithAI().then(function(ai){ state.report = reportFromAI(ai); }).catch(function(){ /* respaldo: análisis local ya calculado */ }); })
+  var settled = false;
+  function finish(screen, st, markUsed){
+    if (settled) return; settled = true;
+    if (markUsed){ try{ markInterviewUsed(state.code, state.candidateEmail); }catch(e){} }
+    state.autoSendState = st || "sent"; state.screen = screen; render();
+  }
+  // Respaldo por si toda la cadena tarda demasiado (audios + IA + guardado): no dejamos al candidato colgado.
+  var hardStop = setTimeout(function(){ finish("cand-send", "error", false); }, 90000);
+
+  withTimeout(uploadAllAudios(), 60000).catch(function(){ /* audios best-effort */ })
     .then(function(){
-      // Si los audios no se pudieron subir, dejamos registrado el motivo en el reporte
-      // para que se vea en el panel del reclutador.
+      return withTimeout(analyzeWithAI(), 45000)
+        .then(function(ai){ state.report = reportFromAI(ai); })
+        .catch(function(){ state.report = state.report || safeLocalReport(); });
+    })
+    .then(function(){
       if (rt.audioError && (!state.audioUrls || !Object.keys(state.audioUrls).length)){
         state.report = state.report || {}; state.report.audioError = rt.audioError;
       }
-      return submitToDB();
-    }) // guarda en la base (bool)
+      return withTimeout(submitToDB(), 30000).catch(function(){ return false; });
+    })
     .then(function(dbSaved){
       var hasDB = !!state.interviewId;
       var needsSend = autoSendConfigured();
-      var emailP = needsSend ? sendResultsAuto().then(function(){ return true; }).catch(function(){ return false; }) : Promise.resolve(false);
+      var emailP = needsSend ? withTimeout(sendResultsAuto(), 30000).then(function(){ return true; }).catch(function(){ return false; }) : Promise.resolve(false);
       return emailP.then(function(emailSent){
+        clearTimeout(hardStop);
         var delivered = (hasDB && dbSaved) || emailSent;
-        if (delivered){ state.autoSendState = "sent"; state.screen = "cand-done"; render(); }
-        else if (!hasDB && !needsSend){ state.autoSendState = "idle"; state.screen = "cand-send"; render(); }
-        else { state.autoSendState = "error"; state.autoSendError = { message: "No se pudieron entregar los resultados automáticamente." }; state.screen = "cand-send"; render(); }
+        if (delivered){ finish("cand-done", "sent", true); }        // entregado: recién acá marcamos "un solo uso"
+        else if (!hasDB && !needsSend){ finish("cand-send", "idle", false); }
+        else { state.autoSendError = { message: "No se pudieron entregar los resultados automáticamente." }; finish("cand-send", "error", false); }
       });
-    });
+    })
+    .catch(function(){ clearTimeout(hardStop); finish("cand-send", "error", false); });
 }
 
 /* ---- recording ---- */
@@ -2376,6 +2401,11 @@ function pickMime(){
 }
 function startRecording(q){
   state.error=null; state.micDenied=false;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    state.micDenied = true;
+    state.error = "Tu navegador no permite grabar audio. Abrí el enlace directamente en Chrome o Safari (no dentro de otra app como Instagram o LinkedIn) y sobre una conexión segura (https).";
+    render(); return;
+  }
   navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
     rt.stream = stream;
     var mime = pickMime();
@@ -2540,7 +2570,18 @@ function evaluate(){
    BINDING
    ================================================================ */
 function copyText(txt, cb){
-  if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(cb).catch(function(){}); }
+  function fallback(){
+    try{
+      var ta=document.createElement("textarea"); ta.value=txt;
+      ta.style.position="fixed"; ta.style.top="0"; ta.style.left="0"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try{ document.execCommand("copy"); }catch(e){}
+      document.body.removeChild(ta);
+    }catch(e){}
+    if (cb) cb();
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(cb).catch(fallback); }
+  else fallback();
 }
 function bind(){
   app.querySelectorAll("[data-action]").forEach(function(el){
