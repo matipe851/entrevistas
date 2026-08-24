@@ -1454,6 +1454,7 @@ Screens["interview-detail"] = function(){
   if (r.probes && r.probes.length) html += '<div style="margin-top:16px">'+ReportList("Repreguntas sugeridas", r.probes, "var(--teal)")+'</div>';
   var perMap = {}; if (r.perQuestion) r.perQuestion.forEach(function(p){ if(p&&p.n!=null) perMap[p.n]=p; });
   html += '<div style="display:flex;align-items:center;gap:8px;margin:20px 0 10px;color:var(--teal)">'+ic('mic',18)+'<h3 style="font-size:15px;color:var(--ink)">Respuestas</h3></div>';
+  if (r && r.audioError) html += Note("warn","Los audios de esta entrevista no se pudieron guardar (se muestra la transcripción). Diagnóstico: "+esc(r.audioError));
   html += '<div style="display:grid;gap:12px">';
   answers.forEach(function(a){
     var p = perMap[a.n];
@@ -1491,7 +1492,6 @@ Screens.config = function(){
       '</label>' +
       '<label class="field"><span class="field-label">Competencias o focos (opcional)</span>' + fieldInput("f_focus","Ej: orientación al cliente, manejo de objeciones", c.focus, "list") + '</label>' +
       '<label class="field"><span class="field-label">Web o perfil de la empresa (opcional)</span>' + fieldInput("f_companyurl","https://empresa.com", c.companyUrl, "globe") + '<span class="field-hint">Si la cargás, la IA lee la web y arma preguntas sobre el encaje con la empresa. Requiere la IA activada.</span></label>' +
-      '<label class="field" style="background:var(--teal-tint);border:1px solid var(--border-soft);border-radius:14px;padding:14px 16px"><span class="field-label">Tu email (para recibir las respuestas)</span>' + fieldInput("f_recruiter","reclutador@empresa.com", c.recruiterEmail, "mail") + '<span class="field-hint">Cuando el candidato termine, sus respuestas y la evaluación te llegan a este correo. Recomendado.</span></label>' +
       '<label class="field"><span class="field-label">CV del candidato (opcional)</span>' +
         ((supaConfigured() && isLoggedIn()) ? (
           (state.cvbank.cvs===null)
@@ -1559,7 +1559,7 @@ Screens["cand-done"] = function(){
   '<div class="card" style="max-width:480px;margin:0 auto;text-align:center">' +
     '<div style="display:flex;justify-content:center;color:var(--green);margin-bottom:8px">'+ic('check',40)+'</div>' +
     '<h2 style="font-size:20px;color:var(--ink);margin-bottom:8px">¡Listo! Terminaste la entrevista</h2>' +
-    '<p style="font-size:14px;color:var(--muted);margin:0">Tus respuestas ya se enviaron al reclutador automáticamente. No tenés que hacer nada más — ya podés cerrar esta ventana. ¡Gracias por tu tiempo!</p>' +
+    '<p style="font-size:14px;color:var(--muted);margin:0">Tus respuestas ya quedaron registradas y el reclutador va a poder verlas y escucharlas. No tenés que hacer nada más — ya podés cerrar esta ventana. ¡Gracias por tu tiempo!</p>' +
     ((rt.audioError && (!state.audioUrls || !Object.keys(state.audioUrls).length)) ? '<p style="font-size:11px;color:var(--muted);opacity:.7;margin:14px 0 0">Diagnóstico (audio): '+esc(rt.audioError)+'</p>' : '') +
   '</div>';
 };
@@ -1762,7 +1762,9 @@ function uploadAllAudios(){
     if (!a || !a.blobUrl || a.blobUrl.indexOf("blob:") !== 0) return;
     chain = chain.then(function(){
       return fetch(a.blobUrl).then(function(r){ return r.blob(); }).then(function(blob){
-        return uploadAudioToCloudinary(blob).then(function(url){ state.audioUrls[q.id] = url; })
+        var named = blob;
+        try{ named = new File([blob], "respuesta-"+q.id+".webm", { type: blob.type || "audio/webm" }); }catch(e){}
+        return uploadAudioToCloudinary(named).then(function(url){ state.audioUrls[q.id] = url; })
           .catch(function(e){ if(!rt.audioError) rt.audioError = (e && e.message) || "Falló la subida del audio."; });
       }).catch(function(e){ if(!rt.audioError) rt.audioError = (e && e.message) || "No pude leer el audio grabado."; });
     });
@@ -1820,7 +1822,6 @@ Screens.share = function(){
   '<div class="card">' +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;color:var(--teal)">'+ic('check',19)+'<h2 style="font-size:17px;color:var(--ink)">Entrevista lista para compartir</h2></div>' +
     Note("info","Este enlace es único para esta entrevista y funciona en cualquier dispositivo. Al abrirlo, el candidato ingresa su email y el código de verificación (ambos van en el mensaje). Es de un solo uso: si ya la realizó, no puede repetirla.") +
-    (!(c.recruiterEmail && c.recruiterEmail.trim()) ? Note("warn","No cargaste tu email en la configuración, así que las respuestas del candidato no van a poder volver a vos automáticamente. Volvé al paso anterior y agregalo si querés recibirlas.") : "") +
     '<div class="share-code"><div class="lbl">Código de la entrevista</div><div class="val mono">'+esc(state.code)+'</div>' +
       '<button class="copybtn" data-action="copy-code">'+ic('copy',12)+' <span id="copyCodeLbl">Copiar código</span></button></div>' +
     '<div style="display:grid;gap:16px">' +
@@ -1835,7 +1836,7 @@ Screens.share = function(){
       '<button class="btn btn-ghost" data-action="preview">'+ic('eye',15)+' Previsualizar</button>' +
       '<button class="btn btn-ghost" data-action="go-recruiterhome" style="margin-left:auto">Volver al panel</button>' +
     '</div>' +
-    '<p style="margin:16px 0 0;font-size:12px;color:var(--muted)">“Abrir en Gmail” abre la ventana de redactar de Gmail en el navegador con todo cargado (ideal si usás Gmail en el navegador). “Abrir en tu cliente de correo” usa la app de mail instalada, y “Copiar mensaje” copia el texto para pegarlo donde quieras. ' + (autoSendConfigured() ? "Cuando el candidato termine, sus respuestas y la evaluación te llegan automáticamente por correo." : "Cuando el candidato termine, sus respuestas y la evaluación te van a llegar por correo.") + '</p>' +
+    '<p style="margin:16px 0 0;font-size:12px;color:var(--muted)">“Abrir en Gmail” abre la ventana de redactar de Gmail en el navegador con todo cargado (ideal si usás Gmail en el navegador). “Abrir en tu cliente de correo” usa la app de mail instalada, y “Copiar mensaje” copia el texto para pegarlo donde quieras. Cuando el candidato termine, sus respuestas y la evaluación aparecen en tu panel (“Ver respuestas”), con los audios para escuchar.</p>' +
   '</div>';
 };
 
@@ -2338,7 +2339,14 @@ function finalizeCandidate(){
   state.autoSendState = "sending"; state.autoSendError = null; state.screen = "cand-autosend"; render();
   uploadAllAudios()
     .then(function(){ return analyzeWithAI().then(function(ai){ state.report = reportFromAI(ai); }).catch(function(){ /* respaldo: análisis local ya calculado */ }); })
-    .then(function(){ return submitToDB(); }) // guarda en la base (bool)
+    .then(function(){
+      // Si los audios no se pudieron subir, dejamos registrado el motivo en el reporte
+      // para que se vea en el panel del reclutador.
+      if (rt.audioError && (!state.audioUrls || !Object.keys(state.audioUrls).length)){
+        state.report = state.report || {}; state.report.audioError = rt.audioError;
+      }
+      return submitToDB();
+    }) // guarda en la base (bool)
     .then(function(dbSaved){
       var hasDB = !!state.interviewId;
       var needsSend = autoSendConfigured();
@@ -2617,7 +2625,6 @@ function bind(){
     }
   });
 
-  if ((f=document.getElementById("f_recruiter"))) f.addEventListener("input", function(e){ state.config.recruiterEmail=e.target.value; });
   if ((f=document.getElementById("f_cv"))) f.addEventListener("change", function(e){
     var file = e.target.files && e.target.files[0];
     var st = document.getElementById("cvStatus");
