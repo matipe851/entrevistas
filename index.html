@@ -1078,6 +1078,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
+var APP_VERSION = "v24.8-r3";
 function Header(){
   var showHome = state.screen !== "home";
   return '' +
@@ -1085,7 +1086,7 @@ function Header(){
     '<div class="hdr-mark">' + waveBars(4) + ic('mic', 19) + '</div>' +
     '<div>' +
       '<h1 class="hdr-title">voz<span class="dot">.</span> entrevistas</h1>' +
-      '<p class="hdr-sub">Entrevistas por audio, con preguntas y evaluación automática</p>' +
+      '<p class="hdr-sub">Entrevistas por audio, con preguntas y evaluación automática <span style="opacity:.45;font-size:10px;margin-left:4px">'+APP_VERSION+'</span></p>' +
     '</div>' +
     (showHome ? '<button class="hdr-home" data-action="home">'+ic('home',14)+' Inicio</button>' : '') +
   '</div>';
@@ -1943,8 +1944,9 @@ Screens.interview = function(){
       '<circle cx="64" cy="64" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>' +
       '<circle cx="64" cy="64" r="54" fill="none" stroke="'+(overtime?'var(--brick)':'var(--teal)')+'" stroke-width="6" stroke-linecap="round" stroke-dasharray="'+ring+'" stroke-dashoffset="'+(ring*(1-progress))+'" style="transition:stroke-dashoffset 1s linear"/>' +
     '</svg>';
+  var canReRecord = isCandidate && answered && state.qTiming && !state.recording;
   if (state.recording){
-    html += '<button class="rec-btn rec-active" data-action="stop-rec">'+ic('square',20)+'<span class="mono" style="font-size:17px;font-weight:600">'+fmt(state.timeLeft)+'</span></button>';
+    html += '<button class="rec-btn rec-active" data-action="stop-rec">'+ic('square',18)+'<span style="font-size:12px;font-weight:700">Detener</span><span class="mono" style="font-size:13px;font-weight:600">'+fmt(state.timeLeft)+'</span></button>';
   } else if (answered){
     html += '<div class="rec-btn rec-done">'+ic('check',24)+'<span style="font-size:12px;font-weight:600">Grabado</span></div>';
   } else if (timedOut){
@@ -1955,16 +1957,16 @@ Screens.interview = function(){
     html += '<button class="rec-btn rec-idle" data-action="start-rec">'+ic('mic',22)+'<span style="font-size:12px;font-weight:600">Grabar</span></button>';
   }
   html += '</div>';
-  // Reloj visible (el tiempo corre desde que apareció la pregunta)
-  if (state.qTiming && !state.recording && !answered && !timedOut){
-    html += '<p class="rec-hint" style="font-weight:700;color:'+(overtime?'var(--brick)':'var(--ink)')+'"><span class="mono">'+fmt(state.timeLeft)+'</span> restantes — tocá <strong>Grabar</strong> cuando estés listo</p>';
+  // Reloj visible (el tiempo corre desde que apareció la pregunta y no se frena al detener)
+  if (state.qTiming && !state.recording && !timedOut){
+    html += '<p class="rec-hint" style="font-weight:700;color:'+(overtime?'var(--brick)':'var(--ink)')+'"><span class="mono">'+fmt(state.timeLeft)+'</span> restantes'+(answered?'':' — tocá <strong>Grabar</strong> cuando estés listo')+'</p>';
   }
   var hintTxt;
-  if (state.recording) hintTxt = isCandidate ? "Grabando. Tocá el cuadrado cuando termines de responder." : "Grabando… tocá el cuadrado para terminar antes.";
-  else if (answered) hintTxt = isCandidate ? "Respuesta guardada. No se puede volver a grabar; continuá con la siguiente." : "Podés escuchar tu respuesta o volver a grabar.";
+  if (state.recording) hintTxt = isCandidate ? "Estás grabando. Cuando termines de responder, tocá el botón <strong>Detener</strong>." : "Grabando… tocá el cuadrado para terminar antes.";
+  else if (answered) hintTxt = canReRecord ? "Grabaste tu respuesta. Si te equivocaste, tocá <strong>Eliminar y grabar de nuevo</strong> — ojo, el tiempo sigue corriendo." : (isCandidate ? "Respuesta guardada. Continuá con la siguiente pregunta." : "Podés escuchar tu respuesta o volver a grabar.");
   else if (timedOut) hintTxt = "Se acabó el tiempo de esta pregunta sin una respuesta grabada. Podés continuar.";
   else if (state.micDenied) hintTxt = "Necesitamos el micrófono para grabar. Dale permiso al navegador y tocá Reintentar.";
-  else if (isCandidate) hintTxt = "El tiempo ya corre. Leé y pensá la respuesta; cuando estés listo tocá Grabar. No se puede regrabar.";
+  else if (isCandidate) hintTxt = "El tiempo ya corre. Leé y pensá la respuesta; cuando estés listo, tocá <strong>Grabar</strong>. Mientras quede tiempo podés eliminar y grabar de nuevo.";
   else hintTxt = "Tocá el micrófono y el cronómetro arranca. Se corta solo al llegar a 0.";
   html += '<p class="rec-hint">' + hintTxt + '</p></div>';
 
@@ -1977,7 +1979,10 @@ Screens.interview = function(){
   html += '</div>';
 
   html += '<div class="flex-actions">';
-  if (answer && answer.blobUrl && !state.recording && !isCandidate) html += '<button class="btn btn-ghost btn-sm" data-action="re-record">'+ic('rotate',14)+' Volver a grabar</button>';
+  if (answer && answer.blobUrl && !state.recording){
+    if (!isCandidate) html += '<button class="btn btn-ghost btn-sm" data-action="re-record">'+ic('rotate',14)+' Volver a grabar</button>';
+    else if (state.qTiming) html += '<button class="btn btn-ghost btn-sm" data-action="re-record" style="color:var(--brick)">'+ic('trash',14)+' Eliminar y grabar de nuevo</button>';
+  }
   var showNext = isCandidate ? (answered || timedOut) : true;
   if (showNext) html += '<button class="btn btn-primary" data-action="next-q" style="margin-left:auto">' +
     (state.idx < total-1 ? "Siguiente pregunta "+ic('chevron',15) : esc(lastLabel)+" "+ic('chevron',15)) +
@@ -2433,9 +2438,10 @@ function startRecording(q){
       if (!state.qTiming) startQuestionTimer(q);
       render();
     } else {
-      // Preview del reclutador: el reloj arranca al grabar.
-      state.timeLeft = questionTime(q, false); state.timeTotal = state.timeLeft; state.qTiming = true;
-      render(); tick();
+      // Preview del reclutador: el reloj arranca al grabar la primera vez.
+      // Si ya está corriendo (por ejemplo al regrabar), NO se reinicia.
+      if (!state.qTiming){ state.timeLeft = questionTime(q, false); state.timeTotal = state.timeLeft; state.qTiming = true; render(); tick(); }
+      else render();
     }
   }).catch(function(){ state.micDenied = true; render(); });
 }
@@ -2500,9 +2506,9 @@ function stopRecorderOnly(){
   state.recording = false;
 }
 function stopRecording(){
-  clearTimeout(rt.timerId);
-  state.qTiming = false;
   stopRecorderOnly();
+  // El reloj NO se detiene al parar la grabación (ni en candidato ni en preview):
+  // así se puede eliminar y volver a grabar sin que el tiempo se reinicie.
 }
 function tick(){
   clearTimeout(rt.timerId);
@@ -2544,13 +2550,17 @@ function runAnalyze(q, force){
 }
 
 function reRecord(q){
+  // En modo candidato solo se puede regrabar mientras quede tiempo.
+  if (state.interviewMode === "candidate" && !state.qTiming) return;
   var a = state.answers[q.id];
   if (a && a.blobUrl && a.blobUrl.indexOf("blob:")===0) URL.revokeObjectURL(a.blobUrl);
   delete state.answers[q.id];
-  startRecording(q);
+  startRecording(q);  // el reloj sigue corriendo (no se reinicia): regrabar consume tiempo
 }
 function nextQuestion(){
   if (state.recording) stopRecording();
+  // Cortar el reloj de la pregunta actual antes de pasar a la siguiente (el de la nueva arranca solo).
+  clearTimeout(rt.timerId); state.qTiming = false;
   if (state.idx < state.questions.length-1){ state.idx += 1; render(); }
   else if (state.interviewMode === "candidate") submitAnswers();
   else { state.screen = "review"; render(); }
