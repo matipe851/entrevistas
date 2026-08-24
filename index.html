@@ -1050,7 +1050,7 @@ var state = {
   audioUrls: {},
   invite: null,
   code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate",
-  dash: { loading:false, items:null, error:null, detail:null },
+  dash: { loading:false, items:null, error:null, detail:null, filter:"all" },
   cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"" },
   searches: { loading:false, items:null, error:null, current:null, analyzing:false, error2:null, note:null },
   newsearch: { title:"", description:"", must:"", nice:"" },
@@ -1078,7 +1078,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v24.8-r3";
+var APP_VERSION = "v24.8-r4";
 function Header(){
   var showHome = state.screen !== "home";
   return '' +
@@ -1230,15 +1230,37 @@ function DashboardList(){
   if (!d.items.length) return '<div class="center-block" style="padding:30px 12px">'+ic('list',26)+'<h2 style="font-size:16px">Todavía no hay entrevistas</h2><p>Creá tu primera entrevista y compartí el enlace al candidato.</p></div>';
   var completed = d.items.filter(function(x){return x.status==='completed';});
   var pend = d.items.filter(function(x){return x.status!=='completed';});
+  var nApr = completed.filter(function(x){return x.score>=7;}).length;
+  var nMed = completed.filter(function(x){return x.score>=5&&x.score<7;}).length;
+  var nDes = completed.filter(function(x){return typeof x.score==='number' && x.score<5;}).length;
+  var f = d.filter || "all";
+  function fpill(key,label,bg,color,count){
+    var active = (f===key);
+    return '<button class="pill-time" data-action="dash-filter" data-f="'+key+'" style="cursor:pointer;border:none;background:'+bg+';color:'+color+';'+(active?'box-shadow:0 0 0 2px '+color+';font-weight:800':'opacity:.8')+'">'+count+' '+label+'</button>';
+  }
   var html = '';
-  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">' +
-    '<span class="pill-time" style="background:var(--green-tint);color:var(--green)">'+completed.filter(function(x){return x.score>=7;}).length+' aprobados</span>' +
-    '<span class="pill-time" style="background:var(--amber-tint);color:var(--amber)">'+completed.filter(function(x){return x.score>=5&&x.score<7;}).length+' medios</span>' +
-    '<span class="pill-time" style="background:var(--brick-tint);color:var(--brick)">'+completed.filter(function(x){return x.score<5;}).length+' desaprobados</span>' +
-    '<span class="pill-time">'+pend.length+' pendientes</span>' +
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">' +
+    fpill("all","todas","var(--surface-2)","var(--ink)",d.items.length) +
+    fpill("aprobados","aprobados","var(--green-tint)","var(--green)",nApr) +
+    fpill("medios","medios","var(--amber-tint)","var(--amber)",nMed) +
+    fpill("desaprobados","desaprobados","var(--brick-tint)","var(--brick)",nDes) +
+    fpill("pendientes","pendientes","var(--surface-2)","var(--muted)",pend.length) +
   '</div>';
+  // Filtro aplicado
+  var shown = d.items.filter(function(x){
+    if (f==="all") return true;
+    var done = x.status==='completed';
+    if (f==="pendientes") return !done;
+    if (!done) return false;
+    var sc = x.score;
+    if (f==="aprobados") return sc>=7;
+    if (f==="medios") return sc>=5 && sc<7;
+    if (f==="desaprobados") return typeof sc==='number' && sc<5;
+    return true;
+  });
+  if (!shown.length) return html + '<div class="center-block" style="padding:24px 12px">'+ic('list',24)+'<p>No hay entrevistas en este filtro.</p></div>';
   html += '<div style="display:grid;gap:10px">';
-  d.items.forEach(function(x){
+  shown.forEach(function(x){
     var done = x.status==='completed';
     var sc = (typeof x.score==='number')?x.score:null;
     var name = x.candidate_name || (done?'(sin nombre)':'Pendiente');
@@ -1252,7 +1274,10 @@ function DashboardList(){
         '<p style="margin:2px 0 0;font-size:12.5px;color:var(--muted)">'+esc(x.position||'')+(done?(' · '+esc(x.recommendation||'')):' · pendiente')+'</p>' +
         '<p style="margin:2px 0 0;font-size:11.5px;color:var(--muted)">'+esc(fmtDate(x.completed_at||x.created_at))+' · código '+esc(x.code||'')+'</p>' +
       '</div>' +
-      (done ? ic('chevron',16) : '<button class="dl-audio" data-action="del-interview" data-id="'+esc(x.id)+'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px">quitar</button>') +
+      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0">' +
+        (done ? ic('chevron',16) : '<span style="font-size:11px;color:var(--muted)">pendiente</span>') +
+        '<button class="dl-audio" data-action="del-interview" data-id="'+esc(x.id)+'" title="Eliminar" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;display:inline-flex;align-items:center;gap:3px">'+ic('trash',12)+' Eliminar</button>' +
+      '</div>' +
     '</div>';
   });
   html += '</div>';
@@ -2595,7 +2620,8 @@ function copyText(txt, cb){
 }
 function bind(){
   app.querySelectorAll("[data-action]").forEach(function(el){
-    el.addEventListener("click", function(){
+    el.addEventListener("click", function(ev){
+      if (ev) ev.stopPropagation(); // evita que un botón dentro de una fila clickeable dispare ambos
       var act = el.getAttribute("data-action");
       if (act === "home") goHome();
       else if (act === "go-recruiter") enterRecruiter();
@@ -2610,7 +2636,8 @@ function bind(){
       else if (act === "revoke-rec"){ if(confirm("¿Revocar el acceso de este reclutador?")) adminApprove(el.getAttribute("data-id"), false); }
       else if (act === "reload-dash") loadDashboard();
       else if (act === "open-detail"){ var id=el.getAttribute("data-id"); var it=(state.dash.items||[]).filter(function(z){return z.id===id;})[0]; if(it){ state.dash.detail=it; state.screen="interview-detail"; render(); } }
-      else if (act === "del-interview"){ var did=el.getAttribute("data-id"); if(confirm("¿Quitar esta entrevista pendiente?")){ dbDeleteInterview(did).then(function(){ loadDashboard(); }); } }
+      else if (act === "del-interview"){ var did=el.getAttribute("data-id"); if(confirm("¿Eliminar esta entrevista? Esta acción no se puede deshacer.")){ dbDeleteInterview(did).then(function(){ loadDashboard(); }); } }
+      else if (act === "dash-filter"){ state.dash.filter = el.getAttribute("data-f")||"all"; render(); }
       else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.screen="config"; render(); refreshCVBankQuiet(); }
       else if (act === "go-cvhome") goCVHome();
       else if (act === "go-cvbank") goCVBank();
