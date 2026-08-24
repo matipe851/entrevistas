@@ -1593,8 +1593,10 @@ function backlink(action, label){ return '<button class="backlink" data-action="
 function buildShareMessage(){
   var c = state.config;
   var n = (state.questions && state.questions.length) ? state.questions.length : "algunas";
+  var brand = (state.brand && state.brand.name) ? state.brand.name.trim() : "";
   return "Hola,\n\n" +
-    "Te invitamos a completar una entrevista por voz para el puesto de " + c.position + ".\n\n" +
+    (brand ? (brand + " te invita a completar una entrevista por voz para el puesto de " + c.position + ".\n\n") :
+             "Te invitamos a completar una entrevista por voz para el puesto de " + c.position + ".\n\n") +
     "Para comenzar, abrí este enlace desde tu celular o computadora (recomendamos usar Google Chrome):\n" +
     (state.shareLink || "[enlace de la entrevista]") + "\n\n" +
     "Al entrar te vamos a pedir tu email y este código de verificación:\n\n" +
@@ -1759,11 +1761,17 @@ function uploadAllAudios(){
   state.audioUrls = state.audioUrls || {};
   qs.forEach(function(q){
     var a = state.answers[q.id];
-    if (!a || !a.blobUrl || a.blobUrl.indexOf("blob:") !== 0) return;
+    if (!a) return;
+    var hasBlob = (typeof Blob !== "undefined") && (a.blob instanceof Blob);
+    var hasUrl = a.blobUrl && a.blobUrl.indexOf("blob:") === 0;
+    if (!hasBlob && !hasUrl) return;
     chain = chain.then(function(){
-      return fetch(a.blobUrl).then(function(r){ return r.blob(); }).then(function(blob){
+      // Preferimos el Blob en memoria (más robusto: Safari a veces pierde la blob: URL).
+      var getBlob = hasBlob ? Promise.resolve(a.blob) : fetch(a.blobUrl).then(function(r){ return r.blob(); });
+      return getBlob.then(function(blob){
+        var ext = /mp4/.test(blob.type) ? ".mp4" : /ogg/.test(blob.type) ? ".ogg" : ".webm";
         var named = blob;
-        try{ named = new File([blob], "respuesta-"+q.id+".webm", { type: blob.type || "audio/webm" }); }catch(e){}
+        try{ named = new File([blob], "respuesta-"+q.id+ext, { type: blob.type || "audio/webm" }); }catch(e){}
         return uploadAudioToCloudinary(named).then(function(url){ state.audioUrls[q.id] = url; })
           .catch(function(e){ if(!rt.audioError) rt.audioError = (e && e.message) || "Falló la subida del audio."; });
       }).catch(function(e){ if(!rt.audioError) rt.audioError = (e && e.message) || "No pude leer el audio grabado."; });
@@ -2381,7 +2389,7 @@ function startRecording(q){
       var dur = (Date.now() - rt.startTime)/1000;
       var s = rt.sig;
       var signals = { longestSilence: +s.longest.toFixed(1), totalSilence: +s.total.toFixed(1), spoke: s.spoke, durationSec: +dur.toFixed(1) };
-      if (qid) state.answers[qid] = { blobUrl:url, mime:mr.mimeType, transcript: rt.finalText.trim(), signals: signals };
+      if (qid) state.answers[qid] = { blob: blob, blobUrl:url, mime:mr.mimeType, transcript: rt.finalText.trim(), signals: signals };
       if (rt.stream) rt.stream.getTracks().forEach(function(t){ t.stop(); });
       stopMeter();
       render();
