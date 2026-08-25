@@ -1078,9 +1078,10 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v24.8-r5";
+var APP_VERSION = "v24.8-r6";
 function Header(){
-  var showHome = state.screen !== "home";
+  var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
+  var showHome = state.screen !== "home" && !candCtx;
   return '' +
   '<div class="hdr">' +
     '<div class="hdr-mark">' + waveBars(4) + ic('mic', 19) + '</div>' +
@@ -1105,11 +1106,10 @@ var Screens = {};
 
 Screens.home = function(){
   return Header() +
-  '<div class="grid2">' +
-    '<button class="tile tile-dark" data-action="go-recruiter">' + ic('shield',24) + '<h3>Panel del reclutador</h3><p>Ingresá con tu cuenta para crear entrevistas y ver todas tus evaluaciones en un panel.</p></button>' +
-    '<button class="tile tile-light" data-action="go-candcode">' + ic('mic',24) + '<h3>Tengo una entrevista</h3><p>Abrí el enlace que te compartieron, o ingresá tu código, y respondé las preguntas por audio.</p></button>' +
+  '<div style="max-width:460px;margin:0 auto">' +
+    '<button class="tile tile-dark" data-action="go-recruiter" style="width:100%">' + ic('shield',24) + '<h3>Panel del reclutador</h3><p>Ingresá con tu cuenta para crear entrevistas y ver todas tus evaluaciones en un panel.</p></button>' +
   '</div>' +
-  '<p class="footer-note">Entrevistas por voz con preguntas a medida y evaluación automática. El enlace de cada entrevista funciona en cualquier dispositivo.</p>';
+  '<p class="footer-note">Los candidatos acceden únicamente por el enlace de la entrevista que les compartís.</p>';
 };
 
 Screens["pin-set"] = function(){
@@ -1140,7 +1140,6 @@ Screens["pin-enter"] = function(){
 Screens["rec-login"] = function(){
   return Header() +
   '<div class="card" style="max-width:420px;margin:0 auto">' +
-    backlink("home","Volver") +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('lock',19)+'<h2 style="font-size:17px;color:var(--ink)">Ingresá a tu cuenta</h2></div>' +
     '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Panel de reclutador. Cada cuenta ve solo sus propias entrevistas.</p>' +
     ErrBox() +
@@ -2099,7 +2098,7 @@ function ReportList(title, items, color){
    NAVIGATION HELPERS
    ================================================================ */
 function resetInterview(){ state.questions=[]; state.answers={}; state.idx=0; state.report=null; rt.analyzed={}; rt.autoStartedFor={}; }
-function goHome(){ resetInterview(); state.error=null; state.screen="home"; render(); }
+function goHome(){ resetInterview(); state.error=null; enterRecruiter(); }
 function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="rec-home"; render(); if (supaConfigured() && isLoggedIn()) loadDashboard(); }
 
 /* ================================================================
@@ -2930,6 +2929,12 @@ function saveBrand(){ try{ lset("voz_brand", { name:state.brand.name||"", logo:s
   } catch(e){}
 })();
 
-render();
+// Si NO hay link de invitación (o sea, no es un candidato), la entrada directa es el
+// acceso del reclutador: login si no inició sesión, o su panel si ya está logueado.
+if (state.screen === "invite-landing"){
+  render();
+} else {
+  enterRecruiter();   // enterRecruiter() ya llama a render() internamente
+}
 })();
 </script>
