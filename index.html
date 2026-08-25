@@ -513,6 +513,21 @@ function extractPdfText(file){
     }catch(e){ resolve(""); }
   });
 }
+/* Reconoce el email escrito dentro del texto del CV (incluye formas ofuscadas
+   tipo "nombre (at) gmail (dot) com" o "nombre arroba gmail"). Devuelve "" si no encuentra. */
+function extractEmailFromText(txt){
+  if(!txt) return "";
+  var s = String(txt)
+    .replace(/\s*[\(\[]\s*at\s*[\)\]]\s*/gi, "@")
+    .replace(/\s+arroba\s+/gi, "@")
+    .replace(/\s*[\(\[]\s*dot\s*[\)\]]\s*/gi, ".")
+    .replace(/\s+punto\s+/gi, ".");
+  var m = s.match(/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i);
+  if(!m) return "";
+  var e = m[0].toLowerCase().replace(/[.,;:]+$/, "");
+  if(/\.(png|jpe?g|gif|svg|webp|bmp)$/i.test(e)) return ""; // falso positivo (nombre de imagen)
+  return e;
+}
 /* Llama a la IA para rankear CVs contra un puesto. */
 function screenCVsAPI(position, description, cvs, must, nice){
   return fetch("/api/analyze", { method:"POST", headers:{ "Content-Type":"application/json" },
@@ -560,7 +575,8 @@ function uploadCVFiles(fileList){
         var up = audioUploadConfigured() ? uploadAudioToCloudinary(file).catch(function(){ return ""; }) : Promise.resolve("");
         return up.then(function(url){
           var base=file.name.replace(/\.[^.]+$/,"");
-          return dbCreateCV({ candidate_name:base, file_name:file.name, cv_url:url||null, cv_text:txt||"" })
+          var mail=extractEmailFromText(txt);
+          return dbCreateCV({ candidate_name:base, file_name:file.name, cv_url:url||null, cv_text:txt||"", candidate_email:mail||null })
             .then(function(){ okc++; done++; }).catch(function(){ done++; });
         });
       });
@@ -1101,7 +1117,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v24.8-r8";
+var APP_VERSION = "v24.10-r10";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1130,7 +1146,7 @@ var Screens = {};
 Screens.home = function(){
   return Header() +
   '<div style="max-width:460px;margin:0 auto">' +
-    '<button class="tile tile-dark" data-action="go-recruiter" style="width:100%">' + ic('shield',24) + '<h3>Panel del reclutador</h3><p>Ingresá con tu cuenta para crear entrevistas y ver todas tus evaluaciones en un panel.</p></button>' +
+    '<button class="tile tile-dark" data-action="go-recruiter" style="width:100%">' + ic('briefcase',24) + '<h3>Ingresar a la consultora</h3><p>Iniciá sesión con tu cuenta para acceder a las áreas de RR. HH. Por ahora está activo el Módulo 1: Reclutamiento y selección.</p></button>' +
   '</div>' +
   '<p class="footer-note">Los candidatos acceden únicamente por el enlace de la entrevista que les compartís.</p>';
 };
@@ -1306,12 +1322,51 @@ function DashboardList(){
   return html;
 }
 
+/* ===================== HUB DE ÁREAS (CONSULTORA RRHH) ===================== */
+Screens["hub"] = function(){
+  var u = currentUser();
+  var areas = [
+    { active:true,  action:"go-module-recruit", icon:"sparkle",   tag:"Módulo 1",
+      title:"Reclutamiento y selección",
+      desc:"Entrevistas por audio con preguntas a medida, evaluación automática y screening de CVs." },
+    { active:false, icon:"users",  tag:"Próximamente", title:"Capacitación y desarrollo",
+      desc:"Planes de formación y seguimiento del crecimiento del equipo." },
+    { active:false, icon:"eye",    tag:"Próximamente", title:"Evaluación de desempeño",
+      desc:"Objetivos, feedback y revisiones periódicas del personal." },
+    { active:false, icon:"shield", tag:"Próximamente", title:"Clima y cultura",
+      desc:"Encuestas de clima laboral y planes de acción." }
+  ];
+  var cards = areas.map(function(a){
+    if (a.active){
+      return '<button class="tile tile-dark" data-action="'+a.action+'" style="text-align:left">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">' + ic(a.icon,22) +
+        '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:rgba(255,255,255,.18);color:#fff;padding:3px 9px;border-radius:999px">'+esc(a.tag)+'</span></div>' +
+        '<h3>'+esc(a.title)+'</h3><p>'+esc(a.desc)+'</p></button>';
+    }
+    return '<div class="tile tile-light" style="text-align:left;opacity:.6;cursor:default;border-style:dashed">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">' + ic(a.icon,22) +
+      '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--line);color:var(--muted);padding:3px 9px;border-radius:999px">'+esc(a.tag)+'</span></div>' +
+      '<h3>'+esc(a.title)+'</h3><p>'+esc(a.desc)+'</p></div>';
+  }).join("");
+  return Header() +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap">' +
+      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('briefcase',20)+'<h2 style="font-size:18px;color:var(--ink)">Áreas de RR.&nbsp;HH.</h2></div>' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+        '<span style="font-size:12px;color:var(--muted)">'+esc(u&&u.email||'')+'</span>' +
+        '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
+      '</div>' +
+    '</div>' +
+    '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Elegí el área con la que querés trabajar. Iremos sumando módulos; por ahora está activo <b>Reclutamiento y selección</b>.</p>' +
+    '<div class="grid2">' + cards + '</div>';
+};
+
 Screens["rec-home"] = function(){
   if (supaConfigured()){
     var u = currentUser();
     return Header() +
+    backlink("go-hub","Volver a áreas") +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px;flex-wrap:wrap">' +
-      '<div><h2 style="font-size:18px">Panel de reclutador</h2><p style="font-size:12.5px;color:var(--muted);margin:2px 0 0">'+esc(u&&u.email||'')+'</p></div>' +
+      '<div><span style="font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--teal)">Módulo 1</span><h2 style="font-size:18px">Reclutamiento y selección</h2><p style="font-size:12.5px;color:var(--muted);margin:2px 0 0">'+esc(u&&u.email||'')+'</p></div>' +
       '<div style="display:flex;gap:8px">' +
         '<button class="btn btn-primary btn-sm" data-action="go-config">'+ic('sparkle',14)+' Nueva entrevista</button>' +
         '<button class="btn btn-ghost btn-sm" data-action="go-cvhome">'+ic('trophy',14)+' Screening de CVs</button>' +
@@ -1469,7 +1524,7 @@ Screens["cv-ranking"] = function(){
           '<p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(c.name||('Candidato '+(i+1)))+'</p>' +
           '<p style="margin:1px 0 0;font-size:12px;color:'+fitColorVar(sc)+';font-weight:600">Encaje '+esc(c.fit||'')+'</p>' +
         '</div>' +
-        '<button class="btn btn-primary btn-sm" data-action="invite-from-cv" data-pos="'+esc(x.title||'')+'" style="flex-shrink:0">'+ic('mic',13)+' Invitar</button>' +
+        '<button class="btn btn-primary btn-sm" data-action="invite-from-cv" data-pos="'+esc(x.title||'')+'" data-cvid="'+esc(c.id||'')+'" style="flex-shrink:0">'+ic('mic',13)+' Invitar</button>' +
       '</div>' +
       (c.summary?'<p style="margin:10px 0 0;font-size:13px;color:var(--ink);line-height:1.5">'+esc(c.summary)+'</p>':'') +
       ((pros.length||cons.length)?'<div class="grid2" style="margin-top:10px;gap:10px">' +
@@ -2132,6 +2187,7 @@ function ReportList(title, items, color){
 function resetInterview(){ state.questions=[]; state.answers={}; state.idx=0; state.report=null; rt.analyzed={}; rt.autoStartedFor={}; }
 function goHome(){ resetInterview(); state.error=null; enterRecruiter(); }
 function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="rec-home"; render(); if (supaConfigured() && isLoggedIn()) loadDashboard(); }
+function goHub(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="hub"; render(); }
 
 /* ================================================================
    ACTIONS
@@ -2195,12 +2251,12 @@ function loadDashboard(){
     .catch(function(){ state.dash.loading=false; state.dash.error="No pude cargar las entrevistas."; render(); });
 }
 function routeAfterAuth(){
-  state.myApproved = null; state.screen="rec-home"; render();
-  // El admin siempre entra al panel (para poder aprobar, incluso a sí mismo).
-  if (isAdminUser()){ state.myApproved = true; state.screen="rec-home"; render(); loadDashboard(); loadAdminList(); return; }
+  state.myApproved = null;
+  // El admin siempre puede entrar (para poder aprobar, incluso a sí mismo).
+  if (isAdminUser()){ state.myApproved = true; state.screen="hub"; render(); loadDashboard(); loadAdminList(); return; }
   loadProfile().then(function(approved){
     state.myApproved = !!approved;
-    if (approved){ state.screen="rec-home"; render(); loadDashboard(); }
+    if (approved){ state.screen="hub"; render(); loadDashboard(); }
     else { state.screen="rec-pending"; render(); }
   });
 }
@@ -2686,6 +2742,8 @@ function bind(){
       else if (act === "go-recruiter") enterRecruiter();
       else if (act === "go-candcode"){ state.error=null; state.screen="cand-code"; render(); }
       else if (act === "go-recruiterhome") goRecruiterHome();
+      else if (act === "go-hub") goHub();
+      else if (act === "go-module-recruit") goRecruiterHome();
       else if (act === "go-login"){ state.error=null; state.screen="rec-login"; render(); }
       else if (act === "go-signup"){ state.error=null; state.screen="rec-signup"; render(); }
       else if (act === "logout") doLogout();
@@ -2705,7 +2763,18 @@ function bind(){
       else if (act === "del-cv"){ var cid=el.getAttribute("data-id"); if(confirm("¿Quitar este CV del repositorio?")){ dbDeleteCV(cid).then(function(){ loadCVBank(); }); } }
       else if (act === "del-search"){ var xid=el.getAttribute("data-id"); if(confirm("¿Eliminar esta búsqueda y su ranking?")){ dbDeleteSearch(xid).then(function(){ goCVHome(); }); } }
       else if (act === "reanalyze") doReanalyze();
-      else if (act === "invite-from-cv"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.config.position=el.getAttribute("data-pos")||state.config.position; state.screen="config"; render(); refreshCVBankQuiet(); }
+      else if (act === "invite-from-cv"){
+        state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName="";
+        state.config.position=el.getAttribute("data-pos")||state.config.position;
+        var _cvid=el.getAttribute("data-cvid")||"";
+        var _cv=_cvid?((state.cvbank.cvs||[]).filter(function(z){return z.id===_cvid;})[0]):null;
+        if(_cv){
+          rt.cvId=_cv.id; rt.cvText=(_cv.cv_text||"").slice(0,15000); rt.cvName=_cv.candidate_name||_cv.file_name||"CV";
+          var _mail=_cv.candidate_email||extractEmailFromText(_cv.cv_text||"");
+          if(_mail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(_mail)) state.candidateEmail=_mail;
+        }
+        state.screen="config"; render(); refreshCVBankQuiet();
+      }
       else if (act === "add-question") addQuestion();
       else if (act === "del-question"){ delQuestion(parseInt(el.getAttribute("data-idx"),10)); }
       else if (act === "go-resultscode"){ state.error=null; state.screen="results-code"; render(); }
@@ -2763,8 +2832,10 @@ function bind(){
     var cv=(state.cvbank.cvs||[]).filter(function(z){return z.id===id;})[0];
     if(cv){
       rt.cvText=(cv.cv_text||"").slice(0,15000); rt.cvId=cv.id; rt.cvName=cv.candidate_name||cv.file_name||"CV";
+      var mail=cv.candidate_email||extractEmailFromText(cv.cv_text||"");
+      var filled=applyCandidateEmailFromCV(mail);
       if(st){
-        if(rt.cvText.length>40){ st.style.color="var(--teal)"; st.textContent="CV elegido: "+rt.cvName+" — las preguntas se adaptarán a él."; }
+        if(rt.cvText.length>40){ st.style.color="var(--teal)"; st.textContent="CV elegido: "+rt.cvName+(filled?(" — email detectado: "+mail):" — las preguntas se adaptarán a él."); }
         else { st.style.color="var(--amber)"; st.textContent="Ese CV no tiene texto legible guardado. Probá subirlo de nuevo desde el repositorio."; }
       }
     }
@@ -2788,7 +2859,11 @@ function bind(){
             if (i > max){
               var txt = pages.join("\n").replace(/\s+\n/g,"\n").trim();
               rt.cvText = txt.slice(0, 15000);
-              if (rt.cvText.length > 40){ if(st){ st.style.color="var(--teal)"; st.textContent="CV leído: "+file.name+" — las preguntas se adaptarán a él."; } }
+              if (rt.cvText.length > 40){
+                var mail=extractEmailFromText(rt.cvText);
+                var filled=applyCandidateEmailFromCV(mail);
+                if(st){ st.style.color="var(--teal)"; st.textContent="CV leído: "+file.name+(filled?(" — email detectado: "+mail):" — las preguntas se adaptarán a él."); }
+              }
               else { fallbackB64(); }
               return;
             }
@@ -2934,6 +3009,14 @@ function bind(){
 
   /* share screen */
   function syncMailHref(){ var m=document.getElementById("mailBtn"); if (m) m.setAttribute("href", mailtoHref()); var g=document.getElementById("gmailComposeBtn"); if (g) g.setAttribute("href", gmailComposeHref()); }
+  function applyCandidateEmailFromCV(mail){
+    mail = String(mail||"").trim();
+    if(!mail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return false;
+    state.candidateEmail = mail;
+    var em = document.getElementById("f_email"); if(em) em.value = mail;
+    try{ syncMailHref(); persistCandidateEmail(); }catch(e){}
+    return true;
+  }
   function persistCandidateEmail(){
     if (!state.code) return;
     var iv = lget("voz_iv_"+state.code);
