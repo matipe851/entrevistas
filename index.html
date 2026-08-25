@@ -1206,7 +1206,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v25.0-r13";
+var APP_VERSION = "v25.1-r14";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1320,10 +1320,7 @@ function AdminPanel(){
   if (!isAdminUser()) return '';
   var a = state.admin;
   var html = '<div class="card" style="margin-bottom:20px;border:1px solid var(--teal)">' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">' +
-      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('shield',18)+'<h3 style="font-size:15px;color:var(--ink)">Administración de reclutadores</h3></div>' +
-      '<button class="btn btn-ghost btn-sm" data-action="reload-admin">'+ic('rotate',13)+'</button>' +
-    '</div>';
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--teal)">'+ic('users',18)+'<h3 style="font-size:15px;color:var(--ink)">Reclutadores registrados</h3></div>';
   if (a.loading || a.items===null){ html += '<p style="font-size:13px;color:var(--muted);margin:0">Cargando…</p>'; }
   else if (a.error){ html += Note("err","No pude cargar la lista ("+esc(a.error)+")."); }
   else if (!a.items.length){ html += '<p style="font-size:13px;color:var(--muted);margin:0">No hay reclutadores registrados.</p>'; }
@@ -1444,16 +1441,37 @@ Screens["hub"] = function(){
       '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--line);color:var(--muted);padding:3px 9px;border-radius:999px">'+esc(a.tag)+'</span></div>' +
       '<h3>'+esc(a.title)+'</h3><p>'+esc(a.desc)+'</p></div>';
   }).join("");
+  // Acceso a Administración: SOLO para la cuenta admin.
+  var adminBtn = isAdminUser()
+    ? '<button class="btn btn-ghost btn-sm" data-action="go-admin" style="color:var(--teal)">'+ic('shield',14)+' Administración</button>'
+    : '';
   return Header() +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap">' +
       '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('briefcase',20)+'<h2 style="font-size:18px;color:var(--ink)">Áreas de RR.&nbsp;HH.</h2></div>' +
       '<div style="display:flex;gap:8px;align-items:center">' +
+        adminBtn +
         '<span style="font-size:12px;color:var(--muted)">'+esc(u&&u.email||'')+'</span>' +
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
       '</div>' +
     '</div>' +
     '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Elegí el área con la que querés trabajar. Iremos sumando módulos; por ahora está activo <b>Reclutamiento y selección</b>.</p>' +
     '<div class="grid2">' + cards + '</div>';
+};
+
+/* ===================== ÁREA DE ADMINISTRACIÓN (solo admin) ===================== */
+Screens["admin"] = function(){
+  if (!isAdminUser()){
+    return Header() + backlink("go-hub","Volver a áreas") +
+      Note("err", "Esta área es solo para administradores.");
+  }
+  return Header() +
+    backlink("go-hub","Volver a áreas") +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap">' +
+      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('shield',20)+'<h2 style="font-size:18px;color:var(--ink)">Administración</h2></div>' +
+      '<button class="btn btn-ghost btn-sm" data-action="reload-admin">'+ic('rotate',13)+' Actualizar</button>' +
+    '</div>' +
+    '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Cuentas registradas en la consultora. Aprobá a cada persona para darle acceso, o revocá el acceso cuando quieras. Solo vos ves esta sección.</p>' +
+    AdminPanel();
 };
 
 Screens["rec-home"] = function(){
@@ -1470,7 +1488,6 @@ Screens["rec-home"] = function(){
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
       '</div>' +
     '</div>' +
-    AdminPanel() +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--teal)">'+ic('eye',18)+'<h3 style="font-size:15px;color:var(--ink)">Entrevistas realizadas</h3></div>' +
     DashboardList();
   }
@@ -2384,6 +2401,7 @@ function resetInterview(){ state.questions=[]; state.answers={}; state.idx=0; st
 function goHome(){ resetInterview(); state.error=null; enterRecruiter(); }
 function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="rec-home"; render(); if (supaConfigured() && isLoggedIn()) loadDashboard(); }
 function goHub(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="hub"; render(); }
+function goAdmin(){ if(!isAdminUser()) return; state.error=null; state.screen="admin"; render(); loadAdminList(); }
 
 /* ================================================================
    ACTIONS
@@ -3058,6 +3076,7 @@ function bind(){
       else if (act === "go-recruiterhome") goRecruiterHome();
       else if (act === "go-hub") goHub();
       else if (act === "go-module-recruit") goRecruiterHome();
+      else if (act === "go-admin") goAdmin();
       else if (act === "copy-bulk"){
         var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
         copyText(lines.join("\n"), function(){ alert("Lista copiada."); });
