@@ -1084,7 +1084,8 @@ function waveBars(n, cls){
 var state = {
   screen: "home",
   error: null, busy: false, storageWarn: false,
-  config: { position:"", company:"", focus:"", companyUrl:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:false, recruiterEmail:"" },
+  config: { position:"", company:"", focus:"", companyUrl:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:false, recruiterEmail:"", selectedCVs:[] },
+  bulk: { running:false, phase:"", total:0, sent:0, failed:0, noEmail:0, results:[], error:null, brevoMissing:false, done:false },
   questions: [], idx: 0, answers: {}, report: null,
   audioUrls: {},
   invite: null,
@@ -1117,7 +1118,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v24.10-r10";
+var APP_VERSION = "v24.11-r11";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1602,9 +1603,22 @@ Screens.config = function(){
           (state.cvbank.cvs===null)
             ? '<span class="field-hint" style="display:block;margin-bottom:8px">'+ic('loader',12,'spin')+' Cargando tus CVs guardados…</span>'
             : (state.cvbank.cvs.length
-                ? '<select class="bare" id="f_cvpick" style="width:100%;margin-bottom:6px"><option value="">— Elegí uno de tus '+state.cvbank.cvs.length+' CVs guardados —</option>' +
-                    state.cvbank.cvs.map(function(cv){ return '<option value="'+esc(cv.id)+'"'+(rt.cvId===cv.id?' selected':'')+'>'+esc(cv.candidate_name||cv.file_name||'CV')+'</option>'; }).join('') +
-                  '</select><span class="field-hint" style="display:block;margin-bottom:6px">…o subí uno nuevo:</span>'
+                ? '<span class="field-hint" style="display:block;margin-bottom:8px">Elegí <b>uno</b> para una entrevista, o <b>varios</b> para enviar en masa (a cada candidato le llega su propio mail). Si un CV no tiene email detectado, cargalo abajo antes de enviar.</span>' +
+                  '<div id="f_cvlist" style="display:grid;gap:6px;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:12px;padding:8px;margin-bottom:6px">' +
+                    state.cvbank.cvs.map(function(cv){
+                      var checked = ((state.config.selectedCVs||[]).indexOf(cv.id)>=0);
+                      var mail = cv.candidate_email || extractEmailFromText(cv.cv_text||"");
+                      var badge = mail
+                        ? '<span style="font-size:11px;color:var(--teal);white-space:nowrap">'+esc(mail)+'</span>'
+                        : '<span style="font-size:11px;color:var(--amber);white-space:nowrap">sin email</span>';
+                      return '<label class="cvrow" style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;cursor:pointer;background:'+(checked?'var(--teal-tint)':'transparent')+'">' +
+                        '<input type="checkbox" class="cvchk" data-id="'+esc(cv.id)+'" data-email="'+esc(mail||"")+'"'+(checked?' checked':'')+' style="width:17px;height:17px;flex-shrink:0">' +
+                        '<span style="flex:1;min-width:0;font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(cv.candidate_name||cv.file_name||'CV')+'</span>' +
+                        badge +
+                      '</label>';
+                    }).join('') +
+                  '</div>' +
+                  '<span class="field-hint" style="display:block;margin-bottom:6px">…o subí uno nuevo:</span>'
                 : '<span class="field-hint" style="display:block;margin-bottom:8px">Todavía no tenés CVs en tu repositorio. Subí uno acá abajo, o cargá varios desde <b>Screening de CVs</b>.</span>')
         ) : '') +
         '<input id="f_cv" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)">' +
@@ -1623,8 +1637,69 @@ Screens.config = function(){
       '</div>' +
       (c.language==='es' ? '<label class="check-row" for="f_english" style="background:var(--teal-tint);border-color:var(--border-soft)"><input type="checkbox" id="f_english"' + (c.includeEnglish?' checked':'') + '><span class="check-title">Sumar 2 preguntas en inglés para evaluar el nivel del idioma</span></label>' : '') +
     '</div>' +
-    '<button class="btn btn-primary btn-block" id="genBtn" style="margin-top:26px" '+(ready?'':'disabled')+'>'+ic('sparkle',15)+' Generar entrevista</button>' +
+    (function(){
+      var selCount = (c.selectedCVs||[]).length;
+      if (selCount >= 2){
+        var withMail = (state.cvbank.cvs||[]).filter(function(cv){ return c.selectedCVs.indexOf(cv.id)>=0 && (cv.candidate_email||extractEmailFromText(cv.cv_text||"")); }).length;
+        return '<div style="margin-top:26px">' +
+          Note("info", ic('users',14)+' &nbsp;Envío masivo: seleccionaste <b>'+selCount+'</b> candidato(s)'+(withMail<selCount?(' · <b>'+(selCount-withMail)+'</b> sin email (se omiten)'):'')+'. Todos reciben las <b>mismas preguntas</b> del puesto (comparación justa) y a cada uno le llega su propio mail con su código.') +
+          '<button class="btn btn-primary btn-block" id="bulkBtn" '+((ready && withMail>0)?'':'disabled')+'>'+ic('send',15)+' Generar y enviar a '+withMail+' candidato'+(withMail===1?'':'s')+'</button>' +
+        '</div>';
+      }
+      return '<button class="btn btn-primary btn-block" id="genBtn" style="margin-top:26px" '+(ready?'':'disabled')+'>'+ic('sparkle',15)+' Generar entrevista</button>';
+    })() +
   '</div>';
+};
+
+Screens["bulk-sending"] = function(){
+  var b = state.bulk;
+  return Header() + Centered(ic('loader',30,'spin'), "Enviando entrevistas",
+    (b.phase==="questions" ? "Armando las preguntas del puesto…" :
+     ("Creando y enviando: "+b.sent+"/"+b.total+" candidatos…")) + " No cierres esta ventana.");
+};
+
+Screens["bulk-result"] = function(){
+  var b = state.bulk;
+  var html = Header();
+  html += backlink("go-recruiterhome","Volver al panel");
+  html += '<div class="card">';
+  if (b.error){
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--brick)">'+ic('alert',20)+'<h2 style="font-size:18px;color:var(--ink)">No pude completar el envío</h2></div>';
+    html += Note("err", esc(b.error));
+  } else {
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('check',22)+'<h2 style="font-size:18px;color:var(--ink)">Envío masivo listo</h2></div>';
+    var pending = (b.results||[]).filter(function(r){ return r.status==="pending"; }).length;
+    var parts = [];
+    parts.push('<b>'+b.sent+'</b> mail(s) enviado(s)');
+    if (pending) parts.push('<b>'+pending+'</b> entrevista(s) creada(s) sin enviar');
+    if (b.failed) parts.push('<b>'+b.failed+'</b> con error de envío');
+    if (b.noEmail) parts.push('<b>'+b.noEmail+'</b> sin email (omitidos)');
+    html += '<p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">'+parts.join(' · ')+'. Cada entrevista quedó guardada en tu panel.</p>';
+  }
+  if (b.brevoMissing){
+    html += Note("warn", ic('alert',14)+' &nbsp;El envío automático de mails todavía no está configurado (Brevo). Las entrevistas <b>ya quedaron creadas</b>: copiá el enlace y el código de cada candidato de la lista de abajo y mandáselos por el medio que quieras. Cuando configuremos Brevo, este botón manda los mails solo.');
+  }
+  if (b.results && b.results.length){
+    html += '<div style="display:grid;gap:8px;margin-top:8px">';
+    b.results.forEach(function(r){
+      var stColor = r.status==="sent" ? "var(--green)" : r.status==="failed" ? "var(--brick)" : "var(--amber)";
+      var stTxt = r.status==="sent" ? "enviado" : r.status==="failed" ? "error de envío" : r.status==="pending" ? "creada — enviar manual" : "sin email";
+      html += '<div class="qa-item" style="padding:10px 12px">' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span style="font-weight:700;font-size:14px;color:var(--ink);flex:1;min-width:120px">'+esc(r.name||'Candidato')+'</span>' +
+          '<span style="font-size:11.5px;color:'+stColor+';font-weight:600">'+stTxt+'</span>' +
+        '</div>' +
+        (r.email?'<p style="margin:3px 0 0;font-size:12px;color:var(--muted)">'+esc(r.email)+'</p>':'') +
+        (r.code?'<p style="margin:4px 0 0;font-size:12px;color:var(--muted)">Código: <b class="mono">'+esc(r.code)+'</b></p>':'') +
+        (r.link?'<div class="input-row" style="background:var(--surface-2);margin-top:6px"><input class="mono" style="font-size:11.5px" value="'+esc(r.link)+'" readonly onclick="this.select()"></div>':'') +
+      '</div>';
+    });
+    html += '</div>';
+    html += '<button class="btn btn-ghost btn-block" data-action="copy-bulk" style="margin-top:12px">'+ic('copy',15)+' Copiar toda la lista (nombre · código · enlace)</button>';
+  }
+  html += '<button class="btn btn-primary btn-block" data-action="go-recruiterhome" style="margin-top:14px">'+ic('home',15)+' Volver al panel</button>';
+  html += '</div>';
+  return html;
 };
 
 Screens.generating = function(){ return Header() + Centered(ic('loader',30,'spin'), "Armando la entrevista", "La IA está redactando preguntas a medida del puesto y del nivel" + ((rt.cvText||rt.cvData)?", y del CV":"") + "… puede tardar unos segundos."); };
@@ -2337,6 +2412,124 @@ function createInterview(){
   }
 }
 
+/* ===================== ENVÍO MASIVO ===================== */
+function bulkLinkFor(code){
+  var base = (pageBaseUrl() || PROD_BASE).replace(/[?#].*$/, "");
+  return base + "?c=" + encodeURIComponent(code);
+}
+function buildBulkInviteMessage(name, link, code, qCount){
+  var c = state.config;
+  var brand = (state.brand && state.brand.name) ? state.brand.name.trim() : "";
+  var n = qCount || "algunas";
+  return "Hola" + (name ? (" " + name) : "") + ",\n\n" +
+    (brand ? (brand + " te invita a completar una entrevista por voz para el puesto de " + c.position + ".\n\n") :
+             "Te invitamos a completar una entrevista por voz para el puesto de " + c.position + ".\n\n") +
+    "👉 Para hacer la entrevista, entrá a este enlace (mejor desde el celular o la computadora, con Google Chrome):\n\n" +
+    link + "\n\n" +
+    "Al entrar, cargá tu nombre y apellido, tu email, y este código:\n\n" +
+    "    CÓDIGO: " + code + "\n\n" +
+    "Cómo funciona: son " + n + " preguntas y respondés grabando audio. El cronómetro de cada pregunta arranca apenas aparece (tenés tiempo para leerla y pensarla); cuando estés listo tocás Grabar, y Detener al terminar. Si te equivocás, podés borrar y grabar de nuevo mientras quede tiempo. Necesitás permitir el acceso al micrófono.\n\n" +
+    "Es de un solo uso, así que hacela cuando tengas unos minutos tranquilo y en un lugar silencioso.\n\n" +
+    "Cualquier duda, respondé este correo. ¡Éxitos!";
+}
+/* Crea la fila de entrevista para el envío masivo. Intenta guardar el candidato
+   (candidate_name/email); si esas columnas no existen todavía, reintenta sin ellas. */
+function createBulkInterviewRow(code, name, email, qs){
+  var u = currentUser();
+  var full = {
+    recruiter_id: u && u.id, code: code,
+    position: state.config.position, company: state.config.company, focus: state.config.focus||"",
+    level: state.config.level, language: state.config.language,
+    brand_name: (state.brand && state.brand.name) ? state.brand.name : null,
+    brand_logo: (state.brand && state.brand.logo) ? state.brand.logo : null,
+    questions: stripQuestions(qs), status: "pending",
+    candidate_name: name || null, candidate_email: email || null
+  };
+  return dbCreateInterview(full).catch(function(){
+    var slim = {
+      recruiter_id: u && u.id, code: code,
+      position: state.config.position, company: state.config.company, focus: state.config.focus||"",
+      level: state.config.level, language: state.config.language,
+      brand_name: full.brand_name, brand_logo: full.brand_logo,
+      questions: full.questions, status: "pending"
+    };
+    return dbCreateInterview(slim);
+  });
+}
+function sendInviteEmail(to, subject, message){
+  return fetch("/api/notify", {
+    method: "POST", headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({ to: to, subject: subject, message: message })
+  }).then(function(r){ return r.json(); }).catch(function(){ return { ok:false, error:"network" }; });
+}
+function startBulkSend(){
+  if (!(supaConfigured() && isLoggedIn())){ state.bulk={ error:"Necesitás iniciar sesión para el envío masivo.", results:[], done:true }; state.screen="bulk-result"; render(); return; }
+  var ids = state.config.selectedCVs || [];
+  var chosen = (state.cvbank.cvs||[]).filter(function(cv){ return ids.indexOf(cv.id)>=0; });
+  var targets = [], noEmail = [];
+  chosen.forEach(function(cv){
+    var mail = cv.candidate_email || extractEmailFromText(cv.cv_text||"");
+    var rec = { id:cv.id, name:cv.candidate_name||cv.file_name||"Candidato", email:mail||"" };
+    if (mail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) targets.push(rec); else noEmail.push(rec);
+  });
+  if (targets.length > 25){ targets = targets.slice(0,25); } // tope por tanda (rate limit del envío)
+  state.bulk = { running:true, phase:"questions", total:targets.length, sent:0, failed:0, noEmail:noEmail.length, results:[], error:null, brevoMissing:false, done:false };
+  if (!targets.length){ state.bulk.running=false; state.bulk.done=true; state.bulk.error="Ninguno de los CVs seleccionados tiene un email detectado. Abrí cada CV y cargá el email, o subilos de nuevo."; state.screen="bulk-result"; render(); return; }
+  state.screen = "bulk-sending"; render();
+
+  // 1) Preguntas del puesto (mismas para todos). Sin sesgo de un CV puntual.
+  var savedCvText = rt.cvText, savedCvData = rt.cvData;
+  rt.cvText = ""; rt.cvData = null;
+  var lang = state.config.language || "es";
+  generateQuestions()
+    .then(function(list){ return mapAIQuestions(list, lang); })
+    .catch(function(){ return buildQuestions(state.config); })
+    .then(function(qs){
+      rt.cvText = savedCvText; rt.cvData = savedCvData;
+      if (!qs || !qs.length) qs = buildQuestions(state.config);
+      qs.forEach(function(q,i){ if(!q.id) q.id="q"+i; });
+      var qCount = qs.length;
+      state.bulk.phase = "creating"; render();
+
+      var subject = inviteSubject();
+      var chain = Promise.resolve();
+      // Primero agregamos los "sin email" al detalle (omitidos).
+      noEmail.forEach(function(r){ state.bulk.results.push({ name:r.name, email:"", code:"", link:"", status:"noemail" }); });
+
+      targets.forEach(function(t){
+        chain = chain.then(function(){
+          var code = makeCode();
+          return createBulkInterviewRow(code, t.name, t.email, qs).then(function(){
+            var link = bulkLinkFor(code);
+            var entry = { name:t.name, email:t.email, code:code, link:link, status:"pending" };
+            state.bulk.results.push(entry);
+            if (state.bulk.brevoMissing){ render(); return; } // ya sabemos que Brevo no está: no reintentamos enviar
+            var msg = buildBulkInviteMessage(t.name, link, code, qCount);
+            return sendInviteEmail(t.email, subject, msg).then(function(j){
+              if (j && j.ok){ entry.status="sent"; state.bulk.sent++; }
+              else if (j && j.error==="no_config"){ state.bulk.brevoMissing=true; entry.status="pending"; }
+              else { entry.status="failed"; state.bulk.failed++; }
+              render();
+            });
+          }).catch(function(){
+            state.bulk.results.push({ name:t.name, email:t.email, code:"", link:"", status:"failed" });
+            state.bulk.failed++; render();
+          });
+        });
+      });
+      return chain;
+    })
+    .then(function(){
+      state.bulk.running=false; state.bulk.done=true; state.screen="bulk-result"; render();
+      state.config.selectedCVs = [];
+      if (supaConfigured() && isLoggedIn()) loadDashboard();
+    })
+    .catch(function(e){
+      rt.cvText = savedCvText; rt.cvData = savedCvData;
+      state.bulk.running=false; state.bulk.done=true; state.bulk.error="No pude completar el envío. "+((e&&e.message)||""); state.screen="bulk-result"; render();
+    });
+}
+
 function emailsMatch(a, b){ return (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase(); }
 
 function startInviteInterview(emailRaw, codeRaw, nameRaw){
@@ -2744,6 +2937,10 @@ function bind(){
       else if (act === "go-recruiterhome") goRecruiterHome();
       else if (act === "go-hub") goHub();
       else if (act === "go-module-recruit") goRecruiterHome();
+      else if (act === "copy-bulk"){
+        var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
+        copyText(lines.join("\n"), function(){ alert("Lista copiada."); });
+      }
       else if (act === "go-login"){ state.error=null; state.screen="rec-login"; render(); }
       else if (act === "go-signup"){ state.error=null; state.screen="rec-signup"; render(); }
       else if (act === "logout") doLogout();
@@ -2755,7 +2952,7 @@ function bind(){
       else if (act === "open-detail"){ var id=el.getAttribute("data-id"); var it=(state.dash.items||[]).filter(function(z){return z.id===id;})[0]; if(it){ state.dash.detail=it; state.screen="interview-detail"; render(); } }
       else if (act === "del-interview"){ var did=el.getAttribute("data-id"); if(confirm("¿Eliminar esta entrevista? Esta acción no se puede deshacer.")){ dbDeleteInterview(did).then(function(){ loadDashboard(); }); } }
       else if (act === "dash-filter"){ state.dash.filter = el.getAttribute("data-f")||"all"; render(); }
-      else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.screen="config"; render(); refreshCVBankQuiet(); }
+      else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.config.selectedCVs=[]; state.screen="config"; render(); refreshCVBankQuiet(); }
       else if (act === "go-cvhome") goCVHome();
       else if (act === "go-cvbank") goCVBank();
       else if (act === "go-newsearch") goNewSearch();
@@ -2824,27 +3021,35 @@ function bind(){
   if ((f=document.getElementById("f_searchnice"))) f.addEventListener("input", function(e){ state.newsearch.nice=e.target.value; });
   if (document.getElementById("analyzeBtn")) document.getElementById("analyzeBtn").addEventListener("click", doAnalyzeNewSearch);
   if ((f=document.getElementById("f_cvfiles"))) f.addEventListener("change", function(e){ var files=e.target.files; if(files&&files.length) uploadCVFiles(files); });
-  if ((f=document.getElementById("f_cvpick"))) f.addEventListener("change", function(e){
-    var id=e.target.value; var st=document.getElementById("cvStatus");
-    var fileInput=document.getElementById("f_cv"); if(fileInput) fileInput.value="";
-    rt.cvData=null;
-    if(!id){ rt.cvText=""; rt.cvId=null; rt.cvName=""; if(st) st.textContent=""; return; }
-    var cv=(state.cvbank.cvs||[]).filter(function(z){return z.id===id;})[0];
-    if(cv){
-      rt.cvText=(cv.cv_text||"").slice(0,15000); rt.cvId=cv.id; rt.cvName=cv.candidate_name||cv.file_name||"CV";
-      var mail=cv.candidate_email||extractEmailFromText(cv.cv_text||"");
-      var filled=applyCandidateEmailFromCV(mail);
-      if(st){
-        if(rt.cvText.length>40){ st.style.color="var(--teal)"; st.textContent="CV elegido: "+rt.cvName+(filled?(" — email detectado: "+mail):" — las preguntas se adaptarán a él."); }
-        else { st.style.color="var(--amber)"; st.textContent="Ese CV no tiene texto legible guardado. Probá subirlo de nuevo desde el repositorio."; }
+  // Lista de CVs con checkboxes: 1 seleccionado = entrevista individual; 2+ = envío masivo.
+  app.querySelectorAll(".cvchk").forEach(function(chk){
+    chk.addEventListener("change", function(){
+      var ids = [];
+      app.querySelectorAll(".cvchk").forEach(function(c){ if(c.checked) ids.push(c.getAttribute("data-id")); });
+      state.config.selectedCVs = ids;
+      var fileInput=document.getElementById("f_cv"); if(fileInput) fileInput.value="";
+      rt.cvData=null;
+      if (ids.length === 1){
+        var cv=(state.cvbank.cvs||[]).filter(function(z){return z.id===ids[0];})[0];
+        if(cv){
+          rt.cvText=(cv.cv_text||"").slice(0,15000); rt.cvId=cv.id; rt.cvName=cv.candidate_name||cv.file_name||"CV";
+          var mail=cv.candidate_email||extractEmailFromText(cv.cv_text||"");
+          applyCandidateEmailFromCV(mail);
+        }
+      } else {
+        // 0 o 2+: sin contexto de un CV único (el envío masivo usa preguntas del puesto).
+        rt.cvText=""; rt.cvId=null; rt.cvName="";
       }
-    }
+      render();
+    });
   });
 
   if ((f=document.getElementById("f_cv"))) f.addEventListener("change", function(e){
     var file = e.target.files && e.target.files[0];
     var st = document.getElementById("cvStatus");
-    var pick=document.getElementById("f_cvpick"); if(pick) pick.value="";
+    // Subir un CV nuevo = modo individual: destildo cualquier CV marcado de la lista.
+    app.querySelectorAll(".cvchk").forEach(function(c){ c.checked=false; var row=c.closest(".cvrow"); if(row) row.style.background="transparent"; });
+    state.config.selectedCVs = [];
     rt.cvData = null; rt.cvText = ""; rt.cvId = null; rt.cvName = file?file.name:"";
     if (!file){ if(st) st.textContent=""; return; }
     if (file.size > 10*1024*1024){ if(st){ st.style.color="var(--brick)"; st.textContent="El archivo supera los 10 MB."; } return; }
@@ -2899,6 +3104,7 @@ function bind(){
   if ((f=document.getElementById("f_count"))) f.addEventListener("change", function(e){ state.config.count=e.target.value; });
   if ((f=document.getElementById("f_english"))) f.addEventListener("change", function(e){ state.config.includeEnglish=e.target.checked; });
   if ((f=document.getElementById("genBtn"))) f.addEventListener("click", function(){ if (state.config.position.trim() && state.config.company.trim()) generate(); });
+  if ((f=document.getElementById("bulkBtn"))) f.addEventListener("click", function(){ if (state.config.position.trim() && state.config.company.trim()) startBulkSend(); });
   function syncGenBtn(){ var b=document.getElementById("genBtn"); if (b) b.disabled = !(state.config.position.trim() && state.config.company.trim()); }
 
   /* pin screens */
