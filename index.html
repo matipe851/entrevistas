@@ -1,4 +1,5 @@
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>voz. entrevistas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -102,6 +103,8 @@ body{
 h1,h2,h3{ font-family:"Fraunces", Georgia, serif; font-weight:600; letter-spacing:-.01em; text-wrap:balance; margin:0; }
 a{ color:inherit; }
 button{ font-family:inherit; }
+button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-action:manipulation; -webkit-tap-highlight-color:rgba(20,60,60,0.08); }
+.rec-btn{ -webkit-user-select:none; user-select:none; }
 .mono{ font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; }
 .wrap{ max-width:760px; margin:0 auto; padding:40px 20px 64px; }
 @media (min-width:640px){ .wrap{ padding:56px 32px 80px; } }
@@ -700,10 +703,30 @@ function pageBaseUrl(){
   return loc.origin + loc.pathname;
 }
 function computeInviteLink(){
-  var base = pageBaseUrl() || PROD_BASE;
+  var base = (pageBaseUrl() || PROD_BASE).replace(/[?#].*$/, "");
+  // Si la entrevista quedó guardada en la base, usamos un LINK CORTO con solo el código
+  // (la app la carga por código). Es mucho más presentable que el link largo.
+  if (supaConfigured() && state.interviewId && state.code){
+    return base + "?c=" + encodeURIComponent(state.code);
+  }
+  // Respaldo (modo local sin base): link autocontenido con todo embebido.
   var token = encodePayload(buildInvitePayload());
   if (!token) return state.shareLink || "";
   return base + "#e=" + token;
+}
+/* Carga la entrevista por código (link corto) desde el servidor. */
+function loadInviteByCode(code){
+  state.screen = "loading"; render();
+  fetch("/api/interview", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ code:code }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if (j && j.ok && j.interview && j.interview.questions && j.interview.questions.length){
+        state.invite = j.interview; state.error = null; state.screen = "invite-landing"; render();
+      } else {
+        state.error = null; state.screen = "invite-error"; render();
+      }
+    })
+    .catch(function(){ state.screen = "invite-error"; render(); });
 }
 
 /* ---------------- question bank (local generator, no network calls) ---------------- */
@@ -1078,7 +1101,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v24.8-r6";
+var APP_VERSION = "v24.8-r8";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1576,7 +1599,15 @@ Screens["edit-questions"] = function(){
   html += '</div>';
   return html;
 };
-Screens.loading = function(){ return Header() + Centered(ic('loader',30,'spin'), "Buscando…", "Un momento."); };
+Screens.loading = function(){ return Header() + Centered(ic('loader',30,'spin'), "Cargando…", "Un momento, estamos preparando la entrevista."); };
+Screens["invite-error"] = function(){
+  return Header() +
+  '<div class="card" style="max-width:460px;margin:0 auto;text-align:center">' +
+    '<div style="display:flex;justify-content:center;color:var(--brick);margin-bottom:8px">'+ic('alert',36)+'</div>' +
+    '<h2 style="font-size:19px;color:var(--ink);margin-bottom:8px">No pudimos abrir la entrevista</h2>' +
+    '<p style="font-size:14px;color:var(--muted);margin:0">El enlace puede estar vencido, ya usado o mal copiado. Revisá que hayas abierto el enlace completo que te enviaron, o escribile a quien te contactó.</p>' +
+  '</div>';
+};
 Screens.submitting = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "No cierres esta ventana."); };
 Screens.evaluating = function(){ return Header() + Centered(ic('sparkle',30), "Evaluando respuestas", "Analizando duración, fluidez y contenido de cada respuesta…"); };
 Screens["cand-thanks"] = function(){ return Header() + Centered(ic('check',32), "¡Listo, gracias!", "Tus respuestas se enviaron correctamente. Ya podés cerrar esta ventana."); };
@@ -1624,11 +1655,12 @@ function buildShareMessage(){
   return "Hola,\n\n" +
     (brand ? (brand + " te invita a completar una entrevista por voz para el puesto de " + c.position + ".\n\n") :
              "Te invitamos a completar una entrevista por voz para el puesto de " + c.position + ".\n\n") +
-    "Para comenzar, abrí este enlace desde tu celular o computadora (recomendamos usar Google Chrome):\n" +
+    "👉 Para hacer la entrevista, entrá a este enlace (mejor desde el celular o la computadora, con Google Chrome):\n\n" +
     (state.shareLink || "[enlace de la entrevista]") + "\n\n" +
-    "Al entrar te vamos a pedir tu email y este código de verificación:\n\n" +
+    "Al entrar, cargá tu nombre y apellido, tu email, y este código:\n\n" +
     "    CÓDIGO: " + state.code + "\n\n" +
-    "Importante: la entrevista es de un solo uso, así que hacela cuando tengas unos minutos tranquilo y en un lugar silencioso. Son " + n + " preguntas y respondés grabando audio; el cronómetro de cada pregunta arranca apenas aparece (incluye tiempo para leerla y pensarla) y la grabación se hace sola. Necesitás permitir el acceso al micrófono.\n\n" +
+    "Cómo funciona: son " + n + " preguntas y respondés grabando audio. El cronómetro de cada pregunta arranca apenas aparece (tenés tiempo para leerla y pensarla); cuando estés listo tocás Grabar, y Detener al terminar. Si te equivocás, podés borrar y grabar de nuevo mientras quede tiempo. Necesitás permitir el acceso al micrófono.\n\n" +
+    "Es de un solo uso, así que hacela cuando tengas unos minutos tranquilo y en un lugar silencioso.\n\n" +
     "Cualquier duda, respondé este correo. ¡Éxitos!";
 }
 function mailtoHref(){
@@ -1968,11 +2000,11 @@ Screens.interview = function(){
   html += '<div class="rec-wrap"><div class="rec-ring">' +
     '<svg width="168" height="168" viewBox="0 0 128 128">' +
       '<circle cx="64" cy="64" r="54" fill="none" stroke="var(--border)" stroke-width="6"/>' +
-      '<circle cx="64" cy="64" r="54" fill="none" stroke="'+(overtime?'var(--brick)':'var(--teal)')+'" stroke-width="6" stroke-linecap="round" stroke-dasharray="'+ring+'" stroke-dashoffset="'+(ring*(1-progress))+'" style="transition:stroke-dashoffset 1s linear"/>' +
+      '<circle id="recRing" cx="64" cy="64" r="54" fill="none" stroke="'+(overtime?'var(--brick)':'var(--teal)')+'" stroke-width="6" stroke-linecap="round" stroke-dasharray="'+ring+'" stroke-dashoffset="'+(ring*(1-progress))+'" style="transition:stroke-dashoffset 1s linear"/>' +
     '</svg>';
   var canReRecord = isCandidate && answered && state.qTiming && !state.recording;
   if (state.recording){
-    html += '<button class="rec-btn rec-active" data-action="stop-rec">'+ic('square',18)+'<span style="font-size:12px;font-weight:700">Detener</span><span class="mono" style="font-size:13px;font-weight:600">'+fmt(state.timeLeft)+'</span></button>';
+    html += '<button class="rec-btn rec-active" data-action="stop-rec">'+ic('square',18)+'<span style="font-size:12px;font-weight:700">Detener</span><span class="mono" id="recCount" style="font-size:13px;font-weight:600">'+fmt(state.timeLeft)+'</span></button>';
   } else if (answered){
     html += '<div class="rec-btn rec-done">'+ic('check',24)+'<span style="font-size:12px;font-weight:600">Grabado</span></div>';
   } else if (timedOut){
@@ -1985,7 +2017,7 @@ Screens.interview = function(){
   html += '</div>';
   // Reloj visible (el tiempo corre desde que apareció la pregunta y no se frena al detener)
   if (state.qTiming && !state.recording && !timedOut){
-    html += '<p class="rec-hint" style="font-weight:700;color:'+(overtime?'var(--brick)':'var(--ink)')+'"><span class="mono">'+fmt(state.timeLeft)+'</span> restantes'+(answered?'':' — tocá <strong>Grabar</strong> cuando estés listo')+'</p>';
+    html += '<p class="rec-hint" id="recHint" style="font-weight:700;color:'+(overtime?'var(--brick)':'var(--ink)')+'"><span class="mono" id="recRemain">'+fmt(state.timeLeft)+'</span> restantes'+(answered?'':' — tocá <strong>Grabar</strong> cuando estés listo')+'</p>';
   }
   var hintTxt;
   if (state.recording) hintTxt = isCandidate ? "Estás grabando. Cuando termines de responder, tocá el botón <strong>Detener</strong>." : "Grabando… tocá el cuadrado para terminar antes.";
@@ -2001,7 +2033,7 @@ Screens.interview = function(){
     if (answer.transcript) html += '<div style="margin-top:12px"><div class="transcript-label">'+ic('msg',12)+' Transcripción aproximada</div><p style="margin:0;font-size:13.5px">'+esc(answer.transcript)+'</p></div>';
     html += '</div>';
   }
-  if (state.recording && state.live) html += '<div class="transcript-box" style="margin-top:12px;color:var(--muted)">'+esc(state.live)+'</div>';
+  if (state.recording) html += '<div id="liveBox" class="transcript-box" style="margin-top:12px;color:var(--muted);'+(state.live?'':'display:none')+'">'+esc(state.live)+'</div>';
   html += '</div>';
 
   html += '<div class="flex-actions">';
@@ -2238,6 +2270,8 @@ function createInterview(){
       recruiter_id: u && u.id, code: code,
       position: state.config.position, company: state.config.company, focus: state.config.focus||"",
       level: state.config.level, language: state.config.language,
+      brand_name: (state.brand && state.brand.name) ? state.brand.name : null,
+      brand_logo: (state.brand && state.brand.logo) ? state.brand.logo : null,
       questions: stripQuestions(qs), status: "pending"
     };
     dbCreateInterview(row).then(function(saved){ state.interviewId = saved.id || ""; toShare(); })
@@ -2504,7 +2538,13 @@ function startRecognition(q){
         if (e.results[i].isFinal) rt.finalText += t + " "; else interim += t;
       }
       state.live = (rt.finalText+interim).trim();
-      if (state.recording) render();
+      // Actualiza solo el cuadro de transcripción en vivo, sin re-dibujar la pantalla
+      // (evita que el botón Detener se reconstruya y se pierdan los toques en el celular).
+      if (state.recording){
+        var lb = document.getElementById("liveBox");
+        if (lb){ lb.textContent = state.live; lb.style.display = state.live ? "" : "none"; }
+        else render();
+      }
     };
     r.onerror = function(){};
     rt.recog = r; r.start();
@@ -2538,11 +2578,27 @@ function stopRecording(){
   // El reloj NO se detiene al parar la grabación (ni en candidato ni en preview):
   // así se puede eliminar y volver a grabar sin que el tiempo se reinicie.
 }
+/* Actualiza SOLO el número del reloj y el anillo, sin volver a dibujar la pantalla.
+   Esto evita que el botón de grabar/detener se "reconstruya" cada segundo y se pierdan
+   los toques en el celular (el bug de tener que tocar 3 veces). */
+function updateTimerUI(){
+  if (state.screen !== "interview") return;
+  var q = state.questions[state.idx]; if (!q) return;
+  var ring = 2*Math.PI*54;
+  var progress = state.qTiming ? state.timeLeft/(state.timeTotal || q.seconds) : 1;
+  var overtime = state.qTiming && state.timeLeft <= 10;
+  var col = overtime ? "var(--brick)" : "var(--teal)";
+  var r = document.getElementById("recRing");
+  if (r){ r.setAttribute("stroke-dashoffset", ring*(1-progress)); r.setAttribute("stroke", col); }
+  var c = document.getElementById("recCount"); if (c) c.textContent = fmt(state.timeLeft);
+  var rem = document.getElementById("recRemain"); if (rem) rem.textContent = fmt(state.timeLeft);
+  var hint = document.getElementById("recHint"); if (hint) hint.style.color = overtime ? "var(--brick)" : "var(--ink)";
+}
 function tick(){
   clearTimeout(rt.timerId);
   if (!state.qTiming) return;
   if (state.timeLeft <= 0){ onQuestionTimeUp(); return; }
-  rt.timerId = setTimeout(function(){ state.timeLeft -= 1; render(); tick(); }, 1000);
+  rt.timerId = setTimeout(function(){ state.timeLeft -= 1; updateTimerUI(); tick(); }, 1000);
 }
 
 function maybeFollowup(){
@@ -2915,7 +2971,8 @@ function bind(){
 (function loadBrand(){ try{ var b=lget("voz_brand"); if(b&&(b.name||b.logo)){ state.brand={ name:b.name||"", logo:b.logo||"" }; } }catch(e){} })();
 function saveBrand(){ try{ lset("voz_brand", { name:state.brand.name||"", logo:state.brand.logo||"" }); }catch(e){} }
 
-/* ---- entry from a shared invite link (works on any device) ---- */
+/* ---- entrada por link de invitación ---- */
+// 1) Link autocontenido viejo (#e=...): trae todo embebido.
 (function initFromHash(){
   try{
     var h = (window.location && window.location.hash) || "";
@@ -2928,13 +2985,25 @@ function saveBrand(){ try{ lset("voz_brand", { name:state.brand.name||"", logo:s
     }
   } catch(e){}
 })();
+// 2) Link corto nuevo (?c=CODIGO o #c=CODIGO): carga la entrevista desde el servidor.
+var pendingCode = (function(){
+  try{
+    var loc = window.location || {};
+    var mq = (loc.search || "").match(/[?&]c=([^&]+)/);
+    if (mq) return decodeURIComponent(mq[1]).toUpperCase();
+    var mh = (loc.hash || "").match(/[#&]c=([^&]+)/);
+    if (mh) return decodeURIComponent(mh[1]).toUpperCase();
+  }catch(e){}
+  return "";
+})();
 
-// Si NO hay link de invitación (o sea, no es un candidato), la entrada directa es el
-// acceso del reclutador: login si no inició sesión, o su panel si ya está logueado.
+// Ruteo de arranque:
 if (state.screen === "invite-landing"){
-  render();
+  render();                         // candidato con link viejo (#e=)
+} else if (pendingCode){
+  loadInviteByCode(pendingCode);    // candidato con link corto (?c=)
 } else {
-  enterRecruiter();   // enterRecruiter() ya llama a render() internamente
+  enterRecruiter();   // reclutador: login o panel
 }
 })();
 </script>
