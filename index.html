@@ -1091,7 +1091,7 @@ var state = {
   invite: null,
   code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate", consentAt: "",
   dash: { loading:false, items:null, error:null, detail:null, filter:"all" },
-  cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"" },
+  cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"" }, cvFilter:"",
   searches: { loading:false, items:null, error:null, current:null, analyzing:false, error2:null, note:null },
   newsearch: { title:"", description:"", must:"", nice:"" },
   brand: { name:"", logo:"" },
@@ -1118,7 +1118,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v24.11-r11";
+var APP_VERSION = "v24.12-r12";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1604,21 +1604,25 @@ Screens.config = function(){
             ? '<span class="field-hint" style="display:block;margin-bottom:8px">'+ic('loader',12,'spin')+' Cargando tus CVs guardados…</span>'
             : (state.cvbank.cvs.length
                 ? '<span class="field-hint" style="display:block;margin-bottom:8px">Elegí <b>uno</b> para una entrevista, o <b>varios</b> para enviar en masa (a cada candidato le llega su propio mail). Si un CV no tiene email detectado, cargalo abajo antes de enviar.</span>' +
-                  '<div id="f_cvlist" style="display:grid;gap:6px;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:12px;padding:8px;margin-bottom:6px">' +
+                  '<div class="input-row" style="margin-bottom:6px"><span style="color:var(--muted)">'+ic('eye',14)+'</span><input id="f_cvsearch" type="text" placeholder="Buscar por nombre o email…" value="'+esc(state.cvFilter||"")+'" autocomplete="off"></div>' +
+                  '<div id="f_cvlist" style="display:grid;gap:6px;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:12px;padding:8px;margin-bottom:4px">' +
                     state.cvbank.cvs.map(function(cv){
                       var checked = ((state.config.selectedCVs||[]).indexOf(cv.id)>=0);
                       var mail = cv.candidate_email || extractEmailFromText(cv.cv_text||"");
+                      var nm = cv.candidate_name||cv.file_name||'CV';
+                      var searchKey = (nm+" "+(mail||"")).toLowerCase();
                       var badge = mail
                         ? '<span style="font-size:11px;color:var(--teal);white-space:nowrap">'+esc(mail)+'</span>'
                         : '<span style="font-size:11px;color:var(--amber);white-space:nowrap">sin email</span>';
-                      return '<label class="cvrow" style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;cursor:pointer;background:'+(checked?'var(--teal-tint)':'transparent')+'">' +
+                      return '<label class="cvrow" data-search="'+esc(searchKey)+'" style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;cursor:pointer;background:'+(checked?'var(--teal-tint)':'transparent')+'">' +
                         '<input type="checkbox" class="cvchk" data-id="'+esc(cv.id)+'" data-email="'+esc(mail||"")+'"'+(checked?' checked':'')+' style="width:17px;height:17px;flex-shrink:0">' +
-                        '<span style="flex:1;min-width:0;font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(cv.candidate_name||cv.file_name||'CV')+'</span>' +
+                        '<span style="flex:1;min-width:0;font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(nm)+'</span>' +
                         badge +
                       '</label>';
                     }).join('') +
+                    '<div id="cvNoMatch" style="display:none;padding:10px 8px;font-size:12.5px;color:var(--muted);text-align:center">Ningún CV coincide con la búsqueda.</div>' +
                   '</div>' +
-                  '<span class="field-hint" style="display:block;margin-bottom:6px">…o subí uno nuevo:</span>'
+                  '<span class="field-hint" style="display:block;margin-bottom:6px">Seleccionados: <b id="cvSelCount">'+(state.config.selectedCVs||[]).length+'</b> · …o subí uno nuevo:</span>'
                 : '<span class="field-hint" style="display:block;margin-bottom:8px">Todavía no tenés CVs en tu repositorio. Subí uno acá abajo, o cargá varios desde <b>Screening de CVs</b>.</span>')
         ) : '') +
         '<input id="f_cv" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)">' +
@@ -2952,7 +2956,7 @@ function bind(){
       else if (act === "open-detail"){ var id=el.getAttribute("data-id"); var it=(state.dash.items||[]).filter(function(z){return z.id===id;})[0]; if(it){ state.dash.detail=it; state.screen="interview-detail"; render(); } }
       else if (act === "del-interview"){ var did=el.getAttribute("data-id"); if(confirm("¿Eliminar esta entrevista? Esta acción no se puede deshacer.")){ dbDeleteInterview(did).then(function(){ loadDashboard(); }); } }
       else if (act === "dash-filter"){ state.dash.filter = el.getAttribute("data-f")||"all"; render(); }
-      else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.config.selectedCVs=[]; state.screen="config"; render(); refreshCVBankQuiet(); }
+      else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.config.selectedCVs=[]; state.cvFilter=""; state.screen="config"; render(); refreshCVBankQuiet(); }
       else if (act === "go-cvhome") goCVHome();
       else if (act === "go-cvbank") goCVBank();
       else if (act === "go-newsearch") goNewSearch();
@@ -3043,6 +3047,21 @@ function bind(){
       render();
     });
   });
+  // Buscador de CVs por nombre/email (filtra la lista sin recargar todo).
+  function applyCvFilter(){
+    var list=document.getElementById("f_cvlist"); if(!list) return;
+    var q=(state.cvFilter||"").trim().toLowerCase();
+    var shown=0;
+    list.querySelectorAll(".cvrow").forEach(function(row){
+      var key=row.getAttribute("data-search")||"";
+      var match=!q || key.indexOf(q)>=0;
+      row.style.display = match ? "flex" : "none";
+      if(match) shown++;
+    });
+    var nm=document.getElementById("cvNoMatch"); if(nm) nm.style.display = shown ? "none" : "block";
+  }
+  if ((f=document.getElementById("f_cvsearch"))) f.addEventListener("input", function(e){ state.cvFilter=e.target.value; applyCvFilter(); });
+  applyCvFilter();
 
   if ((f=document.getElementById("f_cv"))) f.addEventListener("change", function(e){
     var file = e.target.files && e.target.files[0];
