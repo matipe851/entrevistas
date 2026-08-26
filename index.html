@@ -1206,7 +1206,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v25.4-r17";
+var APP_VERSION = "v25.5-r18";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1810,6 +1810,7 @@ Screens["edit-questions"] = function(){
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('sparkle',19)+'<h2 style="font-size:18px;color:var(--ink)">Revisá y editá las preguntas</h2></div>' +
     '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">'+(state.aiFallback?('Se prepararon '+state.questions.length+' preguntas base para <strong>'+esc(state.config.position||"")+'</strong> ('+esc(state.config.level||"")+').'):('La IA armó '+state.questions.length+' preguntas a medida para <strong>'+esc(state.config.position||"")+'</strong> ('+esc(state.config.level||"")+'), analizando el puesto'+((rt.cvText&&rt.cvText.length>40)?' y el CV':'')+'.'))+' Podés cambiarlas, borrarlas o agregar nuevas antes de crear la entrevista.</p>' +
     (state.aiFallback ? Note("err", esc(state.aiFallback)) : "") +
+    ((state.bulk && state.bulk.editing) ? Note("info", ic('users',14)+' &nbsp;Envío masivo: estas preguntas se van a usar para los <b>'+(state.bulk.total||0)+'</b> candidatos (las mismas para todos). Editalas, borralas o agregá nuevas, y después tocá "Enviar a todos".') : "") +
     ErrBox();
   html += '<div style="display:grid;gap:12px">';
   state.questions.forEach(function(q,i){
@@ -1824,7 +1825,9 @@ Screens["edit-questions"] = function(){
   html += '</div>';
   html += '<div class="flex-actions">' +
     '<button class="btn btn-ghost btn-sm" data-action="add-question">'+ic('sparkle',14)+' Agregar pregunta</button>' +
-    '<button class="btn btn-primary" id="createIvBtn" style="margin-left:auto">'+ic('check',15)+' Crear entrevista</button>' +
+    ((state.bulk && state.bulk.editing)
+      ? '<button class="btn btn-primary" id="bulkSendBtn" style="margin-left:auto">'+ic('send',15)+' Enviar a '+(state.bulk.total||0)+' candidato'+((state.bulk.total===1)?'':'s')+'</button>'
+      : '<button class="btn btn-primary" id="createIvBtn" style="margin-left:auto">'+ic('check',15)+' Crear entrevista</button>') +
   '</div>';
   html += '</div>';
   return html;
@@ -2467,7 +2470,7 @@ function adminApprove(id, approve){
 }
 
 function generate(){
-  state.error=null; state.screen="generating"; render();
+  state.error=null; if(state.bulk) state.bulk.editing=false; state.screen="generating"; render();
   function toEdit(qs){
     if (!qs || !qs.length) qs = buildQuestions(state.config);
     if (!qs.length){ state.error = "No pude generar la entrevista. Revisá los datos y probá de nuevo."; state.screen = "config"; render(); return; }
@@ -2604,7 +2607,7 @@ function sendCannotAuto(j){
   return j && (j.error==="no_google" || j.error==="needs_relogin" || j.error==="no_config" || j.error==="no_token" || j.error==="network");
 }
 function startBulkSend(){
-  if (!(supaConfigured() && isLoggedIn())){ state.bulk={ error:"Necesitás iniciar sesión para el envío masivo.", results:[], done:true }; state.screen="bulk-result"; render(); return; }
+  if (!(supaConfigured() && isLoggedIn())){ state.bulk={ error:"Necesitás iniciar sesión para el envío masivo.", results:[], done:true, editing:false }; state.screen="bulk-result"; render(); return; }
   var ids = state.config.selectedCVs || [];
   var chosen = (state.cvbank.cvs||[]).filter(function(cv){ return ids.indexOf(cv.id)>=0; });
   var targets = [], noEmail = [];
@@ -2614,61 +2617,69 @@ function startBulkSend(){
     if (mail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) targets.push(rec); else noEmail.push(rec);
   });
   if (targets.length > 25){ targets = targets.slice(0,25); } // tope por tanda (rate limit del envío)
-  state.bulk = { running:true, phase:"questions", total:targets.length, sent:0, failed:0, noEmail:noEmail.length, results:[], error:null, sendUnavailable:false, done:false };
-  if (!targets.length){ state.bulk.running=false; state.bulk.done=true; state.bulk.error="Ninguno de los CVs seleccionados tiene un email detectado. Abrí cada CV y cargá el email, o subilos de nuevo."; state.screen="bulk-result"; render(); return; }
-  state.screen = "bulk-sending"; render();
+  state.bulk = { running:false, phase:"questions", editing:false, total:targets.length, sent:0, failed:0, noEmail:noEmail.length, results:[], error:null, sendUnavailable:false, done:false, targets:targets, noEmailList:noEmail };
+  if (!targets.length){ state.bulk.done=true; state.bulk.error="Ninguno de los CVs seleccionados tiene un email detectado. Abrí cada CV y cargá el email, o subilos de nuevo."; state.screen="bulk-result"; render(); return; }
 
-  // 1) Preguntas del puesto (mismas para todos). Sin sesgo de un CV puntual.
+  // 1) Generar las preguntas del puesto (mismas para todos). Sin sesgo de un CV puntual.
+  state.aiFallback = null; state.screen = "generating"; render();
   var savedCvText = rt.cvText, savedCvData = rt.cvData;
   rt.cvText = ""; rt.cvData = null;
   var lang = state.config.language || "es";
   generateQuestions()
-    .then(function(list){ return mapAIQuestions(list, lang); })
-    .catch(function(){ return buildQuestions(state.config); })
+    .then(function(list){ rt.cvText=savedCvText; rt.cvData=savedCvData; var qs=mapAIQuestions(list, lang); if(!qs||!qs.length) qs=buildQuestions(state.config); return qs; })
+    .catch(function(e){ rt.cvText=savedCvText; rt.cvData=savedCvData; var code=(e&&e.message)||"network"; if(/fetch|network|load failed|failed to/i.test(code)) code="network"; state.aiFallback=aiErrorMessage(code, e&&e.detail); return buildQuestions(state.config); })
     .then(function(qs){
-      rt.cvText = savedCvText; rt.cvData = savedCvData;
       if (!qs || !qs.length) qs = buildQuestions(state.config);
       qs.forEach(function(q,i){ if(!q.id) q.id="q"+i; });
-      var qCount = qs.length;
-      state.bulk.phase = "creating"; render();
-
-      var subject = inviteSubject();
-      var chain = Promise.resolve();
-      // Primero agregamos los "sin email" al detalle (omitidos).
-      noEmail.forEach(function(r){ state.bulk.results.push({ name:r.name, email:"", code:"", link:"", status:"noemail" }); });
-
-      targets.forEach(function(t){
-        chain = chain.then(function(){
-          var code = makeCode();
-          return createBulkInterviewRow(code, t.name, t.email, qs).then(function(){
-            var link = bulkLinkFor(code);
-            var entry = { name:t.name, email:t.email, code:code, link:link, status:"pending" };
-            state.bulk.results.push(entry);
-            if (state.bulk.sendUnavailable){ render(); return; } // ni Gmail ni servidor: no reintentamos enviar
-            var msg = buildBulkInviteMessage(t.name, link, code, qCount);
-            return sendInviteSmart(t.email, subject, msg).then(function(j){
-              if (j && j.ok){ entry.status="sent"; state.bulk.sent++; }
-              else if (sendCannotAuto(j)){ state.bulk.sendUnavailable=true; entry.status="pending"; }
-              else { entry.status="failed"; state.bulk.failed++; }
-              render();
-            });
-          }).catch(function(){
-            state.bulk.results.push({ name:t.name, email:t.email, code:"", link:"", status:"failed" });
-            state.bulk.failed++; render();
-          });
-        });
-      });
-      return chain;
-    })
-    .then(function(){
-      state.bulk.running=false; state.bulk.done=true; state.screen="bulk-result"; render();
-      state.config.selectedCVs = [];
-      if (supaConfigured() && isLoggedIn()) loadDashboard();
-    })
-    .catch(function(e){
-      rt.cvText = savedCvText; rt.cvData = savedCvData;
-      state.bulk.running=false; state.bulk.done=true; state.bulk.error="No pude completar el envío. "+((e&&e.message)||""); state.screen="bulk-result"; render();
+      state.questions = qs;
+      // 2) Paso de edición: el reclutador revisa/edita/agrega preguntas antes de enviar.
+      state.bulk.editing = true;
+      state.screen = "edit-questions"; render();
     });
+}
+// 3) Con las preguntas ya editadas, crea una entrevista por candidato y envía a cada uno.
+function bulkFinalizeSend(){
+  var qs = (state.questions||[]).filter(function(q){ return q.text && q.text.trim(); });
+  if (!qs.length){ state.error="La entrevista necesita al menos una pregunta."; render(); return; }
+  qs.forEach(function(q,i){ if(!q.id) q.id="q"+i; });
+  var targets = state.bulk.targets || [];
+  var noEmail = state.bulk.noEmailList || [];
+  var qCount = qs.length;
+  state.bulk.editing=false; state.bulk.running=true; state.bulk.phase="creating";
+  state.bulk.sent=0; state.bulk.failed=0; state.bulk.results=[]; state.bulk.sendUnavailable=false; state.bulk.done=false; state.bulk.error=null;
+  state.screen="bulk-sending"; render();
+
+  var subject = inviteSubject();
+  var chain = Promise.resolve();
+  noEmail.forEach(function(r){ state.bulk.results.push({ name:r.name, email:"", code:"", link:"", status:"noemail" }); });
+  targets.forEach(function(t){
+    chain = chain.then(function(){
+      var code = makeCode();
+      return createBulkInterviewRow(code, t.name, t.email, qs).then(function(){
+        var link = bulkLinkFor(code);
+        var entry = { name:t.name, email:t.email, code:code, link:link, status:"pending" };
+        state.bulk.results.push(entry);
+        if (state.bulk.sendUnavailable){ render(); return; }
+        var msg = buildBulkInviteMessage(t.name, link, code, qCount);
+        return sendInviteSmart(t.email, subject, msg).then(function(j){
+          if (j && j.ok){ entry.status="sent"; state.bulk.sent++; }
+          else if (sendCannotAuto(j)){ state.bulk.sendUnavailable=true; entry.status="pending"; }
+          else { entry.status="failed"; state.bulk.failed++; }
+          render();
+        });
+      }).catch(function(){
+        state.bulk.results.push({ name:t.name, email:t.email, code:"", link:"", status:"failed" });
+        state.bulk.failed++; render();
+      });
+    });
+  });
+  chain.then(function(){
+    state.bulk.running=false; state.bulk.done=true; state.bulk.editing=false; state.screen="bulk-result"; render();
+    state.config.selectedCVs = [];
+    if (supaConfigured() && isLoggedIn()) loadDashboard();
+  }).catch(function(e){
+    state.bulk.running=false; state.bulk.done=true; state.bulk.error="No pude completar el envío. "+((e&&e.message)||""); state.screen="bulk-result"; render();
+  });
 }
 
 function emailsMatch(a, b){ return (a||"").trim().toLowerCase() === (b||"").trim().toLowerCase(); }
@@ -3095,7 +3106,7 @@ function bind(){
       else if (act === "open-detail"){ var id=el.getAttribute("data-id"); var it=(state.dash.items||[]).filter(function(z){return z.id===id;})[0]; if(it){ state.dash.detail=it; state.screen="interview-detail"; render(); } }
       else if (act === "del-interview"){ var did=el.getAttribute("data-id"); if(confirm("¿Eliminar esta entrevista? Esta acción no se puede deshacer.")){ dbDeleteInterview(did).then(function(){ loadDashboard(); }); } }
       else if (act === "dash-filter"){ state.dash.filter = el.getAttribute("data-f")||"all"; render(); }
-      else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.config.selectedCVs=[]; state.cvFilter=""; state.screen="config"; render(); refreshCVBankQuiet(); }
+      else if (act === "go-config"){ state.error=null; rt.cvData=null; rt.cvText=""; rt.cvId=null; rt.cvName=""; state.config.selectedCVs=[]; state.cvFilter=""; if(state.bulk) state.bulk.editing=false; state.screen="config"; render(); refreshCVBankQuiet(); }
       else if (act === "go-cvhome") goCVHome();
       else if (act === "go-cvbank") goCVBank();
       else if (act === "go-newsearch") goNewSearch();
@@ -3400,6 +3411,10 @@ function bind(){
     // capturar valores actuales por si acaso
     app.querySelectorAll("textarea.q-edit").forEach(function(t){ var i=parseInt(t.getAttribute("data-idx"),10); if(state.questions[i]) state.questions[i].text=t.value; });
     createInterview();
+  });
+  if ((f=document.getElementById("bulkSendBtn"))) f.addEventListener("click", function(){
+    app.querySelectorAll("textarea.q-edit").forEach(function(t){ var i=parseInt(t.getAttribute("data-idx"),10); if(state.questions[i]) state.questions[i].text=t.value; });
+    bulkFinalizeSend();
   });
 
   /* review screen */
