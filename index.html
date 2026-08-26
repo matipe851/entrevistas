@@ -1355,7 +1355,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v26.5-r28";
+var APP_VERSION = "v26.6-r29";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1485,6 +1485,44 @@ function scoreColorVar(sc){ return sc>=7?"var(--green)":sc>=5?"var(--amber)":"va
 function scoreTintVar(sc){ return sc>=7?"var(--green-tint)":sc>=5?"var(--amber-tint)":"var(--brick-tint)"; }
 function fmtDate(iso){ if(!iso) return ""; try{ var d=new Date(iso); return d.toLocaleDateString('es-AR')+" "+d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ""; } }
 
+/* Panel de métricas del módulo (se calcula con las entrevistas ya cargadas). */
+function MetricsPanel(){
+  var d = state.dash;
+  if (d.loading || d.items===null) return '';
+  var items = d.items || [];
+  if (!items.length) return '';
+  var completed = items.filter(function(x){ return x.status==='completed'; });
+  var nComp = completed.length, total = items.length;
+  var rate = total ? Math.round(nComp/total*100) : 0;
+  var scored = completed.filter(function(x){ return typeof x.score==='number'; });
+  var avg = scored.length ? (scored.reduce(function(a,x){ return a+x.score; },0)/scored.length) : null;
+  var nApr = completed.filter(function(x){ return x.score>=7; }).length;
+  var nMed = completed.filter(function(x){ return x.score>=5 && x.score<7; }).length;
+  var nDes = completed.filter(function(x){ return typeof x.score==='number' && x.score<5; }).length;
+  var now = Date.now();
+  var last7 = items.filter(function(x){ var t=Date.parse(x.created_at||''); return !isNaN(t) && (now-t)<7*86400000; }).length;
+  function tile(value, label, sub, color){
+    return '<div style="flex:1;min-width:130px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px">' +
+      '<div class="mono" style="font-size:23px;font-weight:800;line-height:1;color:'+(color||'var(--ink)')+'">'+value+'</div>' +
+      '<div style="font-size:12px;color:var(--ink);margin-top:6px;font-weight:600">'+label+'</div>' +
+      (sub?'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+sub+'</div>':'') +
+    '</div>';
+  }
+  var breakdown = '<div style="flex:1;min-width:190px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px">' +
+    '<div style="font-size:12px;color:var(--ink);font-weight:600;margin-bottom:8px">Resultados de las completadas</div>' +
+    '<div style="display:flex;gap:14px;flex-wrap:wrap">' +
+      '<span class="mono" style="font-weight:800;color:var(--green)">'+nApr+'<span style="font-size:11px;color:var(--muted);font-weight:600"> aprob.</span></span>' +
+      '<span class="mono" style="font-weight:800;color:var(--amber)">'+nMed+'<span style="font-size:11px;color:var(--muted);font-weight:600"> medios</span></span>' +
+      '<span class="mono" style="font-weight:800;color:var(--brick)">'+nDes+'<span style="font-size:11px;color:var(--muted);font-weight:600"> desaprob.</span></span>' +
+    '</div></div>';
+  return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--teal)">'+ic('trophy',18)+'<h3 style="font-size:15px;color:var(--ink)">Métricas</h3></div>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px">' +
+      tile(total, 'Entrevistas totales', last7+' en los últimos 7 días', 'var(--ink)') +
+      tile(nComp+'/'+total, 'Completadas', rate+'% de finalización', 'var(--teal)') +
+      tile(avg!=null?avg.toFixed(1):'—', 'Puntaje promedio', avg!=null?'sobre 10':'sin evaluaciones aún', avg!=null?scoreColorVar(avg):'var(--muted)') +
+      breakdown +
+    '</div>';
+}
 function DashboardList(){
   var d = state.dash;
   if (d.loading || d.items===null) return '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando entrevistas…</p></div>';
@@ -1619,6 +1657,7 @@ Screens["rec-home"] = function(){
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
       '</div>' +
     '</div>' +
+    MetricsPanel() +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--teal)">'+ic('eye',18)+'<h3 style="font-size:15px;color:var(--ink)">Entrevistas realizadas</h3></div>' +
     DashboardList();
   }
