@@ -902,7 +902,22 @@ function processImportedEmails(emails, folderNames){
     loadCVBank();
   });
 }
-function goNewSearch(){ state.searches.error2=null; state.searches.note=null; state.newsearch={ title:"", description:"", must:"", nice:"", folder:"" }; state.screen="cv-newsearch"; render(); if(state.cvbank.cvs===null) loadCVBank(); if(state.cvbank.folders===null) dbListFolders().then(function(fs){ state.cvbank.folders=fs; render(); }).catch(function(){}); }
+function goNewSearch(){ state.searches.error2=null; state.searches.note=null; state.newsearch={ title:"", description:"", must:"", nice:"", folder:"", fromJob:"" }; state.screen="cv-newsearch"; render(); if(state.cvbank.cvs===null) loadCVBank(); if(state.cvbank.folders===null) dbListFolders().then(function(fs){ state.cvbank.folders=fs; render(); }).catch(function(){}); if(state.jobs.items===null) dbListJobs().then(function(items){ state.jobs.items=items; if(state.screen==="cv-newsearch") render(); }).catch(function(){}); }
+/* Copia los datos de un aviso del portal a la Nueva búsqueda de screening. */
+function copyNewSearchFromJob(jid){
+  state.newsearch.fromJob = jid || "";
+  if(!jid){ render(); return; }
+  var jp = (state.jobs.items||[]).filter(function(z){ return z.id===jid; })[0];
+  if(jp){
+    state.newsearch.title = jp.position || state.newsearch.title || "";
+    state.newsearch.description = jp.description || "";
+    state.newsearch.must = jp.must_have || "";
+    state.newsearch.nice = jp.nice_to_have || "";
+    var fs = knownFolderNames();
+    if(jp.position && fs.indexOf(jp.position)>=0) state.newsearch.folder = jp.position;
+  }
+  render();
+}
 /* ¿un CV pertenece a la carpeta elegida? ("" = todas, "__none__" = sin carpeta). */
 function cvInFolder(c, folder){ if(!folder) return true; if(folder==="__none__") return !c.folder; return c.folder===folder; }
 
@@ -1489,7 +1504,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v27.0-r38";
+var APP_VERSION = "v27.0-r39";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1966,6 +1981,15 @@ Screens["cv-newsearch"] = function(){
     '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Describí el puesto lo más claro posible: la IA va a usar esta descripción para decidir qué CVs encajan mejor.</p>' +
     (state.searches.error2 ? Note("err", esc(state.searches.error2)) : '') +
     '<div style="display:grid;gap:16px">' +
+      ((state.jobs.items && state.jobs.items.length) ? (
+        '<label class="field" style="background:var(--teal-tint);border-radius:12px;padding:12px 14px"><span class="field-label" style="color:var(--teal)">Copiar de un aviso del portal (opcional)</span>' +
+          '<select class="bare" id="f_ns_fromjob">' +
+            '<option value="">— No copiar, cargar a mano —</option>' +
+            state.jobs.items.map(function(jp){ return '<option value="'+esc(jp.id)+'"'+((ns.fromJob===jp.id)?' selected':'')+'>'+esc(jp.position||'(sin puesto)')+'</option>'; }).join('') +
+          '</select>' +
+          '<span class="field-hint">Trae automáticamente el puesto, la descripción y los requisitos de ese aviso (y selecciona su carpeta si existe).</span>' +
+        '</label>'
+      ) : '') +
       folderChips +
       '<label class="field"><span class="field-label">Puesto a cubrir</span>'+fieldInput("f_searchtitle","Ej: Vendedor de mostrador, Desarrollador backend Ssr", ns.title, "briefcase")+'</label>' +
       '<label class="field"><span class="field-label">Descripción del puesto y qué buscás</span>' +
@@ -3908,6 +3932,7 @@ function bind(){
   if ((f=document.getElementById("f_searchmust"))) f.addEventListener("input", function(e){ state.newsearch.must=e.target.value; });
   if ((f=document.getElementById("f_searchnice"))) f.addEventListener("input", function(e){ state.newsearch.nice=e.target.value; });
   if (document.getElementById("analyzeBtn")) document.getElementById("analyzeBtn").addEventListener("click", doAnalyzeNewSearch);
+  if ((f=document.getElementById("f_ns_fromjob"))) f.addEventListener("change", function(e){ copyNewSearchFromJob(e.target.value); });
   // ---- Portal de búsquedas: formulario de nueva búsqueda ----
   if ((f=document.getElementById("f_job_fromsearch"))) f.addEventListener("change", function(e){ copyJobFromSearch(e.target.value); });
   if ((f=document.getElementById("f_job_pos"))) f.addEventListener("input", function(e){ state.newjob.position=e.target.value; });
