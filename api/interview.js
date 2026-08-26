@@ -39,15 +39,16 @@ module.exports = async function handler(req, res) {
     var headers = { apikey: key, Authorization: "Bearer " + key };
     // Traemos SOLO campos públicos de la entrevista (nunca answers/report/score/audio).
     var selBase = "id,code,position,company,focus,level,language,questions,brand_name,brand_logo,status,created_at";
-    // Intentamos traer valid_days; si la columna no existe todavía, reintentamos sin ella.
-    async function fetchRow(withValidDays) {
-      var sel = selBase + (withValidDays ? ",valid_days" : "");
+    // Intentamos traer las columnas opcionales (valid_days, followups). Si alguna no existe
+    // todavía, reintentamos sin ellas para no romper la carga de la entrevista.
+    async function fetchRow(withOptional) {
+      var sel = selBase + (withOptional ? ",valid_days,followups" : "");
       var rr = await fetch(base + "/rest/v1/interviews?code=eq." + encodeURIComponent(code) + "&select=" + sel + "&limit=1", { headers: headers });
       var jj = await rr.json();
       return { ok: rr.ok, rows: jj };
     }
     var got = await fetchRow(true);
-    if (!got.ok || !Array.isArray(got.rows)) got = await fetchRow(false); // fallback si valid_days no existe
+    if (!got.ok || !Array.isArray(got.rows)) got = await fetchRow(false); // fallback si columnas opcionales no existen
     var rows = got.rows;
     if (!Array.isArray(rows) || !rows[0]) { res.status(200).json({ ok: false, error: "not_found" }); return; }
     var row = rows[0];
@@ -71,7 +72,7 @@ module.exports = async function handler(req, res) {
       focus: row.focus || "",
       level: row.level || "Semi-Senior",
       language: row.language || "es",
-      followups: false,
+      followups: !!row.followups,
       brandName: row.brand_name || "",
       brandLogo: row.brand_logo || "",
       status: row.status || "pending",
