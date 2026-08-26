@@ -664,7 +664,8 @@ function uploadCVFiles(fileList){
         return up.then(function(url){
           var base=file.name.replace(/\.[^.]+$/,"");
           var mail=extractEmailFromText(txt);
-          return dbCreateCV({ candidate_name:base, file_name:file.name, cv_url:url||null, cv_text:txt||"", candidate_email:mail||null })
+          var folder=(state.cvbank.folder && state.cvbank.folder!=="__none__") ? state.cvbank.folder : null;
+          return dbCreateCV({ candidate_name:base, file_name:file.name, cv_url:url||null, cv_text:txt||"", candidate_email:mail||null, folder:folder })
             .then(function(){ okc++; done++; }).catch(function(){ done++; });
         });
       });
@@ -1179,7 +1180,7 @@ var state = {
   invite: null,
   code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate", consentAt: "",
   dash: { loading:false, items:null, error:null, detail:null, filter:"all" },
-  cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"" }, cvFilter:"",
+  cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"", folder:"", creatingFolder:false }, cvFilter:"",
   searches: { loading:false, items:null, error:null, current:null, analyzing:false, error2:null, note:null },
   newsearch: { title:"", description:"", must:"", nice:"" },
   brand: { name:"", logo:"" },
@@ -1206,7 +1207,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v25.7-r20";
+var APP_VERSION = "v25.8-r21";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1527,9 +1528,35 @@ Screens["cv-bank"] = function(){
   var html = Header();
   html += backlink("go-cvhome","Volver a screening");
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('file',19)+'<h2 style="font-size:18px;color:var(--ink)">Repositorio de CVs</h2></div>';
-  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 16px">Subí uno o varios CV en PDF. Quedan guardados en tu cuenta y se usan en todas tus búsquedas.</p>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 16px">Subí uno o varios CV en PDF y organizalos en <b>carpetas por puesto</b>. Quedan guardados en tu cuenta y se usan en tus búsquedas.</p>';
   if(!audioUploadConfigured()) html += Note("info", "Para guardar el PDF original y poder abrirlo después, configurá Cloudinary. Igual podés subir CVs: se guarda el texto para el análisis.");
+
+  var active = state.cvbank.folder || "";
+  // Barra de carpetas (chips): "Todas" + una por cada carpeta con CVs + la carpeta activa recién creada + "Nueva carpeta".
+  if (b.cvs && b.cvs.length !== undefined){
+    var counts = {}; var total = 0;
+    (b.cvs||[]).forEach(function(c){ var f=c.folder||""; counts[f]=(counts[f]||0)+1; total++; });
+    var names = Object.keys(counts).filter(function(f){ return f!==""; }).sort();
+    if (active && names.indexOf(active)<0) names.push(active); // carpeta nueva sin CVs todavía
+    var chip = function(key,label,count,isActive){
+      return '<button class="pill-time" data-action="cv-folder" data-f="'+esc(key)+'" style="cursor:pointer;border:none;background:'+(isActive?'var(--teal)':'var(--surface-2)')+';color:'+(isActive?'#fff':'var(--ink)')+';'+(isActive?'font-weight:800':'opacity:.85')+'">'+esc(label)+(count!=null?(' ('+count+')'):'')+'</button>';
+    };
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
+    html += chip("", "Todas", total, active==="");
+    if (counts[""]) html += chip("__none__", "Sin carpeta", counts[""], false); // ver solo los sin carpeta
+    names.forEach(function(f){ html += chip(f, f, counts[f]||0, active===f); });
+    html += '<button class="pill-time" data-action="cv-newfolder" style="cursor:pointer;border:1px dashed var(--border);background:transparent;color:var(--teal)">'+ic('plus',12)+' Nueva carpeta</button>';
+    html += '</div>';
+    if (state.cvbank.creatingFolder){
+      html += '<div style="display:flex;gap:8px;margin-bottom:12px"><input id="f_newfolder" placeholder="Nombre del puesto (ej: Vendedor)" style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--ink);font-family:inherit;font-size:14px">' +
+        '<button class="btn btn-primary btn-sm" data-action="cv-newfolder-ok">Crear</button>' +
+        '<button class="btn btn-ghost btn-sm" data-action="cv-newfolder-cancel">Cancelar</button></div>';
+    }
+  }
+
+  var uploadingTo = (active && active!=="__none__") ? active : "";
   html += '<div class="card" style="margin-bottom:16px">' +
+    '<p style="margin:0 0 8px;font-size:12.5px;color:var(--muted)">Subiendo a la carpeta: <b style="color:var(--ink)">'+(uploadingTo?esc(uploadingTo):'Sin carpeta')+'</b>'+(uploadingTo?'':' — elegí o creá una carpeta arriba para organizar por puesto')+'</p>' +
     '<label class="btn btn-primary btn-block" style="cursor:pointer;'+(b.uploading?'opacity:.6;pointer-events:none':'')+'">'+ic('plus',15)+' '+(b.uploading?'Subiendo…':'Subir CVs (PDF)')+
       '<input id="f_cvfiles" type="file" accept="application/pdf,.pdf" multiple style="display:none"></label>' +
     (b.msg? '<p id="cvUpMsg" style="margin:10px 0 0;font-size:12.5px;color:var(--muted)">'+esc(b.msg)+'</p>' : '<p id="cvUpMsg" style="margin:10px 0 0;font-size:12.5px;color:var(--muted)"></p>') +
@@ -1537,14 +1564,23 @@ Screens["cv-bank"] = function(){
   if (b.loading || b.cvs===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
   if (b.error){ html += Note("err", esc(b.error)); return html; }
   if (!b.cvs.length){ html += '<div class="center-block" style="padding:24px 12px">'+ic('file',24)+'<p>Todavía no subiste ningún CV.</p></div>'; return html; }
-  html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">'+b.cvs.length+' CV(s) en el repositorio</p>';
+
+  // Filtro por carpeta activa.
+  var shownCvs = b.cvs.filter(function(c){
+    if (active==="") return true;
+    if (active==="__none__") return !c.folder;
+    return c.folder===active;
+  });
+  var label = active==="" ? "Todos los CVs" : active==="__none__" ? "CVs sin carpeta" : 'Carpeta "'+active+'"';
+  html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">'+esc(label)+' · '+shownCvs.length+' CV(s)</p>';
+  if (!shownCvs.length){ html += '<div class="center-block" style="padding:20px 12px">'+ic('file',22)+'<p>No hay CVs en esta carpeta.</p></div>'; return html; }
   html += '<div style="display:grid;gap:8px">';
-  b.cvs.forEach(function(c){
+  shownCvs.forEach(function(c){
     html += '<div class="qa-item" style="display:flex;align-items:center;gap:12px">' +
       '<span style="flex-shrink:0;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);color:var(--muted)">'+ic('file',18)+'</span>' +
       '<div style="flex:1;min-width:0">' +
         '<p style="margin:0;font-weight:600;font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.candidate_name||c.file_name||'CV')+'</p>' +
-        '<p style="margin:1px 0 0;font-size:11.5px;color:var(--muted)">'+esc(fmtDate(c.created_at))+(c.cv_text?'':' · sin texto legible')+'</p>' +
+        '<p style="margin:1px 0 0;font-size:11.5px;color:var(--muted)">'+(c.folder?('📁 '+esc(c.folder)+' · '):'')+esc(fmtDate(c.created_at))+(c.cv_text?'':' · sin texto legible')+'</p>' +
       '</div>' +
       (c.cv_url? '<a href="'+esc(c.cv_url)+'" target="_blank" rel="noopener" class="dl-audio" style="color:var(--teal);text-decoration:none;font-size:12px">abrir</a>' : '') +
       '<button class="dl-audio" data-action="del-cv" data-id="'+esc(c.id)+'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px">quitar</button>' +
@@ -3115,6 +3151,13 @@ function bind(){
       else if (act === "go-newsearch") goNewSearch();
       else if (act === "open-search"){ var sid=el.getAttribute("data-id"); var sr=(state.searches.items||[]).filter(function(z){return z.id===sid;})[0]; if(sr){ state.searches.current=sr; state.searches.error2=null; state.searches.note=null; state.screen="cv-ranking"; render(); } }
       else if (act === "del-cv"){ var cid=el.getAttribute("data-id"); if(confirm("¿Quitar este CV del repositorio?")){ dbDeleteCV(cid).then(function(){ loadCVBank(); }); } }
+      else if (act === "cv-folder"){ state.cvbank.folder = el.getAttribute("data-f")||""; state.cvbank.creatingFolder=false; render(); }
+      else if (act === "cv-newfolder"){ state.cvbank.creatingFolder=true; render(); }
+      else if (act === "cv-newfolder-cancel"){ state.cvbank.creatingFolder=false; render(); }
+      else if (act === "cv-newfolder-ok"){
+        var inp=document.getElementById("f_newfolder"); var nm=inp?inp.value.trim():"";
+        if(nm){ state.cvbank.folder=nm; state.cvbank.creatingFolder=false; render(); }
+      }
       else if (act === "del-search"){ var xid=el.getAttribute("data-id"); if(confirm("¿Eliminar esta búsqueda y su ranking?")){ dbDeleteSearch(xid).then(function(){ goCVHome(); }); } }
       else if (act === "reanalyze") doReanalyze();
       else if (act === "invite-from-cv"){
@@ -3179,6 +3222,7 @@ function bind(){
   if ((f=document.getElementById("f_searchnice"))) f.addEventListener("input", function(e){ state.newsearch.nice=e.target.value; });
   if (document.getElementById("analyzeBtn")) document.getElementById("analyzeBtn").addEventListener("click", doAnalyzeNewSearch);
   if ((f=document.getElementById("f_cvfiles"))) f.addEventListener("change", function(e){ var files=e.target.files; if(files&&files.length) uploadCVFiles(files); });
+  if ((f=document.getElementById("f_newfolder"))){ f.focus(); f.addEventListener("keydown", function(e){ if(e.key==="Enter"){ var nm=f.value.trim(); if(nm){ state.cvbank.folder=nm; state.cvbank.creatingFolder=false; render(); } } }); }
   // Lista de CVs con checkboxes: 1 seleccionado = entrevista individual; 2+ = envío masivo.
   app.querySelectorAll(".cvchk").forEach(function(chk){
     chk.addEventListener("change", function(){
