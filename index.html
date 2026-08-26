@@ -581,6 +581,23 @@ function dbClearFolderOnCVs(name){
   return supaFetch("/rest/v1/cvs?folder=eq."+encodeURIComponent(name), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify({ folder:null }) })
     .then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* ----- Banco de preguntas reutilizables ----- */
+function dbListQuestionBank(){
+  return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
+    .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); }).catch(function(){ return []; });
+}
+function dbAddQuestionBank(text, category){
+  return supaFetch("/rest/v1/question_bank", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify({ text:text, category:category||null }) })
+    .then(function(r){ return r.json().then(function(j){ return (Array.isArray(j)&&j[0])||null; }); }).catch(function(){ return null; });
+}
+function dbDeleteQuestionBank(id){
+  return supaFetch("/rest/v1/question_bank?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+function loadQuestionBank(){
+  if(!(supaConfigured() && isLoggedIn())){ state.qbank.items = []; return; }
+  state.qbank.loading = true;
+  dbListQuestionBank().then(function(items){ state.qbank.loading=false; state.qbank.items=items; if(state.screen==="edit-questions") render(); });
+}
 function dbListSearches(){
   return supaFetch("/rest/v1/searches?select=*&order=created_at.desc")
     .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); });
@@ -1329,6 +1346,7 @@ var state = {
   code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate", consentAt: "",
   dash: { loading:false, items:null, error:null, detail:null, filter:"all" },
   cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"", folder:"", creatingFolder:false, folders:null, importing:false, importMsg:"", impFrom:"", impTo:"" }, cvFilter:"",
+  qbank: { items:null, loading:false, savedMsg:"" },
   searches: { loading:false, items:null, error:null, current:null, analyzing:false, error2:null, note:null },
   newsearch: { title:"", description:"", must:"", nice:"" },
   brand: { name:"", logo:"" },
@@ -1355,7 +1373,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v26.6-r29";
+var APP_VERSION = "v26.7-r30";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1981,6 +1999,7 @@ Screens.config = function(){
       '<label class="field"><span class="field-label">Vencimiento del enlace</span><select class="bare" id="f_validdays">' +
         [[1,'1 día'],[3,'3 días'],[7,'7 días'],[15,'15 días'],[30,'30 días'],[0,'Sin vencimiento']].map(function(o){ var cur=(c.validDays!=null?c.validDays:3); return '<option value="'+o[0]+'"'+(String(cur)===String(o[0])?' selected':'')+'>'+o[1]+'</option>'; }).join('') +
       '</select><span class="field-hint">Pasado ese plazo, el enlace deja de funcionar y el candidato no puede realizar la entrevista.</span></label>' +
+      '<label class="check-row" for="f_followups" style="background:var(--purple-tint);border-color:var(--border-soft)"><input type="checkbox" id="f_followups"' + (c.followups?' checked':'') + '><span class="check-title">Repreguntas con IA: si la respuesta es floja o genérica, la IA le hace una repregunta puntual en el momento (como un entrevistador real)</span></label>' +
       (c.language==='es' ? '<label class="check-row" for="f_english" style="background:var(--teal-tint);border-color:var(--border-soft)"><input type="checkbox" id="f_english"' + (c.includeEnglish?' checked':'') + '><span class="check-title">Sumar 2 preguntas en inglés para evaluar el nivel del idioma</span></label>' : '') +
     '</div>' +
     (function(){
@@ -2065,12 +2084,36 @@ Screens["edit-questions"] = function(){
     html += '<div class="qa-item">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
         '<span style="font-size:12px;font-weight:700;color:var(--muted)">Pregunta '+(i+1)+' · '+esc(q.category||"")+'</span>' +
-        '<button class="dl-audio" data-action="del-question" data-idx="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:12px;font-weight:600">Borrar</button>' +
+        '<div style="display:flex;align-items:center;gap:12px">' +
+          '<button class="dl-audio" data-action="qbank-save" data-idx="'+i+'" title="Guardar en tu banco de preguntas" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:12px;font-weight:600">Guardar</button>' +
+          '<button class="dl-audio" data-action="del-question" data-idx="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:12px;font-weight:600">Borrar</button>' +
+        '</div>' +
       '</div>' +
       '<textarea class="q-edit" data-idx="'+i+'" rows="2" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--ink);font-family:inherit;font-size:14px;resize:vertical">'+esc(q.text||"")+'</textarea>' +
     '</div>';
   });
   html += '</div>';
+  // Banco de preguntas reutilizables (aparece acá, al editar).
+  (function(){
+    var qb = state.qbank;
+    html += '<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--teal)">'+ic('list',16)+'<b style="font-size:13.5px;color:var(--ink)">Banco de preguntas</b>'+(state.qbank.savedMsg?'<span style="font-size:12px;color:var(--green)">'+esc(state.qbank.savedMsg)+'</span>':'')+'</div>';
+    html += '<p style="font-size:12px;color:var(--muted);margin:0 0 10px">Guardá preguntas que uses seguido (botón <b>"Guardar"</b> en cada una) y reusalas con un clic, sin volver a escribirlas.</p>';
+    if (qb.loading || qb.items===null){ html += '<p style="font-size:12.5px;color:var(--muted)">Cargando banco…</p>'; }
+    else if (!qb.items.length){ html += '<p style="font-size:12.5px;color:var(--muted)">Todavía no guardaste preguntas. Tocá "Guardar" en cualquier pregunta de arriba para sumarla.</p>'; }
+    else {
+      html += '<div style="display:grid;gap:6px;max-height:230px;overflow-y:auto">';
+      qb.items.forEach(function(it){
+        html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface-2);border-radius:9px">' +
+          '<span style="flex:1;min-width:0;font-size:12.5px;color:var(--ink)">'+esc(it.text)+'</span>' +
+          '<button class="btn btn-ghost btn-sm" data-action="qbank-use" data-id="'+esc(it.id)+'">'+ic('plus',12)+' Usar</button>' +
+          '<button class="dl-audio" data-action="qbank-del" data-id="'+esc(it.id)+'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px">quitar</button>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  })();
   html += '<div class="flex-actions">' +
     '<button class="btn btn-ghost btn-sm" data-action="add-question">'+ic('sparkle',14)+' Agregar pregunta</button>' +
     ((state.bulk && state.bulk.editing)
@@ -2094,6 +2137,7 @@ Screens["invite-error"] = function(){
     '</p>' +
   '</div>';
 };
+Screens["cand-followup"] = function(){ return Header() + Centered(ic('loader',30,'spin'), "Un momento…", "Estamos preparando la siguiente pregunta."); };
 Screens.submitting = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "No cierres esta ventana."); };
 Screens.evaluating = function(){ return Header() + Centered(ic('sparkle',30), "Evaluando respuestas", "Analizando duración, fluidez y contenido de cada respuesta…"); };
 Screens["cand-thanks"] = function(){ return Header() + Centered(ic('check',32), "¡Listo, gracias!", "Tus respuestas se enviaron correctamente. Ya podés cerrar esta ventana."); };
@@ -2772,7 +2816,7 @@ function createInterview(){
   var code = makeCode();
   var ok = lset("voz_iv_"+code, {
     position: state.config.position, company: state.config.company, focus: state.config.focus,
-    level: state.config.level, language: state.config.language, followups: false,
+    level: state.config.level, language: state.config.language, followups: !!state.config.followups,
     questions: qs, createdAt: Date.now()
   });
   rt.analyzed = {};
@@ -2798,12 +2842,13 @@ function createInterview(){
       brand_name: (state.brand && state.brand.name) ? state.brand.name : null,
       brand_logo: (state.brand && state.brand.logo) ? state.brand.logo : null,
       questions: stripQuestions(qs), status: "pending",
-      valid_days: (state.config.validDays!=null ? state.config.validDays : 3)
+      valid_days: (state.config.validDays!=null ? state.config.validDays : 3),
+      followups: !!state.config.followups
     };
-    // Resiliente: si la columna valid_days todavía no existe en la base, reintenta sin ella.
+    // Resiliente: si alguna columna opcional todavía no existe en la base, reintenta sin ellas.
     dbCreateInterview(row).then(function(saved){ state.interviewId = saved.id || ""; toShare(); })
       .catch(function(){
-        var slim = Object.assign({}, row); delete slim.valid_days;
+        var slim = Object.assign({}, row); delete slim.valid_days; delete slim.followups;
         dbCreateInterview(slim).then(function(saved){ state.interviewId = saved.id || ""; toShare(); })
           .catch(function(){ state.storageWarn = true; toShare(); });
       });
@@ -2844,7 +2889,8 @@ function createBulkInterviewRow(code, name, email, qs){
     brand_logo: (state.brand && state.brand.logo) ? state.brand.logo : null,
     questions: stripQuestions(qs), status: "pending",
     candidate_name: name || null, candidate_email: email || null,
-    valid_days: (state.config.validDays!=null ? state.config.validDays : 3)
+    valid_days: (state.config.validDays!=null ? state.config.validDays : 3),
+    followups: !!state.config.followups
   };
   return dbCreateInterview(full).catch(function(){
     var slim = {
@@ -3283,23 +3329,37 @@ function maybeFollowup(){
   if (!hasContent && !hesitant) return;
   runAnalyze(q, false);
 }
-function runAnalyze(q, force){
+function runAnalyze(q, force, done){
   state.analyzingId = q.id; render();
-  setTimeout(function(){
-    var a = state.answers[q.id] || {};
-    var hesitant = isHesitant(a);
-    var m = speechMetrics(a.transcript||"");
-    var shortContent = m.words < 10;
-    var shouldFollow = force || hesitant || shortContent;
-    if (shouldFollow){
-      var reasonKind = hesitant && !shortContent ? "delivery" : "content";
-      var fu = makeFollowup(q, reasonKind);
-      var i = state.questions.findIndex(function(x){ return x.id === q.id; });
-      if (i >= 0) state.questions.splice(i+1, 0, fu);
-    }
-    state.analyzingId = null;
-    render();
-  }, 900);
+  var a = state.answers[q.id] || {};
+  var hesitant = isHesitant(a);
+  var m = speechMetrics(a.transcript||"");
+  var shortContent = m.words < 10;
+  var shouldFollow = force || hesitant || shortContent;
+  function finish(){ state.analyzingId = null; if (typeof done === "function") done(); else render(); }
+  if (!shouldFollow){ finish(); return; }
+  var reasonKind = hesitant && !shortContent ? "delivery" : "content";
+  var tmpl = makeFollowup(q, reasonKind); // respaldo por plantilla (nunca falla)
+  function insert(fu){
+    var i = state.questions.findIndex(function(x){ return x.id === q.id; });
+    if (i >= 0) state.questions.splice(i+1, 0, fu);
+    finish();
+  }
+  // Intento con IA una repregunta puntual según lo que dijo el candidato; si falla o tarda, uso la plantilla.
+  withTimeout(fetchFollowupAI(q, a.transcript||""), 9000).then(function(txt){
+    if (txt){ tmpl.text = txt; tmpl.reason = "Repregunta generada por IA según la respuesta del candidato."; }
+    insert(tmpl);
+  }).catch(function(){ insert(tmpl); });
+}
+/* Pide a la IA una repregunta puntual. Devuelve "" si no hay contenido o falla (se usa plantilla). */
+function fetchFollowupAI(q, transcript){
+  transcript = (transcript||"").trim();
+  if (transcript.length < 8) return Promise.resolve("");
+  return fetch(AI_ANALYZE_ENDPOINT, { method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ task:"followup", question:q.text, answer:transcript, position:state.config.position, level:state.config.level, language:(q.lang||state.config.language) }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ return (j && j.ok && j.followup) ? String(j.followup) : ""; })
+    .catch(function(){ return ""; });
 }
 
 function reRecord(q){
@@ -3311,9 +3371,25 @@ function reRecord(q){
   startRecording(q);  // el reloj sigue corriendo (no se reinicia): regrabar consume tiempo
 }
 function nextQuestion(){
+  if (state.analyzingId) return; // ya estamos analizando esta respuesta; evitar doble avance
   if (state.recording) stopRecording();
   // Cortar el reloj de la pregunta actual antes de pasar a la siguiente (el de la nueva arranca solo).
   clearTimeout(rt.timerId); state.qTiming = false;
+  // Repreguntas con IA (solo candidato, si están activadas): analizamos la respuesta y, si es floja
+  // o genérica, insertamos una repregunta puntual antes de avanzar.
+  var cq = state.questions[state.idx];
+  if (state.interviewMode === "candidate" && state.config.followups && cq && !rt.analyzed[cq.id] && (cq.depth||0) < 2){
+    var a = state.answers[cq.id];
+    if (a && (a.blobUrl || a.blob || (a.transcript && a.transcript.length >= 8))){
+      rt.analyzed[cq.id] = true;
+      state.screen = "cand-followup"; render();
+      runAnalyze(cq, false, function(){ state.screen = "interview"; advanceQuestion(); });
+      return;
+    }
+  }
+  advanceQuestion();
+}
+function advanceQuestion(){
   if (state.idx < state.questions.length-1){ state.idx += 1; render(); }
   else if (state.interviewMode === "candidate") submitAnswers();
   else { state.screen = "review"; render(); }
@@ -3414,6 +3490,37 @@ function bind(){
       }
       else if (act === "add-question") addQuestion();
       else if (act === "del-question"){ delQuestion(parseInt(el.getAttribute("data-idx"),10)); }
+      else if (act === "qbank-save"){
+        var qi = parseInt(el.getAttribute("data-idx"),10);
+        var ta = app.querySelector('textarea.q-edit[data-idx="'+qi+'"]');
+        var qtext = ta ? ta.value.trim() : ((state.questions[qi]&&state.questions[qi].text)||"").trim();
+        var qcat = (state.questions[qi]&&state.questions[qi].category)||"Experiencia";
+        if(qtext){
+          // reflejo el texto editado en el estado también
+          if(state.questions[qi]) state.questions[qi].text=qtext;
+          dbAddQuestionBank(qtext, qcat).then(function(row){
+            state.qbank.savedMsg = "Guardada ✓";
+            if(row){ state.qbank.items = (state.qbank.items||[]); state.qbank.items.unshift(row); }
+            render();
+            setTimeout(function(){ state.qbank.savedMsg=""; if(state.screen==="edit-questions") render(); }, 1800);
+          });
+        }
+      }
+      else if (act === "qbank-use"){
+        var uid = el.getAttribute("data-id");
+        var it = (state.qbank.items||[]).filter(function(z){ return String(z.id)===String(uid); })[0];
+        if(it){
+          var cat = it.category && SECONDS_BY_CAT[it.category] ? it.category : "Experiencia";
+          state.questions.push({ id:"qb"+Date.now()+Math.floor(Math.random()*99), text:it.text, category:cat, seconds:SECONDS_BY_CAT[cat]||160, lang:state.config.language||"es" });
+          render();
+        }
+      }
+      else if (act === "qbank-del"){
+        var did2 = el.getAttribute("data-id");
+        state.qbank.items = (state.qbank.items||[]).filter(function(z){ return String(z.id)!==String(did2); });
+        render();
+        dbDeleteQuestionBank(did2);
+      }
       else if (act === "go-resultscode"){ state.error=null; state.screen="results-code"; render(); }
       else if (act === "preview"){ rt.analyzed={}; state.answers={}; state.idx=0; state.interviewMode="preview"; state.screen="interview"; render(); }
       else if (act === "start-rec") startRecording(state.questions[state.idx]);
@@ -3563,6 +3670,7 @@ function bind(){
   if ((f=document.getElementById("f_count"))) f.addEventListener("change", function(e){ state.config.count=e.target.value; });
   if ((f=document.getElementById("f_validdays"))) f.addEventListener("change", function(e){ state.config.validDays=parseInt(e.target.value,10); });
   if ((f=document.getElementById("f_english"))) f.addEventListener("change", function(e){ state.config.includeEnglish=e.target.checked; });
+  if ((f=document.getElementById("f_followups"))) f.addEventListener("change", function(e){ state.config.followups=e.target.checked; });
   if ((f=document.getElementById("genBtn"))) f.addEventListener("click", function(){ if (state.config.position.trim() && state.config.company.trim()) generate(); });
   if ((f=document.getElementById("bulkBtn"))) f.addEventListener("click", function(){ if (state.config.position.trim() && state.config.company.trim()) startBulkSend(); });
   function syncGenBtn(){ var b=document.getElementById("genBtn"); if (b) b.disabled = !(state.config.position.trim() && state.config.company.trim()); }
@@ -3706,6 +3814,8 @@ function bind(){
     app.querySelectorAll("textarea.q-edit").forEach(function(t){ var i=parseInt(t.getAttribute("data-idx"),10); if(state.questions[i]) state.questions[i].text=t.value; });
     bulkFinalizeSend();
   });
+  // Carga perezosa del banco de preguntas al entrar a la edición.
+  if (state.screen==="edit-questions" && state.qbank.items===null && !state.qbank.loading) loadQuestionBank();
 
   /* review screen */
   if ((f=document.getElementById("evalBtn"))) f.addEventListener("click", evaluate);
