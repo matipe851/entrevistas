@@ -37,11 +37,30 @@ module.exports = async function handler(req, res) {
 
     var base = url.replace(/\/+$/, "");
     var headers = { apikey: key, Authorization: "Bearer " + key };
-    var sel = "id,code,position,company,focus,level,language,questions,brand_name,brand_logo,status";
-    var r = await fetch(base + "/rest/v1/interviews?code=eq." + encodeURIComponent(code) + "&select=" + sel + "&limit=1", { headers: headers });
-    var rows = await r.json();
+    // Traemos SOLO campos públicos de la entrevista (nunca answers/report/score/audio).
+    var selBase = "id,code,position,company,focus,level,language,questions,brand_name,brand_logo,status,created_at";
+    // Intentamos traer valid_days; si la columna no existe todavía, reintentamos sin ella.
+    async function fetchRow(withValidDays) {
+      var sel = selBase + (withValidDays ? ",valid_days" : "");
+      var rr = await fetch(base + "/rest/v1/interviews?code=eq." + encodeURIComponent(code) + "&select=" + sel + "&limit=1", { headers: headers });
+      var jj = await rr.json();
+      return { ok: rr.ok, rows: jj };
+    }
+    var got = await fetchRow(true);
+    if (!got.ok || !Array.isArray(got.rows)) got = await fetchRow(false); // fallback si valid_days no existe
+    var rows = got.rows;
     if (!Array.isArray(rows) || !rows[0]) { res.status(200).json({ ok: false, error: "not_found" }); return; }
     var row = rows[0];
+
+    // Vencimiento configurable: valid_days por entrevista. 0 = sin vencimiento; null/ausente = 3 días.
+    var vd = row.valid_days;
+    var days = (vd === 0) ? 0 : ((typeof vd === "number" && vd > 0) ? vd : 3);
+    if (days > 0 && row.created_at) {
+      var createdMs = Date.parse(row.created_at);
+      if (!isNaN(createdMs) && (Date.now() - createdMs) > days * 24 * 60 * 60 * 1000) {
+        res.status(200).json({ ok: false, error: "expired" }); return;
+      }
+    }
 
     var inv = {
       v: 1,
