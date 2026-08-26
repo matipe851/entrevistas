@@ -1206,7 +1206,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v25.6-r19";
+var APP_VERSION = "v25.7-r20";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2036,13 +2036,10 @@ var WEB3FORMS_KEY = "bc827930-037b-41dd-b03b-63d59d485c53";
 var CLOUDINARY_CLOUD_NAME = "memtugeu";
 var CLOUDINARY_UPLOAD_PRESET = "ml_default";
 function audioUploadConfigured(){ return !!(CLOUDINARY_CLOUD_NAME && CLOUDINARY_UPLOAD_PRESET); }
-function uploadAudioToCloudinary(blob, publicId){
+function uploadAudioToCloudinary(blob){
   var fd = new FormData();
   fd.append("file", blob);
   fd.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-  // Forzamos nombres únicos para que NUNCA se pise un archivo con otro (bug de audios cruzados).
-  fd.append("use_filename", "true");
-  fd.append("unique_filename", "true");
   return fetch("https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD_NAME + "/auto/upload", { method:"POST", body: fd })
     .then(function(r){ return r.json(); })
     .then(function(j){ if (j && j.secure_url) return j.secure_url; throw new Error((j && j.error && j.error.message) || "Falló la subida del audio"); });
@@ -2070,7 +2067,7 @@ function uploadAllAudios(){
         var uniq = (state.code || "iv") + "-" + q.id + "-" + Date.now().toString(36) + "-" + Math.floor(Math.random()*1e9).toString(36);
         var named = blob;
         try{ named = new File([blob], "resp-"+uniq+ext, { type: blob.type || "audio/webm" }); }catch(e){}
-        return uploadAudioToCloudinary(named, uniq).then(function(url){ state.audioUrls[q.id] = url; })
+        return uploadAudioToCloudinary(named).then(function(url){ state.audioUrls[q.id] = url; })
           .catch(function(e){ if(!rt.audioError) rt.audioError = (e && e.message) || "Falló la subida del audio."; });
       }).catch(function(e){ if(!rt.audioError) rt.audioError = (e && e.message) || "No pude leer el audio grabado."; });
     });
