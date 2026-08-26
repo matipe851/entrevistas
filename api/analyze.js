@@ -32,6 +32,21 @@ var DIFFICULTY = {
   "Gerencial": "Nivel GERENCIAL: preguntas de liderazgo y estrategia. Evaluá conducción de equipos, gestión de conflictos, toma de decisiones de alto impacto, indicadores/resultados, presupuesto y visión de negocio."
 };
 
+function followupPrompt(body) {
+  var LN = { es: "español rioplatense", en: "inglés", pt: "portugués", fr: "francés", it: "italiano", de: "alemán" };
+  var lang = body.language || "es";
+  var lines = [];
+  lines.push("Sos un entrevistador senior con 20 años de experiencia. Estás entrevistando para el puesto de " + (body.position || "el puesto") + " (nivel " + (body.level || "Semi-Senior") + ").");
+  lines.push("Le hiciste esta pregunta al candidato:");
+  lines.push('"""' + (body.question || "") + '"""');
+  lines.push("El candidato respondió (transcripción automática por voz, puede tener errores menores):");
+  lines.push('"""' + (body.answer || "(respuesta breve o vacía)") + '"""');
+  lines.push("");
+  lines.push("Generá UNA sola REPREGUNTA breve, específica y natural que profundice en algo CONCRETO que dijo, o que le pida un ejemplo puntual si su respuesta fue genérica o corta. Tiene que sonar como un entrevistador real repreguntando en el momento. No repitas la pregunta original ni saludes. Máximo 25 palabras.");
+  lines.push("Escribila en " + (LN[lang] || "español") + ".");
+  lines.push('Devolvé EXCLUSIVAMENTE un JSON con esta forma: { "followup": "la repregunta" }');
+  return lines.join("\n");
+}
 function screeningPrompt(position, description, cvs, must, nice) {
   var lines = [];
   lines.push("Sos un reclutador senior con 20 años de experiencia haciendo screening y preselección de CVs.");
@@ -283,6 +298,18 @@ module.exports = async function handler(req, res) {
       var qsr = parsedQ && Array.isArray(parsedQ.questions) ? parsedQ.questions : null;
       if (!qsr || !qsr.length) { res.status(200).json({ ok: false, error: "parse_error" }); return; }
       res.status(200).json({ ok: true, questions: qsr, usedCV: !!(body.cvText && body.cvText.length >= 40), usedWeb: !!companyWeb });
+      return;
+    }
+
+    if (body.task === "followup") {
+      var fq = String(body.question || "").slice(0, 1000);
+      var fa = String(body.answer || "").slice(0, 4000);
+      var gf = await callGemini(key, [{ text: followupPrompt({ question: fq, answer: fa, position: body.position, level: body.level, language: body.language }) }], 300, 0.7);
+      if (!gf.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gf.data && gf.data.error && gf.data.error.message) || ("HTTP " + gf.status) }); return; }
+      var pf = parseJson(extractText(gf.data));
+      var fu = pf && pf.followup ? String(pf.followup).slice(0, 300) : "";
+      if (!fu) { res.status(200).json({ ok: false, error: "parse_error" }); return; }
+      res.status(200).json({ ok: true, followup: fu });
       return;
     }
 
