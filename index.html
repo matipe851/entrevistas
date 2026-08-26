@@ -974,12 +974,12 @@ function loadInviteByCode(code){
     .then(function(r){ return r.json(); })
     .then(function(j){
       if (j && j.ok && j.interview && j.interview.questions && j.interview.questions.length){
-        state.invite = j.interview; state.error = null; state.screen = "invite-landing"; render();
+        state.invite = j.interview; state.error = null; state.inviteErr = null; state.screen = "invite-landing"; render();
       } else {
-        state.error = null; state.screen = "invite-error"; render();
+        state.error = null; state.inviteErr = (j && j.error) || ""; state.screen = "invite-error"; render();
       }
     })
-    .catch(function(){ state.screen = "invite-error"; render(); });
+    .catch(function(){ state.inviteErr = ""; state.screen = "invite-error"; render(); });
 }
 
 /* ---------------- question bank (local generator, no network calls) ---------------- */
@@ -1321,7 +1321,7 @@ function waveBars(n, cls){
 var state = {
   screen: "home",
   error: null, busy: false, storageWarn: false,
-  config: { position:"", company:"", focus:"", companyUrl:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:false, recruiterEmail:"", selectedCVs:[] },
+  config: { position:"", company:"", focus:"", companyUrl:"", level:"Semi-Senior", language:"es", includeEnglish:false, count:"auto", followups:false, recruiterEmail:"", selectedCVs:[], validDays:3 },
   bulk: { running:false, phase:"", total:0, sent:0, failed:0, noEmail:0, results:[], error:null, brevoMissing:false, done:false },
   questions: [], idx: 0, answers: {}, report: null,
   audioUrls: {},
@@ -1355,7 +1355,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v26.3-r26";
+var APP_VERSION = "v26.5-r28";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1939,6 +1939,9 @@ Screens.config = function(){
         '<label class="field"><span class="field-label">Idioma</span><select class="bare" id="f_lang">' + LANGS.map(function(l){return '<option value="'+l[0]+'"'+(l[0]===c.language?' selected':'')+'>'+l[1]+'</option>';}).join('') + '</select></label>' +
         '<label class="field"><span class="field-label">Cantidad</span><select class="bare" id="f_count"><option value="auto"'+(c.count==='auto'?' selected':'')+'>Automático</option>' + [5,8,10,12].map(function(n){return '<option value="'+n+'"'+(String(c.count)===String(n)?' selected':'')+'>'+n+' preguntas</option>';}).join('') + '</select></label>' +
       '</div>' +
+      '<label class="field"><span class="field-label">Vencimiento del enlace</span><select class="bare" id="f_validdays">' +
+        [[1,'1 día'],[3,'3 días'],[7,'7 días'],[15,'15 días'],[30,'30 días'],[0,'Sin vencimiento']].map(function(o){ var cur=(c.validDays!=null?c.validDays:3); return '<option value="'+o[0]+'"'+(String(cur)===String(o[0])?' selected':'')+'>'+o[1]+'</option>'; }).join('') +
+      '</select><span class="field-hint">Pasado ese plazo, el enlace deja de funcionar y el candidato no puede realizar la entrevista.</span></label>' +
       (c.language==='es' ? '<label class="check-row" for="f_english" style="background:var(--teal-tint);border-color:var(--border-soft)"><input type="checkbox" id="f_english"' + (c.includeEnglish?' checked':'') + '><span class="check-title">Sumar 2 preguntas en inglés para evaluar el nivel del idioma</span></label>' : '') +
     '</div>' +
     (function(){
@@ -2040,11 +2043,16 @@ Screens["edit-questions"] = function(){
 };
 Screens.loading = function(){ return Header() + Centered(ic('loader',30,'spin'), "Cargando…", "Un momento, estamos preparando la entrevista."); };
 Screens["invite-error"] = function(){
+  var expired = (state.inviteErr === "expired");
   return Header() +
   '<div class="card" style="max-width:460px;margin:0 auto;text-align:center">' +
-    '<div style="display:flex;justify-content:center;color:var(--brick);margin-bottom:8px">'+ic('alert',36)+'</div>' +
-    '<h2 style="font-size:19px;color:var(--ink);margin-bottom:8px">No pudimos abrir la entrevista</h2>' +
-    '<p style="font-size:14px;color:var(--muted);margin:0">El enlace puede estar vencido, ya usado o mal copiado. Revisá que hayas abierto el enlace completo que te enviaron, o escribile a quien te contactó.</p>' +
+    '<div style="display:flex;justify-content:center;color:var(--brick);margin-bottom:8px">'+ic(expired?'clock':'alert',36)+'</div>' +
+    '<h2 style="font-size:19px;color:var(--ink);margin-bottom:8px">'+(expired?'El enlace de la entrevista venció':'No pudimos abrir la entrevista')+'</h2>' +
+    '<p style="font-size:14px;color:var(--muted);margin:0">'+
+      (expired
+        ? 'Este enlace ya superó su plazo de validez y expiró. Escribile a quien te contactó para que te envíe una nueva invitación.'
+        : 'El enlace puede estar vencido, ya usado o mal copiado. Revisá que hayas abierto el enlace completo que te enviaron, o escribile a quien te contactó.') +
+    '</p>' +
   '</div>';
 };
 Screens.submitting = function(){ return Header() + Centered(ic('loader',30,'spin'), "Enviando tus respuestas", "No cierres esta ventana."); };
@@ -2087,6 +2095,11 @@ function Centered(icon, title, sub){
 }
 function backlink(action, label){ return '<button class="backlink" data-action="'+action+'">'+ic('back',13)+' '+esc(label)+'</button>'; }
 
+function validityPhrase(){
+  var d = (state.config && state.config.validDays!=null) ? state.config.validDays : 3;
+  if (!d) return "Es de un solo uso";
+  return "Es de un solo uso y el enlace vence a los " + d + (d===1 ? " día" : " días");
+}
 function buildShareMessage(){
   var c = state.config;
   var n = (state.questions && state.questions.length) ? state.questions.length : "algunas";
@@ -2099,7 +2112,7 @@ function buildShareMessage(){
     "Al entrar, cargá tu nombre y apellido, tu email, y este código:\n\n" +
     "    CÓDIGO: " + state.code + "\n\n" +
     "Cómo funciona: son " + n + " preguntas y respondés grabando audio. El cronómetro de cada pregunta arranca apenas aparece (tenés tiempo para leerla y pensarla); cuando estés listo tocás Grabar, y Detener al terminar. Si te equivocás, podés borrar y grabar de nuevo mientras quede tiempo. Necesitás permitir el acceso al micrófono.\n\n" +
-    "Es de un solo uso, así que hacela cuando tengas unos minutos tranquilo y en un lugar silencioso.\n\n" +
+    validityPhrase() + ", así que hacela cuando tengas unos minutos tranquilo y en un lugar silencioso.\n\n" +
     "Cualquier duda, respondé este correo. ¡Éxitos!";
 }
 function mailtoHref(){
@@ -2745,10 +2758,16 @@ function createInterview(){
       level: state.config.level, language: state.config.language,
       brand_name: (state.brand && state.brand.name) ? state.brand.name : null,
       brand_logo: (state.brand && state.brand.logo) ? state.brand.logo : null,
-      questions: stripQuestions(qs), status: "pending"
+      questions: stripQuestions(qs), status: "pending",
+      valid_days: (state.config.validDays!=null ? state.config.validDays : 3)
     };
+    // Resiliente: si la columna valid_days todavía no existe en la base, reintenta sin ella.
     dbCreateInterview(row).then(function(saved){ state.interviewId = saved.id || ""; toShare(); })
-      .catch(function(){ state.storageWarn = true; toShare(); });
+      .catch(function(){
+        var slim = Object.assign({}, row); delete slim.valid_days;
+        dbCreateInterview(slim).then(function(saved){ state.interviewId = saved.id || ""; toShare(); })
+          .catch(function(){ state.storageWarn = true; toShare(); });
+      });
   } else {
     toShare();
   }
@@ -2771,7 +2790,7 @@ function buildBulkInviteMessage(name, link, code, qCount){
     "Al entrar, cargá tu nombre y apellido, tu email, y este código:\n\n" +
     "    CÓDIGO: " + code + "\n\n" +
     "Cómo funciona: son " + n + " preguntas y respondés grabando audio. El cronómetro de cada pregunta arranca apenas aparece (tenés tiempo para leerla y pensarla); cuando estés listo tocás Grabar, y Detener al terminar. Si te equivocás, podés borrar y grabar de nuevo mientras quede tiempo. Necesitás permitir el acceso al micrófono.\n\n" +
-    "Es de un solo uso, así que hacela cuando tengas unos minutos tranquilo y en un lugar silencioso.\n\n" +
+    validityPhrase() + ", así que hacela cuando tengas unos minutos tranquilo y en un lugar silencioso.\n\n" +
     "Cualquier duda, respondé este correo. ¡Éxitos!";
 }
 /* Crea la fila de entrevista para el envío masivo. Intenta guardar el candidato
@@ -2785,7 +2804,8 @@ function createBulkInterviewRow(code, name, email, qs){
     brand_name: (state.brand && state.brand.name) ? state.brand.name : null,
     brand_logo: (state.brand && state.brand.logo) ? state.brand.logo : null,
     questions: stripQuestions(qs), status: "pending",
-    candidate_name: name || null, candidate_email: email || null
+    candidate_name: name || null, candidate_email: email || null,
+    valid_days: (state.config.validDays!=null ? state.config.validDays : 3)
   };
   return dbCreateInterview(full).catch(function(){
     var slim = {
@@ -3502,6 +3522,7 @@ function bind(){
   if ((f=document.getElementById("f_level"))) f.addEventListener("change", function(e){ state.config.level=e.target.value; });
   if ((f=document.getElementById("f_lang"))) f.addEventListener("change", function(e){ state.config.language=e.target.value; render(); });
   if ((f=document.getElementById("f_count"))) f.addEventListener("change", function(e){ state.config.count=e.target.value; });
+  if ((f=document.getElementById("f_validdays"))) f.addEventListener("change", function(e){ state.config.validDays=parseInt(e.target.value,10); });
   if ((f=document.getElementById("f_english"))) f.addEventListener("change", function(e){ state.config.includeEnglish=e.target.checked; });
   if ((f=document.getElementById("genBtn"))) f.addEventListener("click", function(){ if (state.config.position.trim() && state.config.company.trim()) generate(); });
   if ((f=document.getElementById("bulkBtn"))) f.addEventListener("click", function(){ if (state.config.position.trim() && state.config.company.trim()) startBulkSend(); });
