@@ -576,6 +576,11 @@ function dbCreateFolder(name){
 function dbDeleteFolder(id){
   return supaFetch("/rest/v1/cv_folders?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* Saca la carpeta de todos los CVs que la tienen (los CVs NO se borran). */
+function dbClearFolderOnCVs(name){
+  return supaFetch("/rest/v1/cvs?folder=eq."+encodeURIComponent(name), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify({ folder:null }) })
+    .then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 function dbListSearches(){
   return supaFetch("/rest/v1/searches?select=*&order=created_at.desc")
     .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); });
@@ -1350,7 +1355,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v26.2-r25";
+var APP_VERSION = "v26.3-r26";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1732,8 +1737,13 @@ Screens["cv-bank"] = function(){
     return c.folder===active;
   });
   var label = active==="" ? "Todos los CVs" : active==="__none__" ? "CVs sin carpeta" : 'Carpeta "'+active+'"';
-  html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">'+esc(label)+' · '+shownCvs.length+' CV(s)</p>';
-  if (!shownCvs.length){ html += '<div class="center-block" style="padding:20px 12px">'+ic('file',22)+'<p>No hay CVs en esta carpeta.</p>'+((active&&active!=="__none__")?'<button class="btn btn-ghost btn-sm" data-action="cv-delfolder" style="margin-top:10px;color:var(--brick)">'+ic('trash',13)+' Eliminar carpeta vacía</button>':'')+'</div>'; return html; }
+  var isRealFolder = (active && active!=="__none__");
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px">' +
+    '<p style="font-size:12.5px;color:var(--muted);margin:0">'+esc(label)+' · '+shownCvs.length+' CV(s)</p>' +
+    (isRealFolder ? '<button class="btn btn-ghost btn-sm" data-action="cv-delfolder" style="color:var(--brick)">'+ic('trash',12)+' Eliminar carpeta</button>' : '') +
+  '</div>';
+  if (isRealFolder) html += '<p style="font-size:11.5px;color:var(--muted);margin:-4px 0 10px">Al eliminar la carpeta, los CVs no se borran: pasan a "Sin carpeta" y siguen en "Todos los CVs".</p>';
+  if (!shownCvs.length){ html += '<div class="center-block" style="padding:20px 12px">'+ic('file',22)+'<p>No hay CVs en esta carpeta.</p></div>'; return html; }
   html += '<div style="display:grid;gap:8px">';
   shownCvs.forEach(function(c){
     html += '<div class="qa-item" style="display:flex;align-items:center;gap:12px">' +
@@ -3319,9 +3329,15 @@ function bind(){
         var inp=document.getElementById("f_newfolder"); createFolder(inp?inp.value:"");
       }
       else if (act === "cv-delfolder"){
-        var _nm=state.cvbank.folder; var _fo=(state.cvbank.folders||[]).filter(function(f){ return f.name===_nm; })[0];
-        if(_fo && _fo.id){ dbDeleteFolder(_fo.id).then(function(){ state.cvbank.folder=""; loadCVBank(); }); }
-        else { state.cvbank.folder=""; if(state.cvbank.folders) state.cvbank.folders=state.cvbank.folders.filter(function(f){return f.name!==_nm;}); render(); }
+        var _nm=state.cvbank.folder;
+        var _fo=(state.cvbank.folders||[]).filter(function(f){ return f.name===_nm; })[0];
+        var _count=(state.cvbank.cvs||[]).filter(function(c){ return c.folder===_nm; }).length;
+        if(!confirm('¿Eliminar la carpeta "'+_nm+'"?'+(_count?(' Los '+_count+' CV(s) NO se borran: quedan en "Sin carpeta" y siguen en "Todos los CVs".'):''))) { return; }
+        var finishDel=function(){
+          var done=function(){ state.cvbank.folder=""; loadCVBank(); };
+          if(_fo && _fo.id){ dbDeleteFolder(_fo.id).then(done); } else { done(); }
+        };
+        if(_count>0){ dbClearFolderOnCVs(_nm).then(finishDel); } else { finishDel(); }
       }
       else if (act === "del-search"){ var xid=el.getAttribute("data-id"); if(confirm("¿Eliminar esta búsqueda y su ranking?")){ dbDeleteSearch(xid).then(function(){ goCVHome(); }); } }
       else if (act === "reanalyze") doReanalyze();
