@@ -563,6 +563,18 @@ function dbCreateCV(row){
 function dbDeleteCV(id){
   return supaFetch("/rest/v1/cvs?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; });
 }
+/* Carpetas del repositorio (persisten aunque estén vacías). */
+function dbListFolders(){
+  return supaFetch("/rest/v1/cv_folders?select=id,name&order=name")
+    .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); }).catch(function(){ return []; });
+}
+function dbCreateFolder(name){
+  return supaFetch("/rest/v1/cv_folders", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify({ name:name }) })
+    .then(function(r){ return r.json().then(function(j){ return (Array.isArray(j)&&j[0])||null; }); }).catch(function(){ return null; });
+}
+function dbDeleteFolder(id){
+  return supaFetch("/rest/v1/cv_folders?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 function dbListSearches(){
   return supaFetch("/rest/v1/searches?select=*&order=created_at.desc")
     .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); });
@@ -625,6 +637,7 @@ function screenCVsAPI(position, description, cvs, must, nice){
 function loadCVBank(){
   if(!supaConfigured() || !isLoggedIn()) return;
   state.cvbank.loading=true; state.cvbank.error=null; render();
+  dbListFolders().then(function(fs){ state.cvbank.folders = fs; render(); });
   dbListCVs().then(function(items){ state.cvbank.loading=false; state.cvbank.cvs=items; render(); })
     .catch(function(){ state.cvbank.loading=false; state.cvbank.error="No pude cargar los CVs."; render(); });
 }
@@ -646,6 +659,15 @@ function refreshCVBankQuiet(){
 }
 function goCVHome(){ state.error=null; state.searches.current=null; state.searches.error2=null; state.searches.note=null; state.screen="cv-home"; render(); loadSearches(); }
 function goCVBank(){ state.error=null; state.cvbank.msg=""; state.screen="cv-bank"; render(); loadCVBank(); }
+/* Crea una carpeta y la guarda en la base (persiste aunque quede vacía). */
+function createFolder(nm){
+  nm = (nm||"").trim(); if(!nm) return;
+  state.cvbank.folder = nm; state.cvbank.creatingFolder = false;
+  state.cvbank.folders = state.cvbank.folders || [];
+  if(!state.cvbank.folders.some(function(f){ return f.name===nm; })) state.cvbank.folders.push({ id:null, name:nm });
+  render();
+  dbCreateFolder(nm).then(function(){ dbListFolders().then(function(fs){ state.cvbank.folders=fs; render(); }); });
+}
 function goNewSearch(){ state.searches.error2=null; state.searches.note=null; state.newsearch={ title:"", description:"", must:"", nice:"" }; state.screen="cv-newsearch"; render(); if(state.cvbank.cvs===null) loadCVBank(); }
 
 /* Sube uno o varios CVs (PDF) al repositorio. */
@@ -1180,7 +1202,7 @@ var state = {
   invite: null,
   code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate", consentAt: "",
   dash: { loading:false, items:null, error:null, detail:null, filter:"all" },
-  cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"", folder:"", creatingFolder:false }, cvFilter:"",
+  cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"", folder:"", creatingFolder:false, folders:null }, cvFilter:"",
   searches: { loading:false, items:null, error:null, current:null, analyzing:false, error2:null, note:null },
   newsearch: { title:"", description:"", must:"", nice:"" },
   brand: { name:"", logo:"" },
@@ -1207,7 +1229,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v25.8-r21";
+var APP_VERSION = "v25.9-r22";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1536,8 +1558,11 @@ Screens["cv-bank"] = function(){
   if (b.cvs && b.cvs.length !== undefined){
     var counts = {}; var total = 0;
     (b.cvs||[]).forEach(function(c){ var f=c.folder||""; counts[f]=(counts[f]||0)+1; total++; });
-    var names = Object.keys(counts).filter(function(f){ return f!==""; }).sort();
-    if (active && names.indexOf(active)<0) names.push(active); // carpeta nueva sin CVs todavía
+    var names = Object.keys(counts).filter(function(f){ return f!==""; });
+    // Sumamos las carpetas guardadas (persisten aunque estén vacías).
+    (state.cvbank.folders||[]).forEach(function(fo){ if(fo && fo.name && names.indexOf(fo.name)<0) names.push(fo.name); });
+    if (active && active!=="__none__" && names.indexOf(active)<0) names.push(active);
+    names.sort();
     var chip = function(key,label,count,isActive){
       return '<button class="pill-time" data-action="cv-folder" data-f="'+esc(key)+'" style="cursor:pointer;border:none;background:'+(isActive?'var(--teal)':'var(--surface-2)')+';color:'+(isActive?'#fff':'var(--ink)')+';'+(isActive?'font-weight:800':'opacity:.85')+'">'+esc(label)+(count!=null?(' ('+count+')'):'')+'</button>';
     };
@@ -1573,7 +1598,7 @@ Screens["cv-bank"] = function(){
   });
   var label = active==="" ? "Todos los CVs" : active==="__none__" ? "CVs sin carpeta" : 'Carpeta "'+active+'"';
   html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">'+esc(label)+' · '+shownCvs.length+' CV(s)</p>';
-  if (!shownCvs.length){ html += '<div class="center-block" style="padding:20px 12px">'+ic('file',22)+'<p>No hay CVs en esta carpeta.</p></div>'; return html; }
+  if (!shownCvs.length){ html += '<div class="center-block" style="padding:20px 12px">'+ic('file',22)+'<p>No hay CVs en esta carpeta.</p>'+((active&&active!=="__none__")?'<button class="btn btn-ghost btn-sm" data-action="cv-delfolder" style="margin-top:10px;color:var(--brick)">'+ic('trash',13)+' Eliminar carpeta vacía</button>':'')+'</div>'; return html; }
   html += '<div style="display:grid;gap:8px">';
   shownCvs.forEach(function(c){
     html += '<div class="qa-item" style="display:flex;align-items:center;gap:12px">' +
@@ -3155,8 +3180,12 @@ function bind(){
       else if (act === "cv-newfolder"){ state.cvbank.creatingFolder=true; render(); }
       else if (act === "cv-newfolder-cancel"){ state.cvbank.creatingFolder=false; render(); }
       else if (act === "cv-newfolder-ok"){
-        var inp=document.getElementById("f_newfolder"); var nm=inp?inp.value.trim():"";
-        if(nm){ state.cvbank.folder=nm; state.cvbank.creatingFolder=false; render(); }
+        var inp=document.getElementById("f_newfolder"); createFolder(inp?inp.value:"");
+      }
+      else if (act === "cv-delfolder"){
+        var _nm=state.cvbank.folder; var _fo=(state.cvbank.folders||[]).filter(function(f){ return f.name===_nm; })[0];
+        if(_fo && _fo.id){ dbDeleteFolder(_fo.id).then(function(){ state.cvbank.folder=""; loadCVBank(); }); }
+        else { state.cvbank.folder=""; if(state.cvbank.folders) state.cvbank.folders=state.cvbank.folders.filter(function(f){return f.name!==_nm;}); render(); }
       }
       else if (act === "del-search"){ var xid=el.getAttribute("data-id"); if(confirm("¿Eliminar esta búsqueda y su ranking?")){ dbDeleteSearch(xid).then(function(){ goCVHome(); }); } }
       else if (act === "reanalyze") doReanalyze();
@@ -3222,7 +3251,7 @@ function bind(){
   if ((f=document.getElementById("f_searchnice"))) f.addEventListener("input", function(e){ state.newsearch.nice=e.target.value; });
   if (document.getElementById("analyzeBtn")) document.getElementById("analyzeBtn").addEventListener("click", doAnalyzeNewSearch);
   if ((f=document.getElementById("f_cvfiles"))) f.addEventListener("change", function(e){ var files=e.target.files; if(files&&files.length) uploadCVFiles(files); });
-  if ((f=document.getElementById("f_newfolder"))){ f.focus(); f.addEventListener("keydown", function(e){ if(e.key==="Enter"){ var nm=f.value.trim(); if(nm){ state.cvbank.folder=nm; state.cvbank.creatingFolder=false; render(); } } }); }
+  if ((f=document.getElementById("f_newfolder"))){ f.focus(); f.addEventListener("keydown", function(e){ if(e.key==="Enter"){ createFolder(f.value); } }); }
   // Lista de CVs con checkboxes: 1 seleccionado = entrevista individual; 2+ = envío masivo.
   app.querySelectorAll(".cvchk").forEach(function(chk){
     chk.addEventListener("change", function(){
