@@ -581,6 +581,22 @@ function dbClearFolderOnCVs(name){
   return supaFetch("/rest/v1/cvs?folder=eq."+encodeURIComponent(name), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify({ folder:null }) })
     .then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* ----- Portal de búsquedas (avisos públicos) ----- */
+function dbListJobs(){
+  return supaFetch("/rest/v1/job_posts?select=*&order=created_at.desc")
+    .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); }).catch(function(){ return []; });
+}
+function dbCreateJob(row){
+  return supaFetch("/rest/v1/job_posts", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbDeleteJob(id){
+  return supaFetch("/rest/v1/job_posts?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+function dbSetJobActive(id, active){
+  return supaFetch("/rest/v1/job_posts?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify({ active:!!active }) })
+    .then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -682,6 +698,66 @@ function refreshCVBankQuiet(){
 }
 function goCVHome(){ state.error=null; state.searches.current=null; state.searches.error2=null; state.searches.note=null; state.screen="cv-home"; render(); loadSearches(); }
 function goCVBank(){ state.error=null; state.cvbank.msg=""; state.screen="cv-bank"; render(); loadCVBank(); }
+/* ---- Portal de búsquedas ---- */
+function goJobsHome(){ state.error=null; state.jobs.msg=""; state.jobs.error=null; state.screen="jobs-home"; render(); loadJobs(); }
+function loadJobs(){
+  if(!(supaConfigured() && isLoggedIn())){ state.jobs.items=[]; render(); return; }
+  state.jobs.loading=true; state.jobs.error=null; render();
+  dbListJobs().then(function(items){ state.jobs.loading=false; state.jobs.items=items; render(); })
+    .catch(function(){ state.jobs.loading=false; state.jobs.error="No pude cargar las búsquedas."; render(); });
+}
+function goNewJob(){
+  state.jobs.error2=null;
+  state.newjob={ position:"", company:"", focus:"", description:"", must:"", nice:"", benefits:"", salary:"", language:"es" };
+  state.screen="job-new"; render();
+  // Cargamos carpetas para poder avisar si el puesto coincide con una carpeta existente.
+  if(state.cvbank.folders===null) dbListFolders().then(function(fs){ state.cvbank.folders=fs; if(state.screen==="job-new") render(); }).catch(function(){});
+}
+function saveNewJob(){
+  var nj=state.newjob;
+  var pos=(nj.position||"").trim();
+  if(!pos){ state.jobs.error2="Poné el puesto a cubrir."; render(); return; }
+  state.jobs.saving=true; state.jobs.error2=null; render();
+  var code=makeCode();
+  var row={
+    code:code, position:pos, company:(nj.company||"").trim(), focus:(nj.focus||"").trim(),
+    description:(nj.description||"").trim(), must_have:(nj.must||"").trim(), nice_to_have:(nj.nice||"").trim(),
+    benefits:(nj.benefits||"").trim(), salary:(nj.salary||"").trim(), language:nj.language||"es",
+    brand_name:state.brand.name||"", brand_logo:state.brand.logo||"", active:true
+  };
+  dbCreateJob(row).then(function(saved){
+    state.jobs.saving=false;
+    // Aseguramos que exista la carpeta con el nombre del puesto (para que los CVs caigan ahí).
+    dbCreateFolder(pos).then(function(){});
+    state.jobs.items=null; state.jobs.msg="Búsqueda publicada. Ya tenés el link para compartir.";
+    state.screen="jobs-home"; render(); loadJobs();
+  }).catch(function(){
+    state.jobs.saving=false;
+    state.jobs.error2="No pude publicar la búsqueda. Si es la primera vez, revisá que hayas corrido el SQL del portal (sql_portal_busquedas.sql) en Supabase.";
+    render();
+  });
+}
+/* Envía la postulación del candidato (aviso público) al servidor. */
+function submitJobApplication(){
+  var jp=state.jobpublic;
+  if(!jp.job || !jp.cvText || jp.sending || jp.uploading) return;
+  jp.sending=true; jp.applyErr=null; render();
+  var payload={ code:jp.job.code, candidate_name:(jp.name||"").trim(), candidate_email:(jp.email||"").trim(), cv_text:jp.cvText, cv_url:jp.cvUrl||"", file_name:jp.fileName||"" };
+  fetch("/api/job-apply", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(payload) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      jp.sending=false;
+      if(j && j.ok){ jp.sent=true; render(); }
+      else {
+        jp.applyErr = (j&&j.error==="closed") ? "Esta búsqueda ya se cerró." :
+                      (j&&j.error==="no_cv_text") ? "No pudimos leer tu CV. Probá con otro PDF." :
+                      (j&&j.error==="not_found") ? "El aviso no está disponible." :
+                      "No pudimos enviar tu postulación. Probá de nuevo en un momento.";
+        render();
+      }
+    })
+    .catch(function(){ jp.sending=false; jp.applyErr="No pudimos conectar. Revisá tu conexión."; render(); });
+}
 /* Crea una carpeta y la guarda en la base (persiste aunque quede vacía). */
 function createFolder(nm){
   nm = (nm||"").trim(); if(!nm) return;
@@ -986,6 +1062,25 @@ function computeInviteLink(){
   var token = encodePayload(buildInvitePayload());
   if (!token) return state.shareLink || "";
   return base + "#e=" + token;
+}
+/* Link público del aviso del portal (para compartir o pegar en una web). */
+function computeJobLink(code){
+  var base = (pageBaseUrl() || PROD_BASE).replace(/[?#].*$/, "");
+  return base + "?job=" + encodeURIComponent(code);
+}
+/* Carga el aviso público del portal por su código (postulante externo). */
+function loadJobByCode(code){
+  state.jobpublic = { loading:true, job:null, error:null, name:"", email:"", fileName:"", cvText:"", cvUrl:"", uploading:false, upMsg:"", sending:false, sent:false, applyErr:null };
+  state.screen = "job-public"; render();
+  fetch("/api/job-get", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ code:code }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      state.jobpublic.loading=false;
+      if (j && j.ok && j.job){ state.jobpublic.job=j.job; }
+      else { state.jobpublic.error=(j&&j.error)||"error"; }
+      render();
+    })
+    .catch(function(){ state.jobpublic.loading=false; state.jobpublic.error="network"; render(); });
 }
 /* Carga la entrevista por código (link corto) desde el servidor. */
 function loadInviteByCode(code){
@@ -1352,6 +1447,9 @@ var state = {
   qbank: { items:null, loading:false, savedMsg:"" },
   searches: { loading:false, items:null, error:null, current:null, analyzing:false, error2:null, note:null, rankSel:[] },
   newsearch: { title:"", description:"", must:"", nice:"" },
+  jobs: { loading:false, items:null, error:null, msg:"", saving:false, error2:null },
+  newjob: { position:"", company:"", focus:"", description:"", must:"", nice:"", benefits:"", salary:"", language:"es" },
+  jobpublic: { loading:false, job:null, error:null, name:"", email:"", fileName:"", cvText:"", cvUrl:"", uploading:false, upMsg:"", sending:false, sent:false, applyErr:null },
   brand: { name:"", logo:"" },
   myApproved: null,
   admin: { loading:false, items:null, error:null },
@@ -1376,7 +1474,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v26.9-r35";
+var APP_VERSION = "v27.0-r37";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1675,6 +1773,7 @@ Screens["rec-home"] = function(){
       '<div style="display:flex;gap:8px">' +
         '<button class="btn btn-primary btn-sm" data-action="go-config">'+ic('sparkle',14)+' Nueva entrevista</button>' +
         '<button class="btn btn-ghost btn-sm" data-action="go-cvhome">'+ic('trophy',14)+' Screening de CVs</button>' +
+        '<button class="btn btn-ghost btn-sm" data-action="go-jobs">'+ic('briefcase',14)+' Portal de búsquedas</button>' +
         '<button class="btn btn-ghost btn-sm" data-action="reload-dash">'+ic('rotate',14)+'</button>' +
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
       '</div>' +
@@ -1907,7 +2006,7 @@ Screens["cv-ranking"] = function(){
     var cons = Array.isArray(c.cons)?c.cons:[];
     var isSel = (c.id && sel.indexOf(c.id)>=0);
     var pickBtn = c.id
-      ? '<button type="button" data-action="rank-toggle" data-cvid="'+esc(c.id)+'" title="Elegir para invitar a varios" style="flex-shrink:0;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer;transition:all .12s;border:2px solid var(--teal);'+(isSel?'background:var(--teal);color:#fff':'background:transparent;color:var(--teal)')+'">'+(isSel?ic('check',15)+' Elegido':ic('plus',15)+' Elegir')+'</button>'
+      ? '<button type="button" data-action="rank-toggle" data-cvid="'+esc(c.id)+'" title="Elegir para invitar a varios" style="flex-shrink:0;display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:11px 18px;font-size:14px;font-weight:800;cursor:pointer;transition:all .12s;border:2px solid '+(isSel?'var(--green)':'var(--teal)')+';box-shadow:0 2px 8px rgba(0,0,0,.18);'+(isSel?'background:var(--green);color:#fff':'background:var(--teal);color:#fff')+'">'+(isSel?ic('check',16)+' Elegido':ic('plus',16)+' Elegir')+'</button>'
       : '';
     html += '<div class="qa-item"'+(isSel?' style="border:2px solid var(--teal);background:var(--teal-tint)"':'')+'>' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
@@ -1940,6 +2039,134 @@ Screens["cv-ranking"] = function(){
   }
   return html;
 };
+
+/* ===================== PORTAL DE BÚSQUEDAS ===================== */
+Screens["jobs-home"] = function(){
+  var j = state.jobs;
+  var html = Header();
+  html += backlink("go-recruiterhome","Volver al panel");
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
+    '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('briefcase',20)+'<h2 style="font-size:18px;color:var(--ink)">Portal de búsquedas</h2></div>' +
+    '<button class="btn btn-primary btn-sm" data-action="go-newjob">'+ic('plus',14)+' Nueva búsqueda</button>' +
+  '</div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 16px">Publicá una búsqueda con el aviso completo (beneficios y remuneración incluidos). Cada aviso tiene un <b>link</b> para compartir o pegar en cualquier web: las personas ven el aviso y cargan su CV, que entra solo al repositorio, en la <b>carpeta del puesto</b>.</p>';
+  if (j.msg) html += Note("ok", esc(j.msg));
+  if (j.loading || j.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando búsquedas…</p></div>'; return html; }
+  if (j.error){ html += Note("err", esc(j.error)); return html; }
+  if (!j.items.length){ html += '<div class="center-block" style="padding:28px 12px">'+ic('briefcase',26)+'<h2 style="font-size:16px">Todavía no publicaste ninguna búsqueda</h2><p>Creá una con el puesto, la descripción, los beneficios y la remuneración. Vas a obtener un link para difundir el aviso.</p></div>'; return html; }
+  html += '<div style="display:grid;gap:12px">';
+  j.items.forEach(function(p){
+    var link = computeJobLink(p.code);
+    var closed = (p.active===false);
+    html += '<div class="qa-item"'+(closed?' style="opacity:.6"':'')+'>' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<div style="flex:1;min-width:140px">' +
+          '<p style="margin:0;font-weight:700;font-size:15px;color:var(--ink)">'+esc(p.position||'(sin puesto)')+(closed?' <span style="font-size:11px;color:var(--brick)">· cerrada</span>':'')+'</p>' +
+          '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">'+esc(p.company||'')+(p.salary?(' · '+esc(p.salary)):'')+' · '+((typeof p.applicants==='number'?p.applicants:0))+' postulante'+((p.applicants===1)?'':'s')+'</p>' +
+        '</div>' +
+        '<button class="btn btn-ghost btn-sm" data-action="open-joblink" data-code="'+esc(p.code)+'" title="Abrir el aviso público">'+ic('eye',13)+' Ver aviso</button>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+        '<input readonly value="'+esc(link)+'" onclick="this.select()" style="flex:1;min-width:160px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;color:var(--ink);font-size:12px;font-family:inherit">' +
+        '<button class="btn btn-teal btn-sm" data-action="copy-joblink" data-link="'+esc(link)+'">'+ic('copy',13)+' Copiar link</button>' +
+      '</div>' +
+      '<div style="display:flex;gap:14px;margin-top:10px">' +
+        '<button class="dl-audio" data-action="toggle-job" data-id="'+esc(p.id)+'" data-active="'+(closed?'1':'0')+'" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:12px">'+(closed?'Reabrir':'Cerrar')+' búsqueda</button>' +
+        '<button class="dl-audio" data-action="del-job" data-id="'+esc(p.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:12px">Eliminar</button>' +
+        '<a href="#" data-action="go-cvbank-folder" data-folder="'+esc(p.position||'')+'" style="color:var(--muted);font-size:12px;text-decoration:none">Ver CVs recibidos ›</a>' +
+      '</div>' +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
+};
+
+Screens["job-new"] = function(){
+  var nj = state.newjob;
+  var folders = knownFolderNames();
+  var posMatch = nj.position && folders.indexOf(nj.position.trim())>=0;
+  var html = Header();
+  html += backlink("go-jobs","Volver al portal");
+  html += '<div class="card">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('plus',18)+'<h2 style="font-size:17px;color:var(--ink)">Nueva búsqueda</h2></div>' +
+    '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Cargá el aviso. El <b>puesto</b> tiene que coincidir con el nombre de la carpeta del repositorio: los CVs que reciba este aviso van a caer ahí automáticamente (si la carpeta no existe, la creamos).</p>' +
+    (state.jobs.error2 ? Note("err", esc(state.jobs.error2)) : '') +
+    '<div style="display:grid;gap:16px">' +
+      '<label class="field"><span class="field-label">Puesto a cubrir (= carpeta)</span>'+fieldInput("f_job_pos","Ej: Vendedor de mostrador", nj.position, "briefcase")+
+        '<span class="field-hint">'+(nj.position ? (posMatch?'✓ Coincide con una carpeta existente. Los CVs van a caer ahí.':'Se va a crear la carpeta «'+esc(nj.position)+'» si no existe.') : 'Este nombre será la carpeta donde entren los CVs recibidos.')+'</span>'+
+        (folders.length?'<span class="field-hint" style="display:block;margin-top:4px">Carpetas existentes: '+folders.map(function(f){return esc(f);}).join(' · ')+'</span>':'')+
+      '</label>' +
+      '<label class="field"><span class="field-label">Empresa / contexto</span>'+fieldInput("f_job_company","Ej: Rent a car en Aeroparque", nj.company, "building")+'</label>' +
+      '<label class="field"><span class="field-label">Descripción del puesto y qué buscás</span>' +
+        '<div class="input-row" style="align-items:flex-start"><span style="color:var(--muted);margin-top:2px">'+ic('list',15)+'</span><textarea id="f_job_desc" rows="5" placeholder="Descripción general del rol, tareas y perfil buscado.">'+esc(nj.description)+'</textarea></div>' +
+      '</label>' +
+      '<label class="field"><span class="field-label" style="color:var(--brick)">Requisitos excluyentes (opcional)</span>' +
+        '<div class="input-row" style="align-items:flex-start"><span style="color:var(--brick);margin-top:2px">'+ic('alert',15)+'</span><textarea id="f_job_must" rows="3" placeholder="Ej: 2+ años en retail presencial. Disponibilidad full time.">'+esc(nj.must)+'</textarea></div>' +
+      '</label>' +
+      '<label class="field"><span class="field-label" style="color:var(--green)">Requisitos que suman (opcional)</span>' +
+        '<div class="input-row" style="align-items:flex-start"><span style="color:var(--green);margin-top:2px">'+ic('sparkle',15)+'</span><textarea id="f_job_nice" rows="3" placeholder="Ej: Experiencia con sistemas de caja, inglés.">'+esc(nj.nice)+'</textarea></div>' +
+      '</label>' +
+      '<label class="field"><span class="field-label" style="color:var(--teal)">Beneficios (opcional)</span>' +
+        '<div class="input-row" style="align-items:flex-start"><span style="color:var(--teal);margin-top:2px">'+ic('check',15)+'</span><textarea id="f_job_benefits" rows="3" placeholder="Ej: Obra social, descuentos, capacitaciones, home office 2 días.">'+esc(nj.benefits)+'</textarea></div>' +
+      '</label>' +
+      '<label class="field"><span class="field-label">Remuneración aproximada (opcional)</span>'+fieldInput("f_job_salary","Ej: $800.000 - $1.000.000 bruto", nj.salary, "briefcase")+'<span class="field-hint">Se muestra en el aviso público.</span></label>' +
+    '</div>' +
+    '<button class="btn btn-primary btn-block" id="saveJobBtn" style="margin-top:22px" '+(state.jobs.saving?'disabled':'')+'>'+(state.jobs.saving?ic('loader',15,'spin')+' Publicando…':ic('send',15)+' Publicar y obtener link')+'</button>' +
+  '</div>';
+  return html;
+};
+
+Screens["job-public"] = function(){
+  var jp = state.jobpublic;
+  if (jp.loading){ return PublicHeader(null) + Centered(ic('loader',26,'spin'), "Cargando aviso…", ""); }
+  if (jp.error || !jp.job){
+    var em = (jp.error==="not_found") ? "Este aviso no existe o fue dado de baja." : (jp.error==="closed") ? "Esta búsqueda ya está cerrada." : "No pudimos cargar el aviso. Probá de nuevo en un momento.";
+    return PublicHeader(null) + Centered(ic('alert',26), "Aviso no disponible", em);
+  }
+  var job = jp.job;
+  var html = PublicHeader(job);
+  if (jp.sent){
+    html += '<div class="card" style="max-width:640px;margin:0 auto">' +
+      '<div class="center-block" style="padding:24px 12px">'+ic('check',30,'','var(--green)')+'<h2 style="font-size:18px">¡Postulación enviada!</h2><p>Gracias por postularte a <b>'+esc(job.position)+'</b>. Tu CV llegó al equipo de selección. ¡Éxitos!</p></div>' +
+    '</div>';
+    return html;
+  }
+  html += '<div class="card" style="max-width:640px;margin:0 auto">' +
+    '<span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--teal)">Búsqueda laboral</span>' +
+    '<h1 style="font-size:22px;margin:6px 0 2px;color:var(--ink)">'+esc(job.position)+'</h1>' +
+    (job.company?'<p style="margin:0 0 4px;font-size:14px;color:var(--muted)">'+esc(job.company)+'</p>':'') +
+    (job.salary?'<p style="margin:8px 0 0;font-size:14px;color:var(--green);font-weight:700">'+ic('briefcase',14)+' '+esc(job.salary)+'</p>':'') +
+    '<div style="height:1px;background:var(--border);margin:16px 0"></div>' +
+    (job.description?'<div style="margin-bottom:16px"><h3 style="font-size:14px;color:var(--ink);margin:0 0 6px">Sobre el puesto</h3><p style="font-size:13.5px;color:var(--ink);line-height:1.6;white-space:pre-wrap">'+esc(job.description)+'</p></div>':'') +
+    (job.must_have?'<div style="margin-bottom:16px"><h3 style="font-size:14px;color:var(--brick);margin:0 0 6px">Requisitos excluyentes</h3><p style="font-size:13.5px;color:var(--ink);line-height:1.6;white-space:pre-wrap">'+esc(job.must_have)+'</p></div>':'') +
+    (job.nice_to_have?'<div style="margin-bottom:16px"><h3 style="font-size:14px;color:var(--green);margin:0 0 6px">Suman puntos</h3><p style="font-size:13.5px;color:var(--ink);line-height:1.6;white-space:pre-wrap">'+esc(job.nice_to_have)+'</p></div>':'') +
+    (job.benefits?'<div style="margin-bottom:16px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 6px">Beneficios</h3><p style="font-size:13.5px;color:var(--ink);line-height:1.6;white-space:pre-wrap">'+esc(job.benefits)+'</p></div>':'') +
+    '<div style="height:1px;background:var(--border);margin:8px 0 18px"></div>' +
+    '<h3 style="font-size:16px;color:var(--ink);margin:0 0 4px">Postularme</h3>' +
+    '<p style="font-size:12.5px;color:var(--muted);margin:0 0 14px">Cargá tu CV en PDF. Es rápido: lo recibe directamente el equipo de selección.</p>' +
+    (jp.applyErr ? Note("err", esc(jp.applyErr)) : '') +
+    '<div style="display:grid;gap:14px">' +
+      '<label class="field"><span class="field-label">Nombre y apellido</span>'+fieldInput("f_jp_name","Tu nombre", jp.name, "users")+'</label>' +
+      '<label class="field"><span class="field-label">Email</span>'+fieldInput("f_jp_email","tucorreo@mail.com", jp.email, "mail")+'<span class="field-hint">Para que puedan contactarte.</span></label>' +
+      '<label class="field"><span class="field-label">Tu CV (PDF)</span>' +
+        '<input id="f_jp_cv" type="file" accept=".pdf,application/pdf" style="width:100%;font-size:13px;color:var(--muted)">' +
+        '<span id="jpCvStatus" style="display:block;font-size:12px;color:'+(jp.cvText?'var(--teal)':'var(--muted)')+';margin-top:6px">'+(jp.upMsg?esc(jp.upMsg):(jp.cvText?('✓ CV cargado'+(jp.fileName?(': '+esc(jp.fileName)):'')):'Máx. 10 MB. Solo PDF.'))+'</span>' +
+      '</label>' +
+    '</div>' +
+    '<button class="btn btn-primary btn-block" id="applyJobBtn" style="margin-top:18px" '+((jp.cvText && !jp.sending && !jp.uploading)?'':'disabled')+'>'+(jp.sending?ic('loader',15,'spin')+' Enviando…':(jp.uploading?ic('loader',15,'spin')+' Leyendo CV…':ic('send',15)+' Enviar postulación'))+'</button>' +
+  '</div>';
+  return html;
+};
+
+/* Encabezado simple para las pantallas públicas del portal (con marca del reclutador si hay). */
+function PublicHeader(job){
+  var name = (job && job.brandName) || "";
+  var logo = (job && job.brandLogo) || "";
+  return '<div style="display:flex;align-items:center;gap:10px;padding:14px 4px 20px;max-width:640px;margin:0 auto">' +
+    (logo?'<img src="'+esc(logo)+'" alt="" style="height:40px;max-width:140px;object-fit:contain;border-radius:8px;background:var(--surface);padding:3px">':ic('briefcase',24,'','var(--teal)')) +
+    '<span style="font-weight:800;font-size:16px;color:var(--ink)">'+(name?esc(name):'Búsqueda laboral')+'</span>' +
+  '</div>';
+}
 
 Screens["interview-detail"] = function(){
   var x = state.dash.detail;
@@ -3504,6 +3731,17 @@ function bind(){
       else if (act === "go-cvhome") goCVHome();
       else if (act === "go-cvbank") goCVBank();
       else if (act === "go-newsearch") goNewSearch();
+      else if (act === "go-jobs") goJobsHome();
+      else if (act === "go-newjob") goNewJob();
+      else if (act === "open-joblink"){ var jc=el.getAttribute("data-code")||""; if(jc){ try{ window.open(computeJobLink(jc), "_blank"); }catch(e){} } }
+      else if (act === "copy-joblink"){
+        var jl=el.getAttribute("data-link")||"";
+        var okCopy=function(){ el.textContent=""; el.innerHTML=ic('check',13)+' Copiado'; setTimeout(function(){ if(state.screen==="jobs-home") render(); },1200); };
+        try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(jl).then(okCopy, function(){ alert("Copiá el link manualmente: "+jl); }); } else { alert("Copiá el link manualmente: "+jl); } }catch(e){ alert("Copiá el link manualmente: "+jl); }
+      }
+      else if (act === "toggle-job"){ var tj=el.getAttribute("data-id"); var wasClosed=(el.getAttribute("data-active")==="1"); dbSetJobActive(tj, wasClosed).then(function(){ loadJobs(); }); }
+      else if (act === "del-job"){ var dj=el.getAttribute("data-id"); if(confirm("¿Eliminar esta búsqueda? El link deja de funcionar. Los CVs ya recibidos NO se borran.")){ dbDeleteJob(dj).then(function(){ loadJobs(); }); } }
+      else if (act === "go-cvbank-folder"){ if(ev&&ev.preventDefault)ev.preventDefault(); state.cvbank.folder=el.getAttribute("data-folder")||""; goCVBank(); }
       else if (act === "open-search"){ var sid=el.getAttribute("data-id"); var sr=(state.searches.items||[]).filter(function(z){return z.id===sid;})[0]; if(sr){ state.searches.current=sr; state.searches.error2=null; state.searches.note=null; state.searches.rankSel=[]; state.screen="cv-ranking"; render(); if(state.cvbank.cvs===null) refreshCVBankQuiet(); } }
       else if (act === "del-cv"){ var cid=el.getAttribute("data-id"); if(confirm("¿Quitar este CV del repositorio?")){ dbDeleteCV(cid).then(function(){ loadCVBank(); }); } }
       else if (act === "cv-folder"){ state.cvbank.folder = el.getAttribute("data-f")||""; state.cvbank.creatingFolder=false; render(); }
@@ -3646,6 +3884,34 @@ function bind(){
   if ((f=document.getElementById("f_searchmust"))) f.addEventListener("input", function(e){ state.newsearch.must=e.target.value; });
   if ((f=document.getElementById("f_searchnice"))) f.addEventListener("input", function(e){ state.newsearch.nice=e.target.value; });
   if (document.getElementById("analyzeBtn")) document.getElementById("analyzeBtn").addEventListener("click", doAnalyzeNewSearch);
+  // ---- Portal de búsquedas: formulario de nueva búsqueda ----
+  if ((f=document.getElementById("f_job_pos"))) f.addEventListener("input", function(e){ state.newjob.position=e.target.value; });
+  if ((f=document.getElementById("f_job_company"))) f.addEventListener("input", function(e){ state.newjob.company=e.target.value; });
+  if ((f=document.getElementById("f_job_desc"))) f.addEventListener("input", function(e){ state.newjob.description=e.target.value; });
+  if ((f=document.getElementById("f_job_must"))) f.addEventListener("input", function(e){ state.newjob.must=e.target.value; });
+  if ((f=document.getElementById("f_job_nice"))) f.addEventListener("input", function(e){ state.newjob.nice=e.target.value; });
+  if ((f=document.getElementById("f_job_benefits"))) f.addEventListener("input", function(e){ state.newjob.benefits=e.target.value; });
+  if ((f=document.getElementById("f_job_salary"))) f.addEventListener("input", function(e){ state.newjob.salary=e.target.value; });
+  if ((f=document.getElementById("saveJobBtn"))) f.addEventListener("click", function(){ saveNewJob(); });
+  // ---- Aviso público: formulario de postulación ----
+  if ((f=document.getElementById("f_jp_name"))) f.addEventListener("input", function(e){ state.jobpublic.name=e.target.value; });
+  if ((f=document.getElementById("f_jp_email"))) f.addEventListener("input", function(e){ state.jobpublic.email=e.target.value; });
+  if ((f=document.getElementById("f_jp_cv"))) f.addEventListener("change", function(e){
+    var file=e.target.files&&e.target.files[0]; var jp=state.jobpublic;
+    jp.cvText=""; jp.cvUrl=""; jp.fileName="";
+    if(!file){ render(); return; }
+    if(file.size>10*1024*1024){ jp.upMsg="El archivo supera los 10 MB."; render(); return; }
+    var isPdf=/pdf/i.test(file.type)||/\.pdf$/i.test(file.name);
+    if(!isPdf){ jp.upMsg="Subí un archivo PDF."; render(); return; }
+    jp.uploading=true; jp.upMsg="Leyendo tu CV…"; render();
+    extractPdfText(file).then(function(txt){
+      jp.fileName=file.name; jp.cvText=txt||"";
+      if(!jp.email){ var m=extractEmailFromText(txt||""); if(m) jp.email=m; }
+      var up = audioUploadConfigured() ? uploadAudioToCloudinary(file).catch(function(){ return ""; }) : Promise.resolve("");
+      return up.then(function(url){ jp.cvUrl=url||""; jp.uploading=false; jp.upMsg=""; render(); });
+    }).catch(function(){ jp.uploading=false; jp.upMsg="No pudimos leer el PDF. Probá con otro."; jp.cvText=""; render(); });
+  });
+  if ((f=document.getElementById("applyJobBtn"))) f.addEventListener("click", function(){ submitJobApplication(); });
   if ((f=document.getElementById("f_cvfiles"))) f.addEventListener("change", function(e){ var files=e.target.files; if(files&&files.length) uploadCVFiles(files); });
   if ((f=document.getElementById("f_impfrom"))) f.addEventListener("change", function(e){ state.cvbank.impFrom=e.target.value; });
   if ((f=document.getElementById("f_impto"))) f.addEventListener("change", function(e){ state.cvbank.impTo=e.target.value; });
@@ -3938,12 +4204,25 @@ var pendingCode = (function(){
   }catch(e){}
   return "";
 })();
+// Código del aviso público del portal (?job=CODIGO o #job=CODIGO).
+var pendingJob = (function(){
+  try{
+    var loc = window.location || {};
+    var mq = (loc.search || "").match(/[?&]job=([^&]+)/);
+    if (mq) return decodeURIComponent(mq[1]).toUpperCase();
+    var mh = (loc.hash || "").match(/[#&]job=([^&]+)/);
+    if (mh) return decodeURIComponent(mh[1]).toUpperCase();
+  }catch(e){}
+  return "";
+})();
 
 // Ruteo de arranque:
 if (handleOAuthRedirect()){
   // Volvimos de "Iniciar sesión con Google": ya guardamos la sesión y los tokens de Gmail.
   state.screen = "loading"; render();
   fetchSupaUser().then(function(){ routeAfterAuth(); });
+} else if (pendingJob){
+  loadJobByCode(pendingJob);        // persona en búsqueda laboral: aviso público del portal
 } else if (state.screen === "invite-landing"){
   render();                         // candidato con link viejo (#e=)
 } else if (pendingCode){
