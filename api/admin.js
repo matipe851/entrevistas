@@ -51,17 +51,28 @@ module.exports = async function handler(req, res) {
     var headers = { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
 
     if (b.action === "list") {
-      var r = await fetch(base + "/rest/v1/profiles?select=id,email,approved,created_at&order=created_at.desc", { headers: headers });
+      // Resiliente: si la columna "rejected" todavía no existe, reintentamos sin ella.
+      var r = await fetch(base + "/rest/v1/profiles?select=id,email,approved,rejected,created_at&order=created_at.desc", { headers: headers });
+      if (!r.ok) { r = await fetch(base + "/rest/v1/profiles?select=id,email,approved,created_at&order=created_at.desc", { headers: headers }); }
       var rows = await r.json();
       res.status(200).json({ ok: true, profiles: Array.isArray(rows) ? rows : [] });
       return;
     }
-    if (b.action === "approve" || b.action === "revoke") {
+    if (b.action === "approve" || b.action === "revoke" || b.action === "reject") {
       if (!b.targetId) { res.status(200).json({ ok: false, error: "no_target" }); return; }
-      var patch = { approved: (b.action === "approve") };
-      var up = await fetch(base + "/rest/v1/profiles?id=eq." + encodeURIComponent(b.targetId), {
-        method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify(patch)
-      });
+      // approve: aprobado y sin rechazo. revoke: vuelve a pendiente. reject: rechazado.
+      var patch;
+      if (b.action === "approve") patch = { approved: true, rejected: false };
+      else if (b.action === "reject") patch = { approved: false, rejected: true };
+      else patch = { approved: false, rejected: false };
+      async function doPatch(body) {
+        return fetch(base + "/rest/v1/profiles?id=eq." + encodeURIComponent(b.targetId), {
+          method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify(body)
+        });
+      }
+      var up = await doPatch(patch);
+      // Si la columna "rejected" no existe todavía, reintentamos solo con "approved".
+      if (!up.ok) { up = await doPatch({ approved: patch.approved }); }
       if (!up.ok) { var t = await up.text(); res.status(200).json({ ok: false, error: "update_failed", detail: t.slice(0, 200) }); return; }
       res.status(200).json({ ok: true });
       return;
