@@ -348,14 +348,14 @@ function sendViaGmail(){
 function gmailSendSingle(){
   var to = (state.candidateEmail||"").trim();
   if (!to || to.indexOf("@")<1){ state.sendState="error"; state.sendError={message:"Ingresá el email del candidato antes de enviar."}; render(); return; }
-  if (!googleConnected()){ state.sendState="error"; state.sendError={message:"Iniciá sesión con Google para enviar desde tu Gmail."}; render(); return; }
   state.sendState="sending"; state.sendError=null; render();
-  gmailSend(to, inviteSubject(), buildShareMessage()).then(function(j){
+  sendInviteSmart(to, inviteSubject(), buildShareMessage()).then(function(j){
     if (j && j.ok){ state.sendState="sent"; state.sentMessageId=j.id||null; }
     else {
       var m = (j && j.error==="needs_relogin") ? "Tu permiso de Google venció. Iniciá sesión con Google de nuevo." :
+              (j && j.error==="no_config") ? "El envío automático por servidor no está configurado todavía (Brevo). Iniciá sesión con Google, o usá “Abrir en Gmail” / copiar el mensaje." :
               (j && j.error==="no_google") ? "Iniciá sesión con Google para enviar desde tu Gmail." :
-              "No pude enviar por Gmail" + (j && j.detail ? (": "+j.detail) : "") + ". Probá “Abrir en Gmail” o copiar el mensaje.";
+              "No pude enviar el mail" + (j && j.detail ? (": "+j.detail) : "") + ". Probá “Abrir en Gmail” o copiar el mensaje.";
       state.sendState="error"; state.sendError={message:m};
     }
     render();
@@ -1206,7 +1206,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v25.1-r14";
+var APP_VERSION = "v25.3-r16";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1273,33 +1273,15 @@ Screens["pin-enter"] = function(){
 Screens["rec-login"] = function(){
   return Header() +
   '<div class="card" style="max-width:420px;margin:0 auto">' +
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('lock',19)+'<h2 style="font-size:17px;color:var(--ink)">Ingresá a tu cuenta</h2></div>' +
-    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Ingresá con Google para poder enviar las entrevistas desde tu propio Gmail. Cada cuenta ve solo sus propias entrevistas.</p>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('lock',19)+'<h2 style="font-size:17px;color:var(--ink)">Ingresá a la consultora</h2></div>' +
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 20px">El acceso es <b>únicamente con Google</b>. Así podés enviar las entrevistas desde tu propio Gmail. Si es tu primera vez, tu cuenta queda pendiente hasta que un administrador la apruebe.</p>' +
     ErrBox() +
-    GoogleButton("Iniciar sesión con Google") +
-    '<label class="field" style="display:block;margin-bottom:12px"><span class="field-label">Email</span>'+fieldInput("authEmail","tu@empresa.com","","mail")+'</label>' +
-    '<div class="input-row" style="margin-bottom:16px">'+ic('lock',15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"')+'<input id="authPass" type="password" placeholder="Contraseña"></div>' +
-    (captchaConfigured() ? '<div id="cf-turnstile" style="margin:0 0 16px;min-height:65px"></div>' : '') +
-    '<button class="btn btn-primary btn-block" id="loginBtn" '+(state.busy?'disabled':'')+'>'+(state.busy?ic('loader',15,'spin')+' Ingresando…':ic('chevron',15)+' Ingresar')+'</button>' +
-    '<p style="margin:16px 0 0;font-size:13px;color:var(--muted);text-align:center">¿No tenés cuenta? <a href="#" data-action="go-signup" style="color:var(--teal);font-weight:600">Registrate gratis</a></p>' +
+    '<button class="btn btn-block" data-action="google-login" style="background:#fff;border:1px solid var(--border);color:#1f2937;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600;padding:12px">'+googleG(18)+' Iniciar sesión con Google</button>' +
+    '<p style="margin:16px 0 0;font-size:12px;color:var(--muted);text-align:center">Al continuar aceptás la <a href="/privacy.html" target="_blank" style="color:var(--teal)">política de privacidad</a> y los <a href="/terms.html" target="_blank" style="color:var(--teal)">términos</a>.</p>' +
   '</div>';
 };
-Screens["rec-signup"] = function(){
-  return Header() +
-  '<div class="card" style="max-width:420px;margin:0 auto">' +
-    backlink("go-login","Volver") +
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('users',19)+'<h2 style="font-size:17px;color:var(--ink)">Creá tu cuenta</h2></div>' +
-    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Registrate con Google (recomendado) para poder enviar las entrevistas desde tu propio Gmail.</p>' +
-    ErrBox() +
-    GoogleButton("Registrarme con Google") +
-    '<label class="field" style="display:block;margin-bottom:12px"><span class="field-label">Email</span>'+fieldInput("authEmail","tu@empresa.com","","mail")+'</label>' +
-    '<div class="input-row" style="margin-bottom:6px">'+ic('lock',15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"')+'<input id="authPass" type="password" placeholder="Contraseña (mín. 6 caracteres)"></div>' +
-    '<div class="input-row" style="margin:10px 0 16px">'+ic('lock',15,'').replace('<svg','<svg style="color:var(--muted);flex-shrink:0"')+'<input id="authPass2" type="password" placeholder="Repetí la contraseña"></div>' +
-    (captchaConfigured() ? '<div id="cf-turnstile" style="margin:0 0 16px;min-height:65px"></div>' : '') +
-    '<button class="btn btn-primary btn-block" id="signupBtn" '+(state.busy?'disabled':'')+'>'+(state.busy?ic('loader',15,'spin')+' Creando…':ic('users',15)+' Crear cuenta')+'</button>' +
-    '<p style="margin:16px 0 0;font-size:13px;color:var(--muted);text-align:center">¿Ya tenés cuenta? <a href="#" data-action="go-login" style="color:var(--teal);font-weight:600">Iniciá sesión</a></p>' +
-  '</div>';
-};
+// El registro es el mismo flujo de Google (no hay alta con email/contraseña).
+Screens["rec-signup"] = function(){ return Screens["rec-login"](); };
 
 Screens["rec-pending"] = function(){
   var u = currentUser();
@@ -1759,7 +1741,7 @@ Screens.config = function(){
         var withMail = (state.cvbank.cvs||[]).filter(function(cv){ return c.selectedCVs.indexOf(cv.id)>=0 && (cv.candidate_email||extractEmailFromText(cv.cv_text||"")); }).length;
         return '<div style="margin-top:26px">' +
           Note("info", ic('users',14)+' &nbsp;Envío masivo: seleccionaste <b>'+selCount+'</b> candidato(s)'+(withMail<selCount?(' · <b>'+(selCount-withMail)+'</b> sin email (se omiten)'):'')+'. Todos reciben las <b>mismas preguntas</b> del puesto (comparación justa) y a cada uno le llega su propio mail con su código, desde tu Gmail.') +
-          (googleConnected() ? '' : Note("warn", ic('alert',14)+' &nbsp;No iniciaste sesión con Google, así que los mails no van a salir solos. Igual puedo crear las entrevistas y darte los enlaces para enviarlos vos. Para envío automático, iniciá sesión con Google.')) +
+          (googleConnected() ? '' : Note("info", ic('alert',14)+' &nbsp;No iniciaste sesión con Google. Voy a enviar los mails automáticamente por el servidor de correo; si no está configurado, te doy los enlaces para enviarlos vos. Para que salgan desde tu propio Gmail, iniciá sesión con Google.')) +
           '<button class="btn btn-primary btn-block" id="bulkBtn" '+((ready && withMail>0)?'':'disabled')+'>'+ic('send',15)+' Generar y enviar a '+withMail+' candidato'+(withMail===1?'':'s')+'</button>' +
         '</div>';
       }
@@ -1794,7 +1776,7 @@ Screens["bulk-result"] = function(){
     html += '<p style="font-size:13.5px;color:var(--muted);margin:0 0 14px">'+parts.join(' · ')+'. Cada entrevista quedó guardada en tu panel.</p>';
   }
   if (b.sendUnavailable){
-    html += Note("warn", ic('alert',14)+' &nbsp;No pude enviar desde tu Gmail (necesitás iniciar sesión con Google para habilitar el envío). Las entrevistas <b>ya quedaron creadas</b>: copiá el enlace y el código de cada candidato de la lista de abajo y mandáselos por el medio que quieras, o iniciá sesión con Google y reenviá.') +
+    html += Note("warn", ic('alert',14)+' &nbsp;No pude enviar los mails automáticamente: no iniciaste sesión con Google y el envío por servidor (Brevo) todavía no está configurado. Las entrevistas <b>ya quedaron creadas</b>: copiá el enlace y el código de cada candidato de la lista de abajo y mandáselos por el medio que quieras. Para envío automático, iniciá sesión con Google (sale de tu Gmail) o configurá Brevo.') +
       '<button class="btn btn-block" data-action="google-login" style="background:#fff;border:1px solid var(--border);color:#1f2937;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600;margin-bottom:8px">'+googleG(18)+' Iniciar sesión con Google</button>';
   }
   if (b.results && b.results.length){
@@ -2132,20 +2114,21 @@ function GmailBlock(){
 /* Envío directo por Gmail (API real, funciona en el sitio publicado si iniciaste sesión con Google). */
 function GmailSendBlock(){
   var u = currentUser();
+  var conn = googleConnected();
   var out = '';
-  if (googleConnected()){
-    if (state.sendState === "sent"){
-      out += '<div class="note note-info">'+ic('check',15)+'<span>Enviado desde tu Gmail'+(u&&u.email?(' ('+esc(u.email)+')'):'')+'. Podés reenviarlo si hace falta.</span></div>';
-    }
-    if (state.sendState === "error" && state.sendError){
-      out += Note("err", esc(state.sendError.message || state.sendError));
-    }
-    out += '<button class="btn btn-teal btn-block" id="gmailSendBtn" data-action="gmail-send-single" '+(state.sendState==="sending"?'disabled':'')+'>' +
-      (state.sendState==="sending" ? ic('loader',15,'spin')+' Enviando desde tu Gmail…' : ic('send',15)+' Enviar ahora desde mi Gmail'+(u&&u.email?(' ('+esc(u.email)+')'):'')) +
-      '</button>';
-  } else {
-    out += Note("info", "Para enviar con un clic desde tu propio Gmail, iniciá sesión con Google. Mientras tanto podés usar “Abrir en Gmail” o copiar el mensaje.") +
-      '<button class="btn btn-block" data-action="google-login" style="background:#fff;border:1px solid var(--border);color:#1f2937;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600">'+googleG(18)+' Iniciar sesión con Google</button>';
+  if (state.sendState === "sent"){
+    out += '<div class="note note-info">'+ic('check',15)+'<span>Enviado'+(conn && u && u.email?(' desde tu Gmail ('+esc(u.email)+')'):' automáticamente')+'. Podés reenviarlo si hace falta.</span></div>';
+  }
+  if (state.sendState === "error" && state.sendError){
+    out += Note("err", esc(state.sendError.message || state.sendError));
+  }
+  // Botón de envío automático con un clic (Gmail si estás con Google; si no, por servidor).
+  out += '<button class="btn btn-teal btn-block" id="gmailSendBtn" data-action="gmail-send-single" '+(state.sendState==="sending"?'disabled':'')+'>' +
+    (state.sendState==="sending" ? ic('loader',15,'spin')+' Enviando…' :
+     ic('send',15)+(conn ? ' Enviar ahora desde mi Gmail'+(u&&u.email?(' ('+esc(u.email)+')'):'') : ' Enviar mail automáticamente')) +
+    '</button>';
+  if (!conn){
+    out += '<p style="font-size:12px;color:var(--muted);margin:8px 0 0;text-align:center">Para enviar desde tu propio Gmail, <a href="#" data-action="google-login" style="color:var(--teal);font-weight:600">iniciá sesión con Google</a>.</p>';
   }
   return out;
 }
@@ -2601,6 +2584,17 @@ function sendInviteEmail(to, subject, message){
     body: JSON.stringify({ to: to, subject: subject, message: message })
   }).then(function(r){ return r.json(); }).catch(function(){ return { ok:false, error:"network" }; });
 }
+/* Envío "inteligente": si iniciaste sesión con Google, sale desde tu Gmail;
+   si no, sale automático por el servidor de correo (Brevo). Devuelve el mismo
+   shape { ok, error } en ambos casos. */
+function sendInviteSmart(to, subject, message){
+  if (googleConnected()) return gmailSend(to, subject, message);
+  return sendInviteEmail(to, subject, message);
+}
+/* ¿No hay forma de enviar automático? (ni Gmail ni servidor configurado) */
+function sendCannotAuto(j){
+  return j && (j.error==="no_google" || j.error==="needs_relogin" || j.error==="no_config" || j.error==="no_token" || j.error==="network");
+}
 function startBulkSend(){
   if (!(supaConfigured() && isLoggedIn())){ state.bulk={ error:"Necesitás iniciar sesión para el envío masivo.", results:[], done:true }; state.screen="bulk-result"; render(); return; }
   var ids = state.config.selectedCVs || [];
@@ -2642,11 +2636,11 @@ function startBulkSend(){
             var link = bulkLinkFor(code);
             var entry = { name:t.name, email:t.email, code:code, link:link, status:"pending" };
             state.bulk.results.push(entry);
-            if (state.bulk.sendUnavailable){ render(); return; } // Gmail no disponible: no reintentamos enviar
+            if (state.bulk.sendUnavailable){ render(); return; } // ni Gmail ni servidor: no reintentamos enviar
             var msg = buildBulkInviteMessage(t.name, link, code, qCount);
-            return gmailSend(t.email, subject, msg).then(function(j){
+            return sendInviteSmart(t.email, subject, msg).then(function(j){
               if (j && j.ok){ entry.status="sent"; state.bulk.sent++; }
-              else if (j && (j.error==="no_google" || j.error==="needs_relogin")){ state.bulk.sendUnavailable=true; entry.status="pending"; }
+              else if (sendCannotAuto(j)){ state.bulk.sendUnavailable=true; entry.status="pending"; }
               else { entry.status="failed"; state.bulk.failed++; }
               render();
             });
