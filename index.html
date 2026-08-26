@@ -1376,7 +1376,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v26.9-r34";
+var APP_VERSION = "v26.9-r35";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1906,21 +1906,18 @@ Screens["cv-ranking"] = function(){
     var pros = Array.isArray(c.pros)?c.pros:[];
     var cons = Array.isArray(c.cons)?c.cons:[];
     var isSel = (c.id && sel.indexOf(c.id)>=0);
+    var pickBtn = c.id
+      ? '<button type="button" data-action="rank-toggle" data-cvid="'+esc(c.id)+'" title="Elegir para invitar a varios" style="flex-shrink:0;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer;transition:all .12s;border:2px solid var(--teal);'+(isSel?'background:var(--teal);color:#fff':'background:transparent;color:var(--teal)')+'">'+(isSel?ic('check',15)+' Elegido':ic('plus',15)+' Elegir')+'</button>'
+      : '';
     html += '<div class="qa-item"'+(isSel?' style="border:2px solid var(--teal);background:var(--teal-tint)"':'')+'>' +
-      '<div style="display:flex;align-items:center;gap:10px">' +
-        (c.id
-          ? '<label class="rank-pick" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer">' +
-              '<input type="checkbox" class="rankchk" data-cvid="'+esc(c.id)+'"'+(isSel?' checked':'')+' style="width:22px;height:22px;flex-shrink:0;cursor:pointer;accent-color:var(--teal)">' +
-              '<span class="mono" style="flex-shrink:0;width:22px;text-align:center;font-weight:800;font-size:15px;color:var(--muted)">'+(i+1)+'</span>' +
-              '<span style="flex-shrink:0;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;background:'+fitTintVar(sc)+';color:'+fitColorVar(sc)+'" class="mono">'+sc+'</span>' +
-              '<span style="flex:1;min-width:0">' +
-                '<span style="display:block;font-weight:700;font-size:14.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.name||('Candidato '+(i+1)))+'</span>' +
-                '<span style="display:block;font-size:12px;color:'+fitColorVar(sc)+';font-weight:600">Encaje '+esc(c.fit||'')+(isSel?' · <span style="color:var(--teal)">✓ elegido</span>':'')+'</span>' +
-              '</span>' +
-            '</label>'
-          : '<span class="mono" style="flex-shrink:0;width:22px;text-align:center;font-weight:800;font-size:15px;color:var(--muted)">'+(i+1)+'</span>' +
-            '<span style="flex-shrink:0;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;background:'+fitTintVar(sc)+';color:'+fitColorVar(sc)+'" class="mono">'+sc+'</span>' +
-            '<div style="flex:1;min-width:0"><p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(c.name||('Candidato '+(i+1)))+'</p><p style="margin:1px 0 0;font-size:12px;color:'+fitColorVar(sc)+';font-weight:600">Encaje '+esc(c.fit||'')+'</p></div>') +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+        pickBtn +
+        '<span class="mono" style="flex-shrink:0;width:22px;text-align:center;font-weight:800;font-size:15px;color:var(--muted)">'+(i+1)+'</span>' +
+        '<span style="flex-shrink:0;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;background:'+fitTintVar(sc)+';color:'+fitColorVar(sc)+'" class="mono">'+sc+'</span>' +
+        '<div style="flex:1;min-width:80px">' +
+          '<p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(c.name||('Candidato '+(i+1)))+'</p>' +
+          '<p style="margin:1px 0 0;font-size:12px;color:'+fitColorVar(sc)+';font-weight:600">Encaje '+esc(c.fit||'')+(isSel?' · <span style="color:var(--teal)">✓ elegido</span>':'')+'</p>' +
+        '</div>' +
         '<button class="btn btn-primary btn-sm" data-action="invite-from-cv" data-pos="'+esc(x.title||'')+'" data-cvid="'+esc(c.id||'')+'" style="flex-shrink:0">'+ic('mic',13)+' Invitar</button>' +
       '</div>' +
       (c.summary?'<p style="margin:10px 0 0;font-size:13px;color:var(--ink);line-height:1.5">'+esc(c.summary)+'</p>':'') +
@@ -3544,6 +3541,13 @@ function bind(){
         state.screen="config"; render(); refreshCVBankQuiet();
       }
       else if (act === "rank-clear-sel"){ state.searches.rankSel=[]; render(); }
+      else if (act === "rank-toggle"){
+        var _tid=el.getAttribute("data-cvid")||""; if(!_tid) return;
+        var _rs=(state.searches.rankSel||[]).slice();
+        var _at=_rs.indexOf(_tid);
+        if(_at>=0) _rs.splice(_at,1); else _rs.push(_tid);
+        state.searches.rankSel=_rs; render();
+      }
       else if (act === "rank-invite-sel"){
         var _ids=(state.searches.rankSel||[]).filter(function(id){ return (state.cvbank.cvs||[]).some(function(z){ return z.id===id; }); });
         if(!_ids.length){ alert("No hay CVs seleccionados disponibles en tu repositorio."); }
@@ -3668,15 +3672,7 @@ function bind(){
       render();
     });
   });
-  // Checkboxes del ranking: seleccionar varios candidatos para invitarlos juntos.
-  app.querySelectorAll(".rankchk").forEach(function(chk){
-    chk.addEventListener("change", function(){
-      var ids=[];
-      app.querySelectorAll(".rankchk").forEach(function(c){ if(c.checked) ids.push(c.getAttribute("data-cvid")); });
-      state.searches.rankSel=ids;
-      render();
-    });
-  });
+  // La selección múltiple del ranking se maneja con el botón "Elegir" (data-action rank-toggle).
   // Buscador de CVs por nombre/email (filtra la lista sin recargar todo).
   function applyCvFilter(){
     var list=document.getElementById("f_cvlist"); if(!list) return;
