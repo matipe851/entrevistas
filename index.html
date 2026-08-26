@@ -1376,7 +1376,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v26.9-r33";
+var APP_VERSION = "v26.9-r34";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1898,28 +1898,29 @@ Screens["cv-ranking"] = function(){
   if (state.searches.note) html += Note("info", esc(state.searches.note));
   if (!r.length){ html += '<div class="center-block" style="padding:24px 12px">'+ic('alert',24)+'<p>Esta búsqueda no tiene ranking todavía. Tocá "Re-analizar".</p></div>'; return html; }
   var sel = state.searches.rankSel || [];
-  html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Tildá varios candidatos para invitarlos a todos juntos (a cada uno le llega su propio mail con el CV reconocido), o tocá <b>Invitar</b> en uno solo.</p>';
-  if (sel.length){
-    html += '<div style="position:sticky;top:8px;z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--teal-tint);border:1px solid var(--teal);border-radius:12px;padding:10px 12px;margin-bottom:14px">' +
-      '<span style="flex:1;min-width:120px;font-size:13px;color:var(--ink);font-weight:700">'+sel.length+' seleccionado'+(sel.length===1?'':'s')+'</span>' +
-      '<button class="btn btn-ghost btn-sm" data-action="rank-clear-sel">Limpiar</button>' +
-      '<button class="btn btn-primary btn-sm" data-action="rank-invite-sel" data-pos="'+esc(x.title||'')+'">'+ic('mic',13)+' Invitar '+(sel.length===1?'al seleccionado':('a los '+sel.length+' seleccionados'))+'</button>' +
-    '</div>';
-  }
-  html += '<div style="display:grid;gap:12px">';
+  html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Tocá <b>Elegir</b> en varios candidatos para invitarlos a todos juntos (a cada uno le llega su propio mail con el CV reconocido), o usá <b>Invitar</b> para uno solo.</p>';
+  // Dejamos espacio abajo para que la barra fija de acción no tape la última tarjeta.
+  html += '<div style="display:grid;gap:12px'+(sel.length?';padding-bottom:84px':'')+'">';
   r.forEach(function(c, i){
     var sc = (typeof c.score==='number')?c.score:0;
     var pros = Array.isArray(c.pros)?c.pros:[];
     var cons = Array.isArray(c.cons)?c.cons:[];
-    html += '<div class="qa-item">' +
-      '<div style="display:flex;align-items:center;gap:12px">' +
-        (c.id ? '<input type="checkbox" class="rankchk" data-cvid="'+esc(c.id)+'"'+((sel.indexOf(c.id)>=0)?' checked':'')+' style="width:18px;height:18px;flex-shrink:0;cursor:pointer" title="Seleccionar para invitar">' : '') +
-        '<span class="mono" style="flex-shrink:0;width:26px;text-align:center;font-weight:800;font-size:15px;color:var(--muted)">'+(i+1)+'</span>' +
-        '<span style="flex-shrink:0;width:46px;height:46px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:16px;background:'+fitTintVar(sc)+';color:'+fitColorVar(sc)+'" class="mono">'+sc+'</span>' +
-        '<div style="flex:1;min-width:0">' +
-          '<p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(c.name||('Candidato '+(i+1)))+'</p>' +
-          '<p style="margin:1px 0 0;font-size:12px;color:'+fitColorVar(sc)+';font-weight:600">Encaje '+esc(c.fit||'')+'</p>' +
-        '</div>' +
+    var isSel = (c.id && sel.indexOf(c.id)>=0);
+    html += '<div class="qa-item"'+(isSel?' style="border:2px solid var(--teal);background:var(--teal-tint)"':'')+'>' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+        (c.id
+          ? '<label class="rank-pick" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer">' +
+              '<input type="checkbox" class="rankchk" data-cvid="'+esc(c.id)+'"'+(isSel?' checked':'')+' style="width:22px;height:22px;flex-shrink:0;cursor:pointer;accent-color:var(--teal)">' +
+              '<span class="mono" style="flex-shrink:0;width:22px;text-align:center;font-weight:800;font-size:15px;color:var(--muted)">'+(i+1)+'</span>' +
+              '<span style="flex-shrink:0;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;background:'+fitTintVar(sc)+';color:'+fitColorVar(sc)+'" class="mono">'+sc+'</span>' +
+              '<span style="flex:1;min-width:0">' +
+                '<span style="display:block;font-weight:700;font-size:14.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.name||('Candidato '+(i+1)))+'</span>' +
+                '<span style="display:block;font-size:12px;color:'+fitColorVar(sc)+';font-weight:600">Encaje '+esc(c.fit||'')+(isSel?' · <span style="color:var(--teal)">✓ elegido</span>':'')+'</span>' +
+              '</span>' +
+            '</label>'
+          : '<span class="mono" style="flex-shrink:0;width:22px;text-align:center;font-weight:800;font-size:15px;color:var(--muted)">'+(i+1)+'</span>' +
+            '<span style="flex-shrink:0;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;background:'+fitTintVar(sc)+';color:'+fitColorVar(sc)+'" class="mono">'+sc+'</span>' +
+            '<div style="flex:1;min-width:0"><p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(c.name||('Candidato '+(i+1)))+'</p><p style="margin:1px 0 0;font-size:12px;color:'+fitColorVar(sc)+';font-weight:600">Encaje '+esc(c.fit||'')+'</p></div>') +
         '<button class="btn btn-primary btn-sm" data-action="invite-from-cv" data-pos="'+esc(x.title||'')+'" data-cvid="'+esc(c.id||'')+'" style="flex-shrink:0">'+ic('mic',13)+' Invitar</button>' +
       '</div>' +
       (c.summary?'<p style="margin:10px 0 0;font-size:13px;color:var(--ink);line-height:1.5">'+esc(c.summary)+'</p>':'') +
@@ -1930,6 +1931,16 @@ Screens["cv-ranking"] = function(){
     '</div>';
   });
   html += '</div>';
+  // Barra de acción FIJA abajo (siempre visible mientras haya candidatos elegidos).
+  if (sel.length){
+    html += '<div style="position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--surface);border-top:1px solid var(--border);box-shadow:0 -6px 20px rgba(0,0,0,.18)">' +
+      '<div style="max-width:640px;margin:0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 16px">' +
+        '<span style="flex:1;min-width:110px;font-size:13.5px;color:var(--ink);font-weight:700">'+sel.length+' candidato'+(sel.length===1?'':'s')+' elegido'+(sel.length===1?'':'s')+'</span>' +
+        '<button class="btn btn-ghost btn-sm" data-action="rank-clear-sel">Limpiar</button>' +
+        '<button class="btn btn-primary btn-sm" data-action="rank-invite-sel" data-pos="'+esc(x.title||'')+'">'+ic('mic',14)+' Invitar '+(sel.length===1?'al elegido':('a los '+sel.length))+'</button>' +
+      '</div>' +
+    '</div>';
+  }
   return html;
 };
 
