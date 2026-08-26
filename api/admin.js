@@ -51,29 +51,36 @@ module.exports = async function handler(req, res) {
     var headers = { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
 
     if (b.action === "list") {
-      // Resiliente: si la columna "rejected" todavía no existe, reintentamos sin ella.
-      var r = await fetch(base + "/rest/v1/profiles?select=id,email,approved,rejected,created_at&order=created_at.desc", { headers: headers });
-      if (!r.ok) { r = await fetch(base + "/rest/v1/profiles?select=id,email,approved,created_at&order=created_at.desc", { headers: headers }); }
+      var r = await fetch(base + "/rest/v1/profiles?select=id,email,approved,created_at&order=created_at.desc", { headers: headers });
       var rows = await r.json();
       res.status(200).json({ ok: true, profiles: Array.isArray(rows) ? rows : [] });
       return;
     }
-    if (b.action === "approve" || b.action === "revoke" || b.action === "reject") {
+    if (b.action === "approve" || b.action === "revoke") {
       if (!b.targetId) { res.status(200).json({ ok: false, error: "no_target" }); return; }
-      // approve: aprobado y sin rechazo. revoke: vuelve a pendiente. reject: rechazado.
-      var patch;
-      if (b.action === "approve") patch = { approved: true, rejected: false };
-      else if (b.action === "reject") patch = { approved: false, rejected: true };
-      else patch = { approved: false, rejected: false };
-      async function doPatch(body) {
-        return fetch(base + "/rest/v1/profiles?id=eq." + encodeURIComponent(b.targetId), {
-          method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify(body)
-        });
-      }
-      var up = await doPatch(patch);
-      // Si la columna "rejected" no existe todavía, reintentamos solo con "approved".
-      if (!up.ok) { up = await doPatch({ approved: patch.approved }); }
+      // approve: aprobado. revoke: vuelve a pendiente.
+      var up = await fetch(base + "/rest/v1/profiles?id=eq." + encodeURIComponent(b.targetId), {
+        method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }),
+        body: JSON.stringify({ approved: b.action === "approve" })
+      });
       if (!up.ok) { var t = await up.text(); res.status(200).json({ ok: false, error: "update_failed", detail: t.slice(0, 200) }); return; }
+      res.status(200).json({ ok: true });
+      return;
+    }
+    if (b.action === "reject") {
+      if (!b.targetId) { res.status(200).json({ ok: false, error: "no_target" }); return; }
+      // Desaprobar = eliminar el perfil para que DESAPAREZCA de la lista por completo.
+      var delP = await fetch(base + "/rest/v1/profiles?id=eq." + encodeURIComponent(b.targetId), {
+        method: "DELETE", headers: Object.assign({}, headers, { Prefer: "return=minimal" })
+      });
+      if (!delP.ok) { var t2 = await delP.text(); res.status(200).json({ ok: false, error: "delete_failed", detail: t2.slice(0, 200) }); return; }
+      // Best-effort: borrar también la cuenta de autenticación, así la persona puede
+      // volver a registrarse desde cero (con Google) si más adelante se la quiere aceptar.
+      try {
+        await fetch(base + "/auth/v1/admin/users/" + encodeURIComponent(b.targetId), {
+          method: "DELETE", headers: { apikey: key, Authorization: "Bearer " + key }
+        });
+      } catch (e) {}
       res.status(200).json({ ok: true });
       return;
     }
