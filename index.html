@@ -719,7 +719,7 @@ function gmailImportCVs(){
   if(!googleConnected()){ state.cvbank.importMsg="Iniciá sesión con Google para importar."; render(); return; }
   var folderNames=knownFolderNames();
   if(!folderNames.length){ state.cvbank.importMsg="Primero creá al menos una carpeta con el nombre del puesto (así puedo rutear por el asunto)."; render(); return; }
-  var q = "newer_than:180d (" + folderNames.map(function(n){ return 'subject:"'+String(n).replace(/"/g,"")+'"'; }).join(" OR ") + ")";
+  var q = "newer_than:180d has:attachment filename:pdf (" + folderNames.map(function(n){ return 'subject:"'+String(n).replace(/"/g,"")+'"'; }).join(" OR ") + ")";
   state.cvbank.importing=true; state.cvbank.importMsg="Buscando CVs en tu Gmail…"; render();
   callGmailCvs(q).then(function(r){
     if(!r || !r.ok){
@@ -734,7 +734,7 @@ function gmailImportCVs(){
   });
 }
 function processImportedEmails(emails, folderNames){
-  var imported=0, skipped=0, noFolder=0, noText=0;
+  var imported=0, skipped=0, noFolder=0, noPdf=0, noText=0;
   var existing=(state.cvbank.cvs||[]);
   function has(email, folder){
     if(!email) return false;
@@ -746,24 +746,21 @@ function processImportedEmails(emails, folderNames){
       state.cvbank.importMsg="Procesando "+(idx+1)+"/"+emails.length+"…"; render();
       var folder=matchFolderBySubject(m.subject, folderNames);
       if(!folder){ noFolder++; return; }
-      var fromInfo=parseFromHeader(m.from);
-      // 1) Conseguir el texto del CV: del PDF si hay, si no del cuerpo del mail.
-      var getText;
+      // SOLO importamos si vino un CV en PDF adjunto (evita traer mails que no son CVs).
       var pdfBlob = (m.pdf && m.pdf.dataBase64) ? b64ToBlob(m.pdf.dataBase64, "application/pdf") : null;
-      if(pdfBlob){ getText = extractPdfText(pdfBlob).then(function(t){ return (t && t.length>40) ? t : (m.bodyText||""); }); }
-      else { getText = Promise.resolve(m.bodyText||""); }
-      return getText.then(function(text){
+      if(!pdfBlob){ noPdf++; return; }
+      var fromInfo=parseFromHeader(m.from);
+      return extractPdfText(pdfBlob).then(function(text){
         text=(text||"").trim();
         if(text.length<25){ noText++; return; }
         var email = fromInfo.email || extractEmailFromText(text) || "";
         if(has(email, folder)){ skipped++; return; }
-        var name = fromInfo.name || (m.pdf && m.pdf.filename ? m.pdf.filename.replace(/\.[^.]+$/,"") : "") || "Candidato (mail)";
-        // 2) (Opcional) subir el PDF a Cloudinary para poder abrirlo después.
-        var up = (pdfBlob && audioUploadConfigured())
+        var name = fromInfo.name || (m.pdf.filename ? m.pdf.filename.replace(/\.[^.]+$/,"") : "") || "Candidato (mail)";
+        var up = audioUploadConfigured()
           ? uploadAudioToCloudinary(new File([pdfBlob], (m.pdf.filename||"cv.pdf"), { type:"application/pdf" })).catch(function(){ return ""; })
           : Promise.resolve("");
         return up.then(function(url){
-          return dbCreateCV({ candidate_name:name, file_name:(m.pdf&&m.pdf.filename)||"CV recibido por mail", cv_url:url||null, cv_text:text.slice(0,15000), candidate_email:email||null, folder:folder })
+          return dbCreateCV({ candidate_name:name, file_name:m.pdf.filename||"CV.pdf", cv_url:url||null, cv_text:text.slice(0,15000), candidate_email:email||null, folder:folder })
             .then(function(row){ imported++; if(row) existing.push(row); })
             .catch(function(){ skipped++; });
         });
@@ -772,10 +769,11 @@ function processImportedEmails(emails, folderNames){
   });
   chain.then(function(){
     state.cvbank.importing=false;
-    var parts=[imported+" CV(s) importado(s)"];
+    var parts=[imported+" CV(s) en PDF importado(s)"];
     if(skipped) parts.push(skipped+" ya estaban / con error");
     if(noFolder) parts.push(noFolder+" sin carpeta que matchee el asunto");
-    if(noText) parts.push(noText+" sin texto legible");
+    if(noPdf) parts.push(noPdf+" sin PDF adjunto (omitidos)");
+    if(noText) parts.push(noText+" PDF sin texto legible");
     state.cvbank.importMsg="Listo: "+parts.join(" · ")+".";
     loadCVBank();
   });
@@ -1341,7 +1339,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v26.0-r23";
+var APP_VERSION = "v26.1-r24";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1702,7 +1700,7 @@ Screens["cv-bank"] = function(){
   if (googleConnected()){
     html += '<div class="card" style="margin-bottom:16px;border:1px dashed var(--teal)">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('mail',16)+'<b style="font-size:13.5px;color:var(--ink)">Importar CVs desde tu Gmail</b></div>' +
-      '<p style="margin:0 0 10px;font-size:12.5px;color:var(--muted)">Traigo los mails recientes cuyo <b>asunto contenga el nombre de una de tus carpetas</b> y guardo su CV (adjunto PDF o texto del cuerpo) en esa carpeta.</p>' +
+      '<p style="margin:0 0 10px;font-size:12.5px;color:var(--muted)">Traigo los mails recientes que tengan un <b>CV en PDF adjunto</b> y cuyo <b>asunto contenga el nombre de una de tus carpetas</b>, y lo guardo en esa carpeta. Los mails sin PDF se ignoran.</p>' +
       '<button class="btn btn-ghost btn-block" data-action="gmail-import" '+(b.importing?'disabled':'')+'>'+(b.importing?ic('loader',15,'spin')+' Importando…':ic('mail',15)+' Importar CVs desde Gmail')+'</button>' +
       (b.importMsg?'<p style="margin:10px 0 0;font-size:12.5px;color:var(--teal)">'+esc(b.importMsg)+'</p>':'') +
     '</div>';
