@@ -1206,7 +1206,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v25.3-r16";
+var APP_VERSION = "v25.4-r17";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2513,7 +2513,15 @@ function createInterview(){
   });
   rt.analyzed = {};
   state.answers = {}; state.idx = 0; state.report = null;
-  state.code = code; state.interviewId = ""; state.candidateEmail=""; state.candidateName=""; state.storageWarn = !ok;
+  // Traemos el email (y nombre) del CV seleccionado, para autocompletar la pantalla de envío.
+  var _autoEmail = "", _autoName = "";
+  var _sel = state.config.selectedCVs || [];
+  if (_sel.length === 1){
+    var _cv = (state.cvbank.cvs||[]).filter(function(z){ return z.id===_sel[0]; })[0];
+    if (_cv){ _autoEmail = _cv.candidate_email || extractEmailFromText(_cv.cv_text||"") || ""; _autoName = _cv.candidate_name || ""; }
+  }
+  if (!_autoEmail) _autoEmail = state.candidateEmail || ""; // email ya cargado (CV o a mano)
+  state.code = code; state.interviewId = ""; state.candidateEmail=_autoEmail; state.candidateName=_autoName; state.storageWarn = !ok;
   state.sendState = "idle"; state.sendError = null; state.sentMessageId = null;
 
   function toShare(){ state.shareLink = computeInviteLink(); state.screen = "share"; probeGmailOnce(); render(); }
