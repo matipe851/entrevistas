@@ -719,7 +719,18 @@ function gmailImportCVs(){
   if(!googleConnected()){ state.cvbank.importMsg="Iniciá sesión con Google para importar."; render(); return; }
   var folderNames=knownFolderNames();
   if(!folderNames.length){ state.cvbank.importMsg="Primero creá al menos una carpeta con el nombre del puesto (así puedo rutear por el asunto)."; render(); return; }
-  var q = "newer_than:180d has:attachment filename:pdf (" + folderNames.map(function(n){ return 'subject:"'+String(n).replace(/"/g,"")+'"'; }).join(" OR ") + ")";
+  // Rango de fechas (desde/hasta). Si no hay, usamos los últimos 180 días.
+  var dateQ = "";
+  var fromD = (state.cvbank.impFrom||"").trim();
+  var toD = (state.cvbank.impTo||"").trim();
+  if (fromD) dateQ += " after:" + fromD.replace(/-/g,"/");
+  if (toD){
+    try{ var d=new Date(toD+"T00:00:00"); d.setDate(d.getDate()+1); // "before" es exclusivo → +1 día para incluir el "hasta"
+      dateQ += " before:" + d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getDate()).padStart(2,"0");
+    }catch(e){ dateQ += " before:" + toD.replace(/-/g,"/"); }
+  }
+  if (!dateQ) dateQ = " newer_than:180d";
+  var q = dateQ.trim() + " has:attachment filename:pdf (" + folderNames.map(function(n){ return 'subject:"'+String(n).replace(/"/g,"")+'"'; }).join(" OR ") + ")";
   state.cvbank.importing=true; state.cvbank.importMsg="Buscando CVs en tu Gmail…"; render();
   callGmailCvs(q).then(function(r){
     if(!r || !r.ok){
@@ -1312,7 +1323,7 @@ var state = {
   invite: null,
   code: "", interviewId: "", candidateEmail: "", candidateName: "", shareLink: "", interviewMode: "candidate", consentAt: "",
   dash: { loading:false, items:null, error:null, detail:null, filter:"all" },
-  cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"", folder:"", creatingFolder:false, folders:null, importing:false, importMsg:"" }, cvFilter:"",
+  cvbank: { loading:false, cvs:null, error:null, uploading:false, msg:"", folder:"", creatingFolder:false, folders:null, importing:false, importMsg:"", impFrom:"", impTo:"" }, cvFilter:"",
   searches: { loading:false, items:null, error:null, current:null, analyzing:false, error2:null, note:null },
   newsearch: { title:"", description:"", must:"", nice:"" },
   brand: { name:"", logo:"" },
@@ -1339,7 +1350,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v26.1-r24";
+var APP_VERSION = "v26.2-r25";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1677,7 +1688,7 @@ Screens["cv-bank"] = function(){
       return '<button class="pill-time" data-action="cv-folder" data-f="'+esc(key)+'" style="cursor:pointer;border:none;background:'+(isActive?'var(--teal)':'var(--surface-2)')+';color:'+(isActive?'#fff':'var(--ink)')+';'+(isActive?'font-weight:800':'opacity:.85')+'">'+esc(label)+(count!=null?(' ('+count+')'):'')+'</button>';
     };
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
-    html += chip("", "Todas", total, active==="");
+    html += chip("", "Todos los CVs", total, active==="");
     if (counts[""]) html += chip("__none__", "Sin carpeta", counts[""], false); // ver solo los sin carpeta
     names.forEach(function(f){ html += chip(f, f, counts[f]||0, active===f); });
     html += '<button class="pill-time" data-action="cv-newfolder" style="cursor:pointer;border:1px dashed var(--border);background:transparent;color:var(--teal)">'+ic('plus',12)+' Nueva carpeta</button>';
@@ -1700,7 +1711,12 @@ Screens["cv-bank"] = function(){
   if (googleConnected()){
     html += '<div class="card" style="margin-bottom:16px;border:1px dashed var(--teal)">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('mail',16)+'<b style="font-size:13.5px;color:var(--ink)">Importar CVs desde tu Gmail</b></div>' +
-      '<p style="margin:0 0 10px;font-size:12.5px;color:var(--muted)">Traigo los mails recientes que tengan un <b>CV en PDF adjunto</b> y cuyo <b>asunto contenga el nombre de una de tus carpetas</b>, y lo guardo en esa carpeta. Los mails sin PDF se ignoran.</p>' +
+      '<p style="margin:0 0 10px;font-size:12.5px;color:var(--muted)">Traigo los mails que tengan un <b>CV en PDF adjunto</b> y cuyo <b>asunto contenga el nombre de una de tus carpetas</b>, y lo guardo en esa carpeta. Los mails sin PDF se ignoran.</p>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
+        '<label style="flex:1;min-width:130px;font-size:12px;color:var(--muted)">Desde<input id="f_impfrom" type="date" value="'+esc(b.impFrom||"")+'" style="width:100%;margin-top:3px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 10px;color:var(--ink);font-family:inherit;font-size:13px"></label>' +
+        '<label style="flex:1;min-width:130px;font-size:12px;color:var(--muted)">Hasta<input id="f_impto" type="date" value="'+esc(b.impTo||"")+'" style="width:100%;margin-top:3px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 10px;color:var(--ink);font-family:inherit;font-size:13px"></label>' +
+      '</div>' +
+      '<p style="margin:0 0 10px;font-size:11.5px;color:var(--muted)">Si no elegís fechas, busco los últimos 180 días.</p>' +
       '<button class="btn btn-ghost btn-block" data-action="gmail-import" '+(b.importing?'disabled':'')+'>'+(b.importing?ic('loader',15,'spin')+' Importando…':ic('mail',15)+' Importar CVs desde Gmail')+'</button>' +
       (b.importMsg?'<p style="margin:10px 0 0;font-size:12.5px;color:var(--teal)">'+esc(b.importMsg)+'</p>':'') +
     '</div>';
@@ -3371,6 +3387,8 @@ function bind(){
   if ((f=document.getElementById("f_searchnice"))) f.addEventListener("input", function(e){ state.newsearch.nice=e.target.value; });
   if (document.getElementById("analyzeBtn")) document.getElementById("analyzeBtn").addEventListener("click", doAnalyzeNewSearch);
   if ((f=document.getElementById("f_cvfiles"))) f.addEventListener("change", function(e){ var files=e.target.files; if(files&&files.length) uploadCVFiles(files); });
+  if ((f=document.getElementById("f_impfrom"))) f.addEventListener("change", function(e){ state.cvbank.impFrom=e.target.value; });
+  if ((f=document.getElementById("f_impto"))) f.addEventListener("change", function(e){ state.cvbank.impTo=e.target.value; });
   if ((f=document.getElementById("f_newfolder"))){ f.focus(); f.addEventListener("keydown", function(e){ if(e.key==="Enter"){ createFolder(f.value); } }); }
   // Lista de CVs con checkboxes: 1 seleccionado = entrevista individual; 2+ = envío masivo.
   app.querySelectorAll(".cvchk").forEach(function(chk){
