@@ -1021,7 +1021,7 @@ function adminCall(action, targetId){
 }
 function submitToDB(){
   if (!state.interviewId) return Promise.resolve(false);
-  var answers = state.questions.map(function(q,i){ var a=state.answers[q.id]||{}; return { n:i+1, text:q.text, transcript:a.transcript||"", audio:(state.audioUrls&&state.audioUrls[q.id])||null, durationSec:(a.signals&&a.signals.durationSec)||0 }; });
+  var answers = state.questions.map(function(q,i){ var a=state.answers[q.id]||{}; return { n:i+1, text:q.text, category:q.category||"", transcript:a.transcript||"", audio:(state.audioUrls&&state.audioUrls[q.id])||null, durationSec:(a.signals&&a.signals.durationSec)||0, isFollowup:!!q.isFollowup }; });
   var payload = {
     id: state.interviewId, code: state.code,
     candidateName: state.candidateName||"", candidateEmail: state.candidateEmail||"",
@@ -1376,7 +1376,22 @@ function evaluateLocally(questions, answers, cfg){
   var hesitantN = per.filter(function(r){ var a=answers[r.q_id]; return a && isHesitant(a); }).length;
   var hesitantRate = answeredN ? hesitantN/answeredN : 0;
 
-  var recommendation = score >= 7.5 ? "Avanzar" : score >= 5 ? "Con reservas" : "No avanzar";
+  // Puntaje POR PREGUNTA (1-10), fusionando cada repregunta con su pregunta madre.
+  var nById = {}; questions.forEach(function(q,i){ nById[q.id]=i+1; });
+  var qualAssess = function(mq, merged){
+    var base = mq>=0.7 ? "Respuesta sólida y desarrollada." : mq>=0.45 ? "Respuesta aceptable pero mejorable." : mq>=0.2 ? "Respuesta floja o poco desarrollada." : "Respuesta insuficiente o sin responder.";
+    return base + (merged ? " (evaluada junto a su repregunta)" : "");
+  };
+  var perQuestion = questions.filter(function(q){ return !q.isFollowup; }).map(function(q){
+    var quals = [ answerQuality(answers[q.id]).q ];
+    questions.forEach(function(f){ if(f.isFollowup && f.rootId===q.id){ quals.push(answerQuality(answers[f.id]).q); } });
+    var mq = quals.reduce(function(s,v){ return s+v; },0)/quals.length;
+    var qscore = clamp(Math.round((1 + 9*mq)*2)/2, 1, 10);
+    return { n: nById[q.id], score: qscore, assessment: qualAssess(mq, quals.length>1) };
+  });
+  // El puntaje general surge del promedio de las preguntas principales.
+  if (perQuestion.length){ score = clamp(Math.round((perQuestion.reduce(function(s,p){ return s+p.score; },0)/perQuestion.length)*2)/2, 1, 10); }
+  var recommendation = verdictFromScore(score);
 
   var strengths = [];
   if (solidN >= Math.ceil(n*0.6)) strengths.push("Desarrolló con buen nivel de detalle la mayoría de las respuestas.");
@@ -1412,6 +1427,7 @@ function evaluateLocally(questions, answers, cfg){
   }
 
   return { overall: overall, score: score, recommendation: recommendation, strengths: strengths, improve: improve, probes: probes,
+           perQuestion: perQuestion,
            meta: { answeredN:answeredN, total:n, insufficientN:insufficientN, solidN:solidN, overallQuality:Math.round(overallQuality*100) } };
 }
 
@@ -1504,7 +1520,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v28.0-r40";
+var APP_VERSION = "v28.1-r41";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2228,7 +2244,7 @@ Screens["interview-detail"] = function(){
     '<div class="report-eyebrow">'+esc(x.candidate_name||'(sin nombre)')+' · '+esc(x.position||'')+'</div>' +
     '<div style="display:flex;align-items:flex-end;gap:14px;margin-top:8px;flex-wrap:wrap">' +
       (sc!=null?'<div class="report-score">'+sc+'<span style="font-size:20px;opacity:.6">/10</span></div>':'') +
-      '<span class="rec-tag" style="background:rgba(255,255,255,.14);color:inherit;border:1px solid rgba(255,255,255,.25)">'+esc(x.recommendation||'')+'</span>' +
+      (x.recommendation?'<span class="rec-tag" style="background:'+verdictColor(x.recommendation)+';color:#fff;border:none">'+esc(x.recommendation)+'</span>':'') +
     '</div>' +
     (r.overall?'<p style="margin-top:14px;font-size:13.5px;opacity:.85;line-height:1.6">'+esc(r.overall)+'</p>':'') +
     '<p style="margin-top:10px;font-size:11.5px;opacity:.6">'+esc(x.candidate_email||'')+' · '+esc(fmtDate(x.completed_at))+(x.report&&x.report.consent&&x.report.consent.accepted?' · ✓ consentimiento aceptado'+(x.report.consent.at?(' ('+esc(fmtDate(x.report.consent.at))+')'):''):'')+'</p>' +
@@ -2242,9 +2258,14 @@ Screens["interview-detail"] = function(){
   html += '<div style="display:grid;gap:12px">';
   answers.forEach(function(a){
     var p = perMap[a.n];
-    html += '<div class="qa-item">' +
-      '<p style="margin:0;font-size:12px;font-weight:700;color:var(--muted)">Pregunta '+esc(String(a.n||''))+(p&&p.rating?(' · <span style="color:'+(function(rt){rt=(rt||'').toLowerCase();return rt.indexOf('sól')>=0||rt.indexOf('sol')>=0?'var(--green)':rt.indexOf('acept')>=0?'var(--blue)':rt.indexOf('floja')>=0?'var(--amber)':'var(--brick)';})(p.rating)+'">'+esc(p.rating)+'</span>'):'')+'</p>' +
-      '<p class="qa-text">'+esc(a.text||'')+'</p>' +
+    var pScore = (p && typeof p.score==="number") ? p.score : null;
+    var label = a.isFollowup ? 'Repregunta' : ('Pregunta '+esc(String(a.n||'')));
+    html += '<div class="qa-item"'+(a.isFollowup?' style="border-left:3px solid var(--purple);background:var(--purple-tint)"':'')+'>' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        (pScore!=null?'<span class="mono" style="flex-shrink:0;min-width:40px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;background:'+scoreTintVar(pScore)+';color:'+scoreColorVar(pScore)+'">'+pScore+'<span style="font-size:9px;opacity:.6">/10</span></span>':'') +
+        '<p style="margin:0;font-size:12px;font-weight:700;color:'+(a.isFollowup?'var(--purple)':'var(--muted)')+'">'+label+'</p>' +
+      '</div>' +
+      '<p class="qa-text" style="margin-top:6px">'+esc(a.text||'')+'</p>' +
       (a.audio ? '<audio controls src="'+esc(a.audio)+'" style="width:100%;margin-top:8px"></audio>' : '') +
       (p&&p.assessment ? '<p style="margin:8px 0 0;font-size:13px;color:var(--ink)"><strong style="color:var(--muted)">IA:</strong> '+esc(p.assessment)+'</p>' : '') +
       (!a.audio && a.transcript ? '<p style="margin:8px 0 0;font-size:13px;color:var(--muted)">'+esc(a.transcript)+'</p>' : '') +
@@ -2537,10 +2558,10 @@ function buildResultsMessage(){
   if (state.code) L.push("Código: " + state.code);
   L.push("");
   var perMap = {};
-  if (r && r.ai && r.perQuestion){ r.perQuestion.forEach(function(p){ if (p && p.n!=null) perMap[p.n] = p; }); }
+  if (r && r.perQuestion){ r.perQuestion.forEach(function(p){ if (p && p.n!=null) perMap[p.n] = p; }); }
   if (r){
     L.push(r.ai ? "=== EVALUACIÓN CON IA (entrevistador senior) ===" : "=== EVALUACIÓN AUTOMÁTICA (por reglas) ===");
-    L.push("Puntaje: " + r.score + "/10  ·  " + r.recommendation);
+    L.push("Puntaje general: " + r.score + "/10  ·  Veredicto: " + r.recommendation);
     if (r.overall) L.push(r.overall);
     L.push("");
     if (r.strengths && r.strengths.length){ L.push("Fortalezas:"); r.strengths.forEach(function(s){ L.push("  • " + s); }); L.push(""); }
@@ -2557,7 +2578,7 @@ function buildResultsMessage(){
     else if (a && a.transcript) L.push("   Transcripción aprox.: " + a.transcript);
     else L.push("   (sin respuesta)");
     var p = perMap[i+1];
-    if (p && (p.assessment || p.rating)) L.push("   IA: " + (p.rating?("["+p.rating+"] "):"") + (p.assessment||""));
+    if (p && (p.assessment || typeof p.score==="number")) L.push("   Puntaje: " + (typeof p.score==="number"?(p.score+"/10 "):"") + (p.assessment?("· "+p.assessment):""));
     if (a && a.signals) L.push("   [duró " + (a.signals.durationSec||0) + "s · pausa máx " + (a.signals.longestSilence||0) + "s]");
     L.push("");
   });
@@ -2578,12 +2599,16 @@ function resultsMailtoHref(){
 /* ---------------- análisis con IA (Gemini vía función serverless /api/analyze) ---------------- */
 var AI_ANALYZE_ENDPOINT = "/api/analyze";
 function analyzeWithAI(){
+  // Mapa id -> número de pregunta (para vincular cada repregunta con su pregunta madre).
+  var idToN = {}; state.questions.forEach(function(q,i){ idToN[q.id] = i+1; });
   var payload = {
     position: state.config.position, company: state.config.company, focus: state.config.focus,
     level: state.config.level, language: state.config.language,
     questions: state.questions.map(function(q,i){
       var a = state.answers[q.id] || {};
-      return { n:i+1, text:q.text, category:q.category, lang:q.lang||"es", transcript:(a.transcript||""), durationSec:(a.signals&&a.signals.durationSec)||0 };
+      var isFu = !!q.isFollowup;
+      return { n:i+1, text:q.text, category:q.category, lang:q.lang||"es", transcript:(a.transcript||""), durationSec:(a.signals&&a.signals.durationSec)||0,
+               isFollowup:isFu, parentN: isFu ? (idToN[q.rootId]||null) : null };
     })
   };
   return fetch(AI_ANALYZE_ENDPOINT, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload) })
@@ -2608,13 +2633,24 @@ function mapAIQuestions(list, lang){
     return { id:"q"+i, text:String(q.text||"").trim(), category:cat, seconds: SECONDS_BY_CAT[cat]||120, lang: ql };
   }).filter(function(q){ return q.text; });
 }
+/* Veredicto general 1-10 -> etiqueta y color. */
+function verdictFromScore(sc){ sc=Number(sc)||0; return sc>=7 ? "Aprobado" : sc>=5 ? "Medio" : "Desaprobado"; }
+function verdictColor(v){ v=(v||"").toLowerCase();
+  if(v.indexOf("desaprob")>=0 || v.indexOf("no avanzar")>=0) return "var(--brick)";
+  if(v.indexOf("medio")>=0 || v.indexOf("reserva")>=0) return "var(--amber)";
+  if(v.indexOf("aprob")>=0 || v.indexOf("avanzar")>=0) return "var(--green)";
+  return "var(--muted)";
+}
 function reportFromAI(ai){
   function arr(x){ return Array.isArray(x) ? x.filter(function(v){ return v!=null && String(v).trim(); }).map(String) : []; }
   var sc = Number(ai.score); if (!(sc>=1 && sc<=10)) sc = 1; sc = Math.round(sc*2)/2;
-  var per = Array.isArray(ai.perQuestion) ? ai.perQuestion.map(function(p){ return { n:p.n, rating:String(p.rating||""), assessment:String(p.assessment||"") }; }) : [];
+  var per = Array.isArray(ai.perQuestion) ? ai.perQuestion.map(function(p){
+    var ps = Number(p.score); ps = (ps>=1 && ps<=10) ? Math.round(ps*2)/2 : null;
+    return { n:p.n, score:ps, rating:String(p.rating||""), assessment:String(p.assessment||"") };
+  }) : [];
   return {
     score: sc,
-    recommendation: String(ai.recommendation || (sc>=7.5?"Avanzar":sc>=5?"Con reservas":"No avanzar")),
+    recommendation: String(ai.veredicto || ai.recommendation || verdictFromScore(sc)),
     overall: String(ai.overall||""),
     strengths: arr(ai.strengths),
     improve: arr(ai.improve),
@@ -2966,7 +3002,7 @@ Screens.review = function(){
 
 Screens.report = function(){
   var r = state.report, c = state.config;
-  var recColor = r.recommendation.indexOf("Avanzar")===0 ? 'var(--green)' : r.recommendation.indexOf("reservas")>=0 ? 'var(--amber)' : 'var(--brick)';
+  var recColor = verdictColor(r.recommendation);
   var html = Header();
   html += '<div class="report-hero">' +
     '<div class="report-eyebrow">'+(r.ai?'Análisis con IA (entrevistador senior)':'Evaluación por reglas')+' · '+esc(c.position)+' · solo visible para vos</div>' +
@@ -2982,13 +3018,18 @@ Screens.report = function(){
     ReportList("A mejorar", r.improve, "var(--amber)") +
   '</div>';
   html += LanguageBox(r.language);
-  if (r.ai && r.perQuestion && r.perQuestion.length){
-    var ratingColor = function(rt){ rt=(rt||"").toLowerCase(); return rt.indexOf("sólida")>=0||rt.indexOf("solida")>=0?"var(--green)":rt.indexOf("acept")>=0?"var(--blue)":rt.indexOf("floja")>=0?"var(--amber)":"var(--brick)"; };
-    html += '<div class="card" style="padding:20px;margin-top:16px"><p style="font-size:13.5px;font-weight:700;color:var(--ink);margin:0 0 12px">Análisis por respuesta</p><div style="display:grid;gap:12px">';
+  if (r.perQuestion && r.perQuestion.length){
+    html += '<div class="card" style="padding:20px;margin-top:16px"><p style="font-size:13.5px;font-weight:700;color:var(--ink);margin:0 0 12px">Puntaje por pregunta</p><div style="display:grid;gap:12px">';
     r.perQuestion.forEach(function(p){
-      html += '<div style="border-left:3px solid '+ratingColor(p.rating)+';padding-left:12px">'+
-        '<p style="margin:0;font-size:12.5px;font-weight:700;color:var(--muted)">Pregunta '+esc(String(p.n||''))+(p.rating?(' · <span style="color:'+ratingColor(p.rating)+'">'+esc(p.rating)+'</span>'):'')+'</p>'+
-        '<p style="margin:3px 0 0;font-size:13px;line-height:1.5">'+esc(p.assessment||'')+'</p></div>';
+      var hasScore = (typeof p.score==="number");
+      var col = hasScore ? scoreColorVar(p.score) : "var(--muted)";
+      html += '<div style="display:flex;align-items:flex-start;gap:12px;border-left:3px solid '+col+';padding-left:12px">'+
+        (hasScore ? '<span class="mono" style="flex-shrink:0;min-width:44px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;background:'+scoreTintVar(p.score)+';color:'+col+'">'+p.score+'<span style="font-size:10px;opacity:.6">/10</span></span>' : '') +
+        '<div style="flex:1;min-width:0">'+
+          '<p style="margin:0;font-size:12.5px;font-weight:700;color:var(--muted)">Pregunta '+esc(String(p.n||''))+(p.rating?(' · '+esc(p.rating)):'')+'</p>'+
+          '<p style="margin:3px 0 0;font-size:13px;line-height:1.5">'+esc(p.assessment||'')+'</p>'+
+        '</div>'+
+      '</div>';
     });
     html += '</div></div>';
   }
