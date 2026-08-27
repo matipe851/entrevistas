@@ -1549,7 +1549,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.2-r46";
+var APP_VERSION = "v29.3-r47";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1862,12 +1862,12 @@ Screens["mod2-legajo"] = function(){
   if (e.loading || e.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando empleados…</p></div>'; return html; }
   if (e.error){ html += Note("err", esc(e.error)); return html; }
   if (!e.items.length){ html += '<div class="center-block" style="padding:28px 12px">'+ic('file',26)+'<h2 style="font-size:16px">Todavía no cargaste ningún empleado</h2><p>Creá el primer legajo con los datos de la persona y su documentación.</p><button class="btn btn-primary btn-sm" data-action="emp-new" style="margin-top:12px">'+ic('plus',14)+' Cargar primer empleado</button></div>'; return html; }
-  html += '<div class="input-row" style="margin-bottom:12px"><span style="color:var(--muted)">'+ic('eye',14)+'</span><input id="f_emp_search" type="text" placeholder="Buscar por nombre, DNI o puesto…" value="'+esc(e.search||"")+'" autocomplete="off"></div>';
+  html += '<div class="input-row" style="margin-bottom:12px"><span style="color:var(--muted)">'+ic('eye',14)+'</span><input id="f_emp_search" type="text" placeholder="Buscar por N° de legajo, nombre, DNI o puesto…" value="'+esc(e.search||"")+'" autocomplete="off"></div>';
   html += '<div id="empList" style="display:grid;gap:8px">';
   e.items.forEach(function(x){
     var ndoc = Array.isArray(x.documents)?x.documents.length:0;
     var inactive = (x.status==="inactivo");
-    var skey = (empFullName(x)+" "+(x.dni||"")+" "+(x.position||"")+" "+(x.cuil||"")).toLowerCase();
+    var skey = ((x.legajo_number||"")+" "+empFullName(x)+" "+(x.dni||"")+" "+(x.position||"")+" "+(x.cuil||"")).toLowerCase();
     html += '<div class="qa-item emprow" data-search="'+esc(skey)+'" style="cursor:pointer'+(inactive?';opacity:.6':'')+'" data-action="emp-open" data-id="'+esc(x.id)+'">' +
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
         '<span style="flex-shrink:0;width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(x)[0]||"?").toUpperCase())+'</span>' +
@@ -1969,10 +1969,12 @@ Screens["mod2-abm"] = function(){
   if (e.loading || e.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando empleados…</p></div>'; return html; }
   if (e.error){ html += Note("err", esc(e.error)); return html; }
   if (!e.items.length){ html += '<div class="center-block" style="padding:28px 12px">'+ic('users',26)+'<h2 style="font-size:16px">No hay empleados cargados</h2><p>Primero dá de alta un empleado (se crea su legajo) y después registrás sus movimientos.</p><button class="btn btn-primary btn-sm" data-action="emp-new" style="margin-top:12px">'+ic('plus',14)+' Alta de empleado</button></div>'; return html; }
-  html += '<div style="display:grid;gap:8px">';
+  html += '<div class="input-row" style="margin-bottom:12px"><span style="color:var(--muted)">'+ic('eye',14)+'</span><input id="f_abm_search" type="text" placeholder="Buscar por N° de legajo, nombre o DNI…" value="'+esc(e.search||"")+'" autocomplete="off"></div>';
+  html += '<div id="abmList" style="display:grid;gap:8px">';
   e.items.forEach(function(x){
     var inactive=(x.status==="inactivo");
-    html += '<div class="qa-item" style="cursor:pointer'+(inactive?';opacity:.65':'')+'" data-action="mov-open" data-id="'+esc(x.id)+'">' +
+    var skey = ((x.legajo_number||"")+" "+empFullName(x)+" "+(x.dni||"")+" "+(x.position||"")).toLowerCase();
+    html += '<div class="qa-item abmrow" data-search="'+esc(skey)+'" style="cursor:pointer'+(inactive?';opacity:.65':'')+'" data-action="mov-open" data-id="'+esc(x.id)+'">' +
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
         '<span style="flex-shrink:0;width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(x)[0]||"?").toUpperCase())+'</span>' +
         '<div style="flex:1;min-width:140px">' +
@@ -1984,6 +1986,7 @@ Screens["mod2-abm"] = function(){
     '</div>';
   });
   html += '</div>';
+  html += '<p id="abmNoMatch" style="display:none;font-size:13px;color:var(--muted);text-align:center;margin-top:14px">Ningún empleado coincide con la búsqueda.</p>';
   return html;
 };
 
@@ -2004,6 +2007,10 @@ Screens["emp-movements"] = function(){
       '<span class="rec-tag" style="background:'+(inactive?'var(--brick)':'var(--green)')+';color:#fff;font-size:12px">'+(inactive?'Baja':'Activo')+'</span>' +
     '</div>' +
     (inactive && (e.termination_date||e.termination_reason) ? '<p style="margin:10px 0 0;font-size:12.5px;color:var(--brick)">Desvinculado'+(e.termination_date?(' el '+esc(e.termination_date)):'')+(e.termination_reason?(' · '+esc(e.termination_reason)):'')+'</p>' : '') +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
+      '<button class="btn btn-ghost btn-sm" data-action="emp-open" data-id="'+esc(e.id)+'">'+ic('file',14)+' Ver ficha completa</button>' +
+      (e.email?'<a class="btn btn-ghost btn-sm" href="mailto:'+esc(e.email)+'">'+ic('mail',14)+' '+esc(e.email)+'</a>':'') +
+    '</div>' +
   '</div>';
   if (a.msg) html += Note("ok", esc(a.msg));
   // Formulario de registro (si el empleado está activo o para registrar baja)
@@ -4477,6 +4484,17 @@ function bind(){
     };
     f.addEventListener("input", function(e){ state.emp.search=e.target.value; applyEmpFilter(); });
     applyEmpFilter();
+  }
+  // ---- ABM: buscador de empleados (por N° de legajo, nombre, DNI) ----
+  if ((f=document.getElementById("f_abm_search"))){
+    var applyAbmFilter=function(){
+      var qq=(state.emp.search||"").trim().toLowerCase(); var shown=0;
+      var rows=document.querySelectorAll("#abmList .abmrow");
+      rows.forEach(function(row){ var k=row.getAttribute("data-search")||""; var m=!qq||k.indexOf(qq)>=0; row.style.display=m?"":"none"; if(m)shown++; });
+      var nm=document.getElementById("abmNoMatch"); if(nm) nm.style.display=(rows.length && !shown)?"block":"none";
+    };
+    f.addEventListener("input", function(e){ state.emp.search=e.target.value; applyAbmFilter(); });
+    applyAbmFilter();
   }
   // ---- Legajo: campos de la ficha ----
   [["f_emp_legajo","legajo_number"],["f_emp_first","first_name"],["f_emp_last","last_name"],["f_emp_dni","dni"],["f_emp_cuil","cuil"],["f_emp_birth","birth_date"],
