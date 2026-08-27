@@ -333,6 +333,25 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    if (body.task === "transcribe") {
+      var au = body.audio;
+      if (!au || !au.data) { res.status(200).json({ ok: false, error: "no_audio" }); return; }
+      var mt = String(au.mimeType || "audio/webm").split(";")[0].trim();
+      var LNT = { es: "español", en: "inglés", pt: "portugués", fr: "francés", it: "italiano", de: "alemán" };
+      var expected = LNT[body.language] || "español";
+      var tprompt = "Escuchá este audio de una entrevista laboral y TRANSCRIBÍ TEXTUALMENTE lo que dice la persona, palabra por palabra. " +
+        "La consigna esperaba una respuesta en " + expected + ", pero transcribí EXACTAMENTE en el idioma que la persona realmente habla (por ejemplo, si habla en inglés, transcribí en inglés). NO traduzcas. " +
+        "Si el audio está vacío, en silencio o no hay voz humana entendible, devolvé el texto vacío. " +
+        'Devolvé EXCLUSIVAMENTE un JSON con esta forma: { "transcript": "texto transcripto aquí" }';
+      var tparts = [ { text: tprompt }, { inline_data: { mime_type: mt, data: au.data } } ];
+      var gtr = await callGemini(key, tparts, 1500, 0.0);
+      if (!gtr.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gtr.data && gtr.data.error && gtr.data.error.message) || ("HTTP " + gtr.status) }); return; }
+      var ptr = parseJson(extractText(gtr.data));
+      var tr = (ptr && typeof ptr.transcript === "string") ? ptr.transcript : "";
+      res.status(200).json({ ok: true, transcript: String(tr).slice(0, 8000) });
+      return;
+    }
+
     var ga = await callGemini(key, [{ text: analysisPrompt(body) }], 8192, 0.4);
     if (!ga.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (ga.data && ga.data.error && ga.data.error.message) || ("HTTP " + ga.status) }); return; }
     var parsed = parseJson(extractText(ga.data));
