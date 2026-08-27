@@ -65,16 +65,23 @@ module.exports = async function handler(req, res) {
       if (type !== "entrada" && type !== "salida") { res.status(200).json({ ok: false, error: "bad_type" }); return; }
       var first = String(b.first_name || "").slice(0, 120).trim();
       var last = String(b.last_name || "").slice(0, 120).trim();
-      var legajo = String(b.legajo_number || "").slice(0, 60).trim();
-      if (!legajo) { res.status(200).json({ ok: false, error: "no_legajo" }); return; }
+      var dni = String(b.dni || b.legajo_number || "").slice(0, 60).trim();
+      var dniDigits = dni.replace(/\D/g, "");
+      if (!dniDigits) { res.status(200).json({ ok: false, error: "no_dni" }); return; }
       if (!first && !last) { res.status(200).json({ ok: false, error: "no_name" }); return; }
 
-      // Buscar el empleado por N° de legajo dentro del dueño del fichador.
+      // Buscar el empleado por N° de DOCUMENTO (DNI) dentro del dueño del fichador.
+      // Comparamos solo los dígitos (así "30.123.456" y "30123456" matchean).
       var emp = null;
       try {
-        var er = await fetch(base + "/rest/v1/employees?owner=eq." + encodeURIComponent(owner) + "&legajo_number=eq." + encodeURIComponent(legajo) + "&select=id,first_name,last_name,status&limit=1", { headers: headers });
+        var er = await fetch(base + "/rest/v1/employees?owner=eq." + encodeURIComponent(owner) + "&select=id,first_name,last_name,status,dni,legajo_number&limit=5000", { headers: headers });
         var erows = await er.json();
-        if (Array.isArray(erows) && erows[0]) emp = erows[0];
+        if (Array.isArray(erows)) {
+          for (var i = 0; i < erows.length; i++) {
+            var ed = String(erows[i].dni || "").replace(/\D/g, "");
+            if (ed && ed === dniDigits) { emp = erows[i]; break; }
+          }
+        }
       } catch (e) {}
 
       var nameEntered = (first + " " + last).trim();
@@ -84,13 +91,21 @@ module.exports = async function handler(req, res) {
       var acc = (typeof b.accuracy === "number") ? b.accuracy : null;
 
       var row = {
-        owner: owner, employee_id: emp ? emp.id : null, legajo_number: legajo, name_entered: nameEntered,
+        owner: owner, employee_id: emp ? emp.id : null, legajo_number: emp ? (emp.legajo_number || "") : "", dni: dni, name_entered: nameEntered,
         type: type, photo_url: photo || null, lat: lat, lng: lng, accuracy: acc, source: "fichador"
       };
+      // Reintento resiliente: si la columna "dni" todavía no existe, guardamos sin ella.
+      var rowNoDni = Object.assign({}, row); delete rowNoDni.dni;
       var ins = await fetch(base + "/rest/v1/attendance", {
         method: "POST", headers: Object.assign({}, headers, { Prefer: "return=representation" }), body: JSON.stringify(row)
       });
       var jj = await ins.json();
+      if (!ins.ok) {
+        ins = await fetch(base + "/rest/v1/attendance", {
+          method: "POST", headers: Object.assign({}, headers, { Prefer: "return=representation" }), body: JSON.stringify(rowNoDni)
+        });
+        jj = await ins.json();
+      }
       if (!ins.ok || !Array.isArray(jj) || !jj[0]) { var t = JSON.stringify(jj); res.status(200).json({ ok: false, error: "insert_failed", detail: String(t).slice(0, 200) }); return; }
       var saved = jj[0];
       res.status(200).json({
