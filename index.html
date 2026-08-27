@@ -622,6 +622,19 @@ function dbCreateMovement(row){
   return supaFetch("/rest/v1/employee_movements", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
     .then(function(r){ return r.json().then(function(j){ return (Array.isArray(j)&&j[0])||null; }); }).catch(function(){ return null; });
 }
+/* Asistencia y horarios: fichador + fichadas. */
+function dbGetFichadorConfig(){
+  return supaFetch("/rest/v1/fichador_config?select=*&limit=1").then(function(r){ return r.json(); })
+    .then(function(j){ return (Array.isArray(j)&&j[0])||null; }).catch(function(){ return null; });
+}
+function dbCreateFichadorConfig(code){
+  return supaFetch("/rest/v1/fichador_config", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify({ code:code }) })
+    .then(function(r){ return r.json(); }).then(function(j){ return (Array.isArray(j)&&j[0])||null; }).catch(function(){ return null; });
+}
+function dbListAttendance(){
+  return supaFetch("/rest/v1/attendance?select=*&order=punched_at.desc&limit=500").then(function(r){ return r.json(); })
+    .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1525,6 +1538,8 @@ var state = {
   emp: { loading:false, items:null, error:null, search:"", msg:"" },
   empform: null,
   abm: null,
+  asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen" },
+  fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
   admin: { loading:false, items:null, error:null },
@@ -1549,7 +1564,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.3-r47";
+var APP_VERSION = "v29.4-r48";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1828,7 +1843,7 @@ Screens["mod2-home"] = function(){
   var areas = [
     { active:true, action:"go-legajo", icon:"file", tag:"Activo", title:"1 · Legajo del empleado", desc:"Ficha completa de cada persona: datos personales, laborales, contacto y documentación." },
     { active:true, action:"go-abm", icon:"plus", tag:"Activo", title:"2 · Altas, bajas y modificaciones", desc:"Alta, cambios de puesto, ascensos, cambios salariales y baja con su motivo." },
-    { icon:"clock",    tag:"Próximamente", title:"3 · Asistencia y horarios",       desc:"Control de presentismo, turnos, tardanzas y horas trabajadas." },
+    { active:true, action:"go-asistencia", icon:"clock", tag:"Activo", title:"3 · Asistencia y horarios", desc:"Fichador con cámara y ubicación, control horario, tardanzas, ausencias y horas extra." },
     { icon:"home",     tag:"Próximamente", title:"4 · Vacaciones y licencias",      desc:"Solicitudes, saldos de días y aprobación de licencias." },
     { icon:"briefcase",tag:"Próximamente", title:"5 · Liquidación de sueldos",      desc:"Cálculo de haberes, conceptos, recibos y net a pagar." },
     { icon:"eye",      tag:"Próximamente", title:"6 · Evaluación de desempeño",     desc:"Objetivos, feedback y revisiones periódicas del personal." },
@@ -1926,6 +1941,22 @@ Screens["emp-form"] = function(){
     '</div>' +
     empInput("f_emp_salary","Salario actual (bruto)",f.salary,"","Ej: $800.000","Los cambios de salario se registran en «Altas, bajas y modificaciones».") +
   '</div></div>';
+  // Turno / horario (usado en Asistencia para detectar tardanzas, ausencias y horas extra)
+  var DAYS=[["1","Lun"],["2","Mar"],["3","Mié"],["4","Jue"],["5","Vie"],["6","Sáb"],["7","Dom"]];
+  var wdset=String(f.work_days||"").split(",").map(function(s){return s.trim();});
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 6px">Turno / horario</h3>' +
+    '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Se usa en «Asistencia» para marcar llegadas tarde, ausencias y horas extra.</p>' +
+    '<div style="display:grid;gap:14px">' +
+      '<div class="grid2" style="gap:14px">' +
+        '<label class="field"><span class="field-label">Hora de entrada</span><div class="input-row"><input id="f_emp_shiftin" type="time" value="'+esc(f.shift_in||"")+'"></div></label>' +
+        '<label class="field"><span class="field-label">Hora de salida</span><div class="input-row"><input id="f_emp_shiftout" type="time" value="'+esc(f.shift_out||"")+'"></div></label>' +
+      '</div>' +
+      '<label class="field"><span class="field-label">Tolerancia para llegada tarde (minutos)</span><div class="input-row" style="max-width:160px"><input id="f_emp_tol" type="number" min="0" value="'+esc(String(f.tolerance_min!=null?f.tolerance_min:10))+'"></div></label>' +
+      '<div><span class="field-label" style="display:block;margin-bottom:8px">Días laborables</span><div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        DAYS.map(function(d){ var on=wdset.indexOf(d[0])>=0; return '<button type="button" class="pill-time" data-action="emp-wday" data-day="'+d[0]+'" style="cursor:pointer;border:none;background:'+(on?'var(--teal)':'var(--surface-2)')+';color:'+(on?'#fff':'var(--ink)')+';'+(on?'font-weight:800':'opacity:.85')+'">'+d[1]+'</button>'; }).join('') +
+      '</div><span class="field-hint" style="display:block;margin-top:6px">Los días no marcados cuentan como franco.</span></div>' +
+    '</div>' +
+  '</div>';
   // Documentación
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 6px">Documentación</h3>' +
     '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Adjuntá CV, títulos, certificados o contrato (PDF o imagen, máx. 10 MB c/u).</p>' +
@@ -2058,6 +2089,118 @@ Screens["emp-movements"] = function(){
     });
     html += '</div>';
   }
+  return html;
+};
+
+/* ---- Asistencia y horarios (reclutador) ---- */
+Screens["mod2-asistencia"] = function(){
+  var s = state.asist;
+  var html = Header();
+  html += backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('clock',20)+'<h2 style="font-size:18px;color:var(--ink)">Asistencia y horarios</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 14px">Compartí el link del fichador con tus empleados: fichan con foto y ubicación usando su nombre y N° de legajo, y las fichadas llegan acá automáticamente.</p>';
+  if (s.msg) html += Note("ok", esc(s.msg));
+  if (s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando asistencia…</p></div>'; return html; }
+  if (s.error){ html += Note("err", esc(s.error)); return html; }
+  // Link del fichador
+  var link=fichadorLink();
+  html += '<div class="card" style="margin-bottom:16px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;color:var(--teal)">'+ic('mic',16)+'<h3 style="font-size:14px;color:var(--ink);margin:0">Fichador (link para empleados)</h3></div>';
+  if(link){
+    html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+      '<input readonly value="'+esc(link)+'" onclick="this.select()" style="flex:1;min-width:180px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;color:var(--ink);font-size:12px;font-family:inherit">' +
+      '<button class="btn btn-teal btn-sm" data-action="copy-fichlink" data-link="'+esc(link)+'">'+ic('copy',13)+' Copiar</button>' +
+      '<button class="btn btn-ghost btn-sm" data-action="open-fichlink" data-code="'+esc(s.config&&s.config.code||"")+'">'+ic('eye',13)+' Abrir</button>' +
+    '</div>' + (audioUploadConfigured()?'':Note("info","Para que la foto del fichaje se guarde, configurá Cloudinary. Sin eso, igual se registra la fichada (sin foto)."));
+  } else { html += Note("err","No pude generar el link del fichador. Si es la primera vez, revisá que hayas corrido el SQL de asistencia (sql_asistencia.sql)."); }
+  html += '</div>';
+  // Filtros: día + vista
+  html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
+    '<label class="field" style="flex:0 0 auto"><span class="field-label">Día</span><div class="input-row"><input id="f_asist_day" type="date" value="'+esc(s.day||todayISO())+'"></div></label>' +
+    '<div style="display:flex;gap:6px;align-self:flex-end">' +
+      '<button class="pill-time" data-action="asist-view" data-v="resumen" style="cursor:pointer;border:none;background:'+((s.view||"resumen")==="resumen"?'var(--teal)':'var(--surface-2)')+';color:'+((s.view||"resumen")==="resumen"?'#fff':'var(--ink)')+'">Resumen del día</button>' +
+      '<button class="pill-time" data-action="asist-view" data-v="log" style="cursor:pointer;border:none;background:'+(s.view==="log"?'var(--teal)':'var(--surface-2)')+';color:'+(s.view==="log"?'#fff':'var(--ink)')+'">Todas las fichadas</button>' +
+    '</div>' +
+  '</div>';
+  var day=s.day||todayISO();
+  if ((s.view||"resumen")==="resumen"){
+    var sum=asistDaySummary();
+    if(!sum.rows.length && !sum.absent.length){ html += '<div class="center-block" style="padding:26px 12px">'+ic('clock',24)+'<p>No hay fichadas para este día.</p></div>'; }
+    else {
+      html += '<div style="display:grid;gap:8px">';
+      sum.rows.forEach(function(r){
+        var estado = r.late!=null ? ('<span style="color:var(--amber);font-weight:700">Tarde '+fmtMinDur(r.late)+'</span>') : (r.entrada?'<span style="color:var(--green);font-weight:700">A tiempo</span>':'');
+        html += '<div class="qa-item">' +
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+            '<div style="flex:1;min-width:140px"><p style="margin:0;font-weight:700;font-size:14px;color:var(--ink)">'+esc(r.name)+(r.legajo?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(r.legajo)+'</span>'):'')+(!r.matched?' <span style="font-size:11px;color:var(--brick)">· sin match</span>':'')+'</p>' +
+            '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">Entrada '+(r.entrada?esc(tsHM(r.entrada.punched_at)):'—')+' · Salida '+(r.salida?esc(tsHM(r.salida.punched_at)):'—')+' · '+fmtMinDur(r.workedMin)+(r.extra?(' · <span style="color:var(--blue)">+'+fmtMinDur(r.extra)+' extra</span>'):'')+'</p></div>' +
+            '<div style="font-size:12px;text-align:right">'+estado+'</div>' +
+          '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+      if(sum.absent.length){
+        html += '<div style="margin-top:14px"><p style="font-size:12.5px;font-weight:700;color:var(--brick);margin:0 0 8px">Ausentes ('+sum.absent.length+')</p><div style="display:grid;gap:6px">';
+        sum.absent.forEach(function(e){ html += '<div style="padding:8px 10px;background:var(--brick-tint);border-radius:9px;font-size:13px;color:var(--ink)">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+' — no fichó</div>'; });
+        html += '</div></div>';
+      }
+    }
+  } else {
+    var dayP=(s.items||[]).filter(function(p){ return tsDayKey(p.punched_at)===day; });
+    if(!dayP.length){ html += '<div class="center-block" style="padding:26px 12px">'+ic('clock',24)+'<p>No hay fichadas para este día.</p></div>'; }
+    else {
+      html += '<div style="display:grid;gap:8px">';
+      dayP.forEach(function(p){
+        var col=p.type==="entrada"?"var(--green)":"var(--brick)";
+        var nm=p.name_entered||"(sin nombre)";
+        var maps=(p.lat!=null&&p.lng!=null)?("https://www.google.com/maps?q="+p.lat+","+p.lng):"";
+        html += '<div class="qa-item" style="border-left:3px solid '+col+'">' +
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+            (p.photo_url?'<a href="'+esc(p.photo_url)+'" target="_blank" rel="noopener" style="flex-shrink:0"><img src="'+esc(p.photo_url)+'" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover"></a>':'<span style="flex-shrink:0;width:44px;height:44px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">'+ic('users',18)+'</span>') +
+            '<div style="flex:1;min-width:120px"><p style="margin:0;font-weight:700;font-size:13.5px;color:var(--ink)">'+esc(nm)+(p.legajo_number?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(p.legajo_number)+'</span>'):'')+'</p>' +
+            '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)"><span style="color:'+col+';font-weight:700;text-transform:uppercase">'+esc(p.type)+'</span> · '+esc(tsHM(p.punched_at))+(maps?(' · <a href="'+esc(maps)+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">ubicación</a>'):'')+(!p.employee_id?' · <span style="color:var(--brick)">sin match</span>':'')+'</p></div>' +
+          '</div>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+  }
+  return html;
+};
+
+/* ---- Fichador público (empleado) ---- */
+Screens["fichador"] = function(){
+  var f = state.fichador;
+  var head = function(){ return '<div style="display:flex;align-items:center;gap:10px;padding:14px 4px 18px;max-width:520px;margin:0 auto">'+ic('clock',24)+'<span style="font-weight:800;font-size:16px;color:var(--ink)">Fichador'+((f&&f.company)?(' · '+esc(f.company)):'')+'</span></div>'; };
+  if (!f || f.loading){ return head() + Centered(ic('loader',26,'spin'), "Cargando fichador…", ""); }
+  if (f.error){ var em=(f.error==="not_found")?"Este fichador no existe o fue dado de baja.":(f.error==="closed")?"El fichador está cerrado.":"No pudimos cargar el fichador. Probá de nuevo."; return head() + Centered(ic('alert',26), "Fichador no disponible", em); }
+  if (f.phase==="done" && f.result){
+    var tlabel=f.result.type==="entrada"?"Entrada":"Salida";
+    return head() + '<div class="card" style="max-width:520px;margin:0 auto"><div class="center-block" style="padding:26px 12px">'+ic('check',34)+'<h2 style="font-size:20px">¡Fichaste '+tlabel.toLowerCase()+'!</h2><p>'+esc(f.result.name||"")+(f.result.at?(' · '+esc(tsHM(f.result.at))):'')+'</p>'+(f.result.matched?'':'<p style="font-size:12.5px;color:var(--amber)">Registramos tu fichada. (No encontramos tu legajo en el sistema; avisale a RR.HH.)</p>')+'<button class="btn btn-ghost btn-sm" data-action="fichar-again" style="margin-top:14px">'+ic('rotate',14)+' Fichar de nuevo</button></div></div>';
+  }
+  var html = head();
+  html += '<div class="card" style="max-width:520px;margin:0 auto">';
+  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 14px">Cargá tus datos, mirá a la cámara y tocá <b>Entrada</b> o <b>Salida</b>. Se registra con foto, ubicación y la hora del sistema.</p>';
+  if (f.error) html += Note("err", esc(f.error));
+  // Cámara
+  html += '<div style="position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3;margin-bottom:12px;display:flex;align-items:center;justify-content:center">' +
+    '<video id="ficamvideo" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>' +
+    (f.camErr?'<span style="position:absolute;color:#fff;font-size:12.5px;padding:12px;text-align:center">'+esc(f.camErr)+'</span>':'') +
+  '</div>';
+  // Ubicación
+  html += '<p style="font-size:12px;margin:0 0 14px;color:'+(f.geo?'var(--green)':(f.geoErr?'var(--amber)':'var(--muted)'))+'">'+ic('globe',13)+' '+(f.geo?('Ubicación tomada (±'+Math.round(f.geo.acc||0)+' m)'):(f.geoErr?esc(f.geoErr):'Obteniendo ubicación…'))+'</p>';
+  // Datos
+  html += '<div style="display:grid;gap:12px">' +
+    '<div class="grid2" style="gap:12px">' +
+      '<label class="field"><span class="field-label">Nombre</span><div class="input-row"><input id="f_fi_first" value="'+esc(f.first||"")+'" placeholder="Nombre"></div></label>' +
+      '<label class="field"><span class="field-label">Apellido</span><div class="input-row"><input id="f_fi_last" value="'+esc(f.last||"")+'" placeholder="Apellido"></div></label>' +
+    '</div>' +
+    '<label class="field"><span class="field-label">N° de legajo</span><div class="input-row"><span style="color:var(--muted)">'+ic('file',15)+'</span><input id="f_fi_legajo" value="'+esc(f.legajo||"")+'" placeholder="Ej: 001"></div></label>' +
+  '</div>';
+  html += '<div style="display:flex;gap:10px;margin-top:18px">' +
+    '<button class="btn btn-block" id="fichEntradaBtn" style="background:var(--green);color:#fff" '+(f.sending?'disabled':'')+'>'+(f.sending?ic('loader',15,'spin'):ic('check',16))+' Entrada</button>' +
+    '<button class="btn btn-block" id="fichSalidaBtn" style="background:var(--brick);color:#fff" '+(f.sending?'disabled':'')+'>'+(f.sending?ic('loader',15,'spin'):ic('back',16))+' Salida</button>' +
+  '</div>';
+  html += '</div>';
   return html;
 };
 
@@ -3397,6 +3540,7 @@ function goMod2(){ resetInterview(); state.error=null; state.dash.detail=null; s
 function emptyEmpForm(){
   return { id:null, legajo_number:"", first_name:"", last_name:"", birth_date:"", dni:"", cuil:"", address:"", email:"", phone:"",
     hire_date:"", position:"", category:"", collective_agreement:"", contract_type:"", salary:"", status:"activo", notes:"",
+    shift_in:"", shift_out:"", work_days:"1,2,3,4,5", tolerance_min:10,
     documents:[], saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
 }
 function goLegajo(){ state.emp.error=null; state.emp.msg=""; state.screen="mod2-legajo"; render(); loadEmployees(); }
@@ -3411,7 +3555,7 @@ function openEmployee(id){
   var e=(state.emp.items||[]).filter(function(z){return z.id===id;})[0];
   if(!e) return;
   var f=emptyEmpForm();
-  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
+  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
   f.documents = Array.isArray(e.documents)?e.documents.slice():[];
   state.empform=f; state.screen="emp-form"; render();
 }
@@ -3422,7 +3566,9 @@ function empFormRow(){
     address:(f.address||"").trim(), email:(f.email||"").trim(), phone:(f.phone||"").trim(),
     hire_date:(f.hire_date||"")||null, position:(f.position||"").trim(), category:(f.category||"").trim(),
     collective_agreement:(f.collective_agreement||"").trim(), contract_type:(f.contract_type||"").trim(),
-    salary:(f.salary||"").trim(), status:f.status||"activo", notes:(f.notes||"").trim(), documents:Array.isArray(f.documents)?f.documents:[] };
+    salary:(f.salary||"").trim(), status:f.status||"activo", notes:(f.notes||"").trim(),
+    shift_in:(f.shift_in||"").trim(), shift_out:(f.shift_out||"").trim(), work_days:(f.work_days||"").trim(), tolerance_min:(parseInt(f.tolerance_min,10)||0),
+    documents:Array.isArray(f.documents)?f.documents:[] };
 }
 function saveEmployee(){
   var f=state.empform; if(!f) return;
@@ -3431,7 +3577,7 @@ function saveEmployee(){
   var row=empFormRow();
   var wasEdit=!!f.id;
   // Resiliente: si las columnas nuevas (legajo_number/salary) aún no existen, reintentamos sin ellas.
-  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason;
+  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min;
   function attempt(r){ return wasEdit ? dbUpdateEmployee(f.id, r) : dbCreateEmployee(r); }
   attempt(row).catch(function(){ return attempt(slim); }).then(function(saved){
     // Al dar de alta un empleado nuevo, registramos el movimiento "Alta" (best-effort).
@@ -3447,6 +3593,128 @@ function saveEmployee(){
   });
 }
 function todayISO(){ try{ var d=new Date(); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }catch(e){ return null; } }
+
+/* ---- Módulo 2 · Asistencia y horarios ---- */
+function hmToMin(hm){ var m=/^(\d{1,2}):(\d{2})/.exec(String(hm||"").trim()); if(!m) return null; return parseInt(m[1],10)*60+parseInt(m[2],10); }
+function tsDayKey(ts){ try{ var d=new Date(ts); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }catch(e){ return ""; } }
+function tsHM(ts){ try{ var d=new Date(ts); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }catch(e){ return ""; } }
+function tsMinOfDay(ts){ try{ var d=new Date(ts); return d.getHours()*60+d.getMinutes(); }catch(e){ return null; } }
+function dayWeekNum(dayStr){ try{ var p=dayStr.split("-"); var d=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); var wd=d.getDay(); return wd===0?7:wd; }catch(e){ return null; } } // 1=Lun..7=Dom
+function fmtMinDur(min){ if(min==null) return "—"; min=Math.max(0,Math.round(min)); var h=Math.floor(min/60), m=min%60; return h+"h "+("0"+m).slice(-2)+"m"; }
+
+function goAsistencia(){ state.error=null; state.asist.msg=""; state.asist.error=null; if(!state.asist.day) state.asist.day=todayISO(); state.screen="mod2-asistencia"; render(); loadAsistencia(); }
+function loadAsistencia(){
+  if(!(supaConfigured() && isLoggedIn())){ state.asist.items=[]; render(); return; }
+  state.asist.loading=true; state.asist.error=null; render();
+  // Aseguramos que exista el código del fichador.
+  var cfgP = dbGetFichadorConfig().then(function(cfg){
+    if(cfg) return cfg;
+    return dbCreateFichadorConfig(makeCode()).then(function(c){ return c || dbGetFichadorConfig(); });
+  });
+  Promise.all([ cfgP, dbListAttendance(), (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()) ])
+    .then(function(res){
+      state.asist.config=res[0]||null;
+      state.asist.items=res[1]||[];
+      state.emp.items=res[2]||[];
+      state.asist.loading=false; render();
+    }).catch(function(){ state.asist.loading=false; state.asist.error="No pude cargar la asistencia."; render(); });
+}
+function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
+
+/* Resumen del día: por cada empleado, primera entrada / última salida / horas / estado. */
+function asistDaySummary(){
+  var day=state.asist.day||todayISO();
+  var punches=(state.asist.items||[]).filter(function(p){ return tsDayKey(p.punched_at)===day; });
+  var emps=state.emp.items||[];
+  var empById={}; emps.forEach(function(e){ empById[e.id]=e; });
+  var groups={};
+  punches.forEach(function(p){
+    var key=p.employee_id||("n:"+(p.name_entered||"")+"|"+(p.legajo_number||""));
+    if(!groups[key]) groups[key]={ emp: p.employee_id?empById[p.employee_id]:null, name:(p.employee_id&&empById[p.employee_id]?empFullName(empById[p.employee_id]):(p.name_entered||"(sin nombre)")), legajo:(p.legajo_number||""), matched:!!p.employee_id, entradas:[], salidas:[] };
+    if(p.type==="entrada") groups[key].entradas.push(p); else if(p.type==="salida") groups[key].salidas.push(p);
+  });
+  var wd=dayWeekNum(day);
+  var rows=Object.keys(groups).map(function(k){
+    var g=groups[k];
+    g.entradas.sort(function(a,b){ return new Date(a.punched_at)-new Date(b.punched_at); });
+    g.salidas.sort(function(a,b){ return new Date(a.punched_at)-new Date(b.punched_at); });
+    var entrada=g.entradas[0]||null; var salida=g.salidas[g.salidas.length-1]||null;
+    var workedMin=null; if(entrada&&salida){ workedMin=(new Date(salida.punched_at)-new Date(entrada.punched_at))/60000; }
+    var late=null, extra=null;
+    var e=g.emp;
+    if(e){
+      var si=hmToMin(e.shift_in), so=hmToMin(e.shift_out), tol=(typeof e.tolerance_min==="number"?e.tolerance_min:parseInt(e.tolerance_min,10))||0;
+      if(entrada&&si!=null){ var em=tsMinOfDay(entrada.punched_at); if(em!=null && em>si+tol) late=em-si; }
+      if(workedMin!=null&&si!=null&&so!=null){ var sched=so-si; if(sched>0 && workedMin>sched+15) extra=workedMin-sched; }
+    }
+    return { name:g.name, legajo:g.legajo, matched:g.matched, entrada:entrada, salida:salida, workedMin:workedMin, late:late, extra:extra, punches:g.entradas.length+g.salidas.length };
+  });
+  // Ausentes: empleados activos cuyo día laborable es hoy y no ficharon.
+  var presentIds={}; Object.keys(groups).forEach(function(k){ if(groups[k].emp) presentIds[groups[k].emp.id]=true; });
+  var absent=[];
+  if(wd){
+    emps.forEach(function(e){
+      if((e.status||"activo")!=="activo") return;
+      var wdays=String(e.work_days||"").split(",").map(function(s){return s.trim();});
+      if(wdays.indexOf(String(wd))>=0 && !presentIds[e.id]) absent.push(e);
+    });
+  }
+  return { rows:rows, absent:absent, day:day, count:punches.length };
+}
+
+/* ===== Fichador público ===== */
+function loadFichador(code){
+  state.fichador={ code:code, loading:true, error:null, company:"", first:"", last:"", legajo:"", geo:null, geoErr:"", camErr:"", sending:false, result:null, phase:"form" };
+  state.screen="fichador"; render();
+  fetch("/api/fichar", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ code:code, action:"info" }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ state.fichador.loading=false; if(j&&j.ok){ state.fichador.company=j.company||""; } else { state.fichador.error=(j&&j.error)||"error"; } render(); })
+    .catch(function(){ state.fichador.loading=false; state.fichador.error="network"; render(); });
+}
+function startFichadorCamera(){
+  if(rt.camStream){ var v0=document.getElementById("ficamvideo"); if(v0){ try{ v0.srcObject=rt.camStream; v0.play&&v0.play().catch(function(){}); }catch(e){} } return; }
+  if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){ state.fichador.camErr="Tu dispositivo no permite usar la cámara."; render(); return; }
+  navigator.mediaDevices.getUserMedia({ video:{ facingMode:"user" }, audio:false }).then(function(stream){
+    rt.camStream=stream; var v=document.getElementById("ficamvideo"); if(v){ v.srcObject=stream; v.play&&v.play().catch(function(){}); }
+  }).catch(function(){ state.fichador.camErr="No pudimos acceder a la cámara. Igual podés fichar sin foto."; render(); });
+}
+function stopFichadorCamera(){ try{ if(rt.camStream){ rt.camStream.getTracks().forEach(function(t){ t.stop(); }); rt.camStream=null; } }catch(e){} }
+function requestFichadorGeo(){
+  if(!(navigator.geolocation && navigator.geolocation.getCurrentPosition)){ state.fichador.geoErr="Sin ubicación disponible."; render(); return; }
+  navigator.geolocation.getCurrentPosition(function(pos){
+    if(state.fichador){ state.fichador.geo={ lat:pos.coords.latitude, lng:pos.coords.longitude, acc:pos.coords.accuracy }; state.fichador.geoErr=""; render(); }
+  }, function(){ if(state.fichador){ state.fichador.geoErr="No pudimos obtener la ubicación (dá permiso para mayor control)."; render(); } }, { enableHighAccuracy:true, timeout:8000, maximumAge:30000 });
+}
+function captureFichadorPhoto(){
+  return new Promise(function(resolve){
+    try{
+      var v=document.getElementById("ficamvideo");
+      if(!v || !rt.camStream || !v.videoWidth){ resolve(null); return; }
+      var cv=document.createElement("canvas"); cv.width=Math.min(640,v.videoWidth); cv.height=Math.round(cv.width*(v.videoHeight/v.videoWidth));
+      cv.getContext("2d").drawImage(v,0,0,cv.width,cv.height);
+      cv.toBlob(function(blob){ resolve(blob||null); }, "image/jpeg", 0.82);
+    }catch(e){ resolve(null); }
+  });
+}
+function doFichar(type){
+  var f=state.fichador; if(!f||f.sending) return;
+  if(!(f.first||"").trim() && !(f.last||"").trim()){ f.error="Cargá tu nombre y apellido."; render(); return; }
+  if(!(f.legajo||"").trim()){ f.error="Cargá tu número de legajo."; render(); return; }
+  f.sending=true; f.error=null; render();
+  captureFichadorPhoto().then(function(blob){
+    var up = (blob && audioUploadConfigured()) ? uploadAudioToCloudinary(new File([blob],"fichada.jpg",{type:"image/jpeg"})).catch(function(){ return ""; }) : Promise.resolve("");
+    return up.then(function(photoUrl){
+      var body={ code:f.code, action:"punch", type:type, first_name:(f.first||"").trim(), last_name:(f.last||"").trim(), legajo_number:(f.legajo||"").trim(), photo_url:photoUrl||"" };
+      if(f.geo){ body.lat=f.geo.lat; body.lng=f.geo.lng; body.accuracy=f.geo.acc; }
+      return fetch("/api/fichar",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) }).then(function(r){ return r.json(); });
+    });
+  }).then(function(j){
+    f.sending=false;
+    if(j&&j.ok){ f.result={ type:j.type, at:j.punched_at, matched:j.matched, name:j.employee_name }; f.phase="done"; stopFichadorCamera(); render(); }
+    else { f.error=(j&&j.error==="no_legajo")?"Falta el número de legajo.":(j&&j.error==="closed")?"El fichador está cerrado.":(j&&j.error==="not_found")?"El fichador no es válido.":"No pudimos registrar la fichada. Probá de nuevo."; render(); }
+  }).catch(function(){ f.sending=false; f.error="No pudimos conectar. Revisá tu conexión."; render(); });
+}
+function fichadorAgain(){ var f=state.fichador; if(!f) return; f.phase="form"; f.result=null; f.error=null; f.first=""; f.last=""; f.legajo=""; render(); }
 function addEmployeeDoc(file){
   var f=state.empform; if(!f||!file) return;
   if(file.size>10*1024*1024){ f.upMsg="El archivo supera los 10 MB."; render(); return; }
@@ -4286,6 +4554,14 @@ function bind(){
       else if (act === "emp-del"){ deleteEmployee(el.getAttribute("data-id")); }
       else if (act === "go-abm") goABM();
       else if (act === "mov-open"){ openMovements(el.getAttribute("data-id")); }
+      else if (act === "go-asistencia") goAsistencia();
+      else if (act === "asist-view"){ state.asist.view=el.getAttribute("data-v")||"resumen"; render(); }
+      else if (act === "copy-fichlink"){ var fl=el.getAttribute("data-link")||""; try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(fl).then(function(){ el.innerHTML=ic('check',13)+' Copiado'; setTimeout(function(){ if(state.screen==="mod2-asistencia") render(); },1200); }, function(){ alert("Copiá el link: "+fl); }); } else alert("Copiá el link: "+fl); }catch(e){ alert("Copiá el link: "+fl); } }
+      else if (act === "open-fichlink"){ var fc=el.getAttribute("data-code")||""; if(fc){ try{ window.open((pageBaseUrl()||PROD_BASE).replace(/[?#].*$/,"")+"?fichar="+encodeURIComponent(fc), "_blank"); }catch(e){} } }
+      else if (act === "fichar-again"){ fichadorAgain(); }
+      else if (act === "emp-wday"){
+        if(state.empform){ var dcode=el.getAttribute("data-day"); var arr=String(state.empform.work_days||"").split(",").map(function(s){return s.trim();}).filter(Boolean); var at=arr.indexOf(dcode); if(at>=0) arr.splice(at,1); else arr.push(dcode); arr.sort(); state.empform.work_days=arr.join(","); render(); }
+      }
       else if (act === "go-admin") goAdmin();
       else if (act === "copy-bulk"){
         var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
@@ -4499,7 +4775,8 @@ function bind(){
   // ---- Legajo: campos de la ficha ----
   [["f_emp_legajo","legajo_number"],["f_emp_first","first_name"],["f_emp_last","last_name"],["f_emp_dni","dni"],["f_emp_cuil","cuil"],["f_emp_birth","birth_date"],
    ["f_emp_email","email"],["f_emp_phone","phone"],["f_emp_address","address"],["f_emp_hire","hire_date"],["f_emp_position","position"],
-   ["f_emp_category","category"],["f_emp_convenio","collective_agreement"],["f_emp_salary","salary"]].forEach(function(p){
+   ["f_emp_category","category"],["f_emp_convenio","collective_agreement"],["f_emp_salary","salary"],
+   ["f_emp_shiftin","shift_in"],["f_emp_shiftout","shift_out"],["f_emp_tol","tolerance_min"]].forEach(function(p){
     var el=document.getElementById(p[0]); if(el) el.addEventListener("input", function(e){ if(state.empform) state.empform[p[1]]=e.target.value; });
   });
   if ((f=document.getElementById("f_emp_contract"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.contract_type=e.target.value; });
@@ -4516,6 +4793,19 @@ function bind(){
   if ((f=document.getElementById("f_mov_reason"))) f.addEventListener("change", function(e){ if(state.abm&&state.abm.form) state.abm.form.reason=e.target.value; });
   if ((f=document.getElementById("f_mov_notes"))) f.addEventListener("input", function(e){ if(state.abm&&state.abm.form) state.abm.form.notes=e.target.value; });
   if ((f=document.getElementById("saveMovBtn"))) f.addEventListener("click", function(){ saveMovement(); });
+  // ---- Asistencia (reclutador) ----
+  if ((f=document.getElementById("f_asist_day"))) f.addEventListener("change", function(e){ state.asist.day=e.target.value; render(); });
+  // ---- Fichador público (empleado) ----
+  if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
+  if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
+  if ((f=document.getElementById("f_fi_legajo"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.legajo=e.target.value; });
+  if ((f=document.getElementById("fichEntradaBtn"))) f.addEventListener("click", function(){ doFichar("entrada"); });
+  if ((f=document.getElementById("fichSalidaBtn"))) f.addEventListener("click", function(){ doFichar("salida"); });
+  // Al mostrar el fichador (form), arrancamos cámara y ubicación.
+  if (state.screen==="fichador" && state.fichador && state.fichador.phase!=="done" && !state.fichador.error && !state.fichador.loading){
+    startFichadorCamera();
+    if (!state.fichador.geo && !state.fichador.geoErr) requestFichadorGeo();
+  } else if (state.screen!=="fichador" && rt.camStream){ stopFichadorCamera(); }
   // ---- Aviso público: formulario de postulación ----
   if ((f=document.getElementById("f_jp_name"))) f.addEventListener("input", function(e){ state.jobpublic.name=e.target.value; });
   if ((f=document.getElementById("f_jp_email"))) f.addEventListener("input", function(e){ state.jobpublic.email=e.target.value; });
@@ -4838,12 +5128,25 @@ var pendingJob = (function(){
   }catch(e){}
   return "";
 })();
+// Código del fichador (?fichar=CODIGO o #fichar=CODIGO).
+var pendingFichar = (function(){
+  try{
+    var loc = window.location || {};
+    var mq = (loc.search || "").match(/[?&]fichar=([^&]+)/);
+    if (mq) return decodeURIComponent(mq[1]).toUpperCase();
+    var mh = (loc.hash || "").match(/[#&]fichar=([^&]+)/);
+    if (mh) return decodeURIComponent(mh[1]).toUpperCase();
+  }catch(e){}
+  return "";
+})();
 
 // Ruteo de arranque:
 if (handleOAuthRedirect()){
   // Volvimos de "Iniciar sesión con Google": ya guardamos la sesión y los tokens de Gmail.
   state.screen = "loading"; render();
   fetchSupaUser().then(function(){ routeAfterAuth(); });
+} else if (pendingFichar){
+  loadFichador(pendingFichar);      // empleado fichando (fichador público)
 } else if (pendingJob){
   loadJobByCode(pendingJob);        // persona en búsqueda laboral: aviso público del portal
 } else if (state.screen === "invite-landing"){
