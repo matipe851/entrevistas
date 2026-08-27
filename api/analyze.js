@@ -98,19 +98,31 @@ function analysisPrompt(body) {
   lines.push("");
   var LANGNAME = { en: "inglés", pt: "portugués", fr: "francés", it: "italiano", de: "alemán" };
   var otherLangs = {};
-  lines.push("Preguntas y respuestas del candidato (transcripción automática por voz; puede tener errores menores, evaluá contenido e intención):");
+  // Agrupamos las repreguntas (follow-ups) bajo su pregunta principal (parentN).
+  var mains = qs.filter(function (q) { return !q.isFollowup; });
+  var followsByParent = {};
+  qs.forEach(function (q) { if (q.isFollowup && q.parentN != null) { (followsByParent[q.parentN] = followsByParent[q.parentN] || []).push(q); } });
+
+  lines.push("Preguntas y respuestas del candidato (transcripción automática por voz; puede tener errores menores, evaluá contenido e intención).");
+  lines.push("IMPORTANTE: cuando una pregunta principal tiene REPREGUNTA(S) de profundización, evaluá la pregunta Y su(s) repregunta(s) EN CONJUNTO y asignales UN SOLO puntaje (el de esa pregunta principal).");
   lines.push("");
-  qs.forEach(function (q, i) {
+  mains.forEach(function (q) {
     var lg = (q.lang && q.lang !== "es") ? q.lang : null;
     if (lg) otherLangs[lg] = true;
     var langTag = lg ? (" [PREGUNTA EN " + ((LANGNAME[lg] || lg).toUpperCase()) + " — la respuesta DEBE estar en " + (LANGNAME[lg] || lg) + "]") : "";
-    lines.push("Pregunta " + (i + 1) + " [" + (q.category || "") + "]" + langTag + ": " + (q.text || ""));
+    lines.push("Pregunta " + q.n + " [" + (q.category || "") + "]" + langTag + ": " + (q.text || ""));
     var t = (q.transcript || "").trim();
     lines.push("Respuesta: " + (t ? t : "(sin respuesta / no respondió)"));
     if (q.durationSec != null) lines.push("(duración: " + q.durationSec + "s)");
+    var fus = followsByParent[q.n] || [];
+    fus.forEach(function (fu) {
+      lines.push("   ↳ Repregunta (profundización de esta misma pregunta): " + (fu.text || ""));
+      var ft = (fu.transcript || "").trim();
+      lines.push("   ↳ Respuesta a la repregunta: " + (ft ? ft : "(sin respuesta)"));
+    });
     lines.push("");
   });
-  lines.push("Analizá con criterio profesional y exigente, acorde al seniority. No infles puntajes: una respuesta vacía, de una palabra o que no responde debe puntuar muy bajo.");
+  lines.push("Analizá con criterio profesional y exigente, acorde al seniority. Puntuá CADA pregunta principal del 1 al 10 según la calidad, profundidad y pertinencia de la respuesta (contando la repregunta si la hay). No infles puntajes: una respuesta vacía, de una palabra o que no responde debe puntuar 1-2. El puntaje GENERAL surge del conjunto de todas las preguntas.");
   var langList = Object.keys(otherLangs).map(function (k) { return LANGNAME[k] || k; });
   if (langList.length) {
     lines.push("");
@@ -118,7 +130,8 @@ function analysisPrompt(body) {
     lines.push("Completá el campo \"language\" del JSON con esa evaluación. Si NO hubiera preguntas en otro idioma, poné \"language\": null.");
   }
   lines.push("Devolvé EXCLUSIVAMENTE un JSON con esta forma:");
-  lines.push('{ "score": (1 a 10, medio punto ok), "recommendation": ("Avanzar"|"Con reservas"|"No avanzar"), "overall": (2-4 oraciones), "perQuestion": [ { "n": (número), "rating": ("sólida"|"aceptable"|"floja"|"insuficiente"), "assessment": (1-2 oraciones) } ], "strengths": [..max 5..], "improve": [..max 5..], "probes": [..2-3..], "language": ' + (langList.length ? '{ "lang": ("' + langList.join('"|"') + '"), "level": ("No demostrado"|"Básico"|"Intermedio"|"Avanzado"|"Nativo/Bilingüe"), "answeredInLanguage": (true|false), "comment": (1-2 oraciones sobre el nivel real) }' : "null") + " }");
+  lines.push('{ "score": (1 a 10, medio punto ok — puntaje GENERAL que surge de todas las preguntas), "veredicto": ("Aprobado"|"Medio"|"Desaprobado" — coherente con el score: score>=7 => "Aprobado"; score entre 5 y 6.9 => "Medio"; score<5 => "Desaprobado"), "overall": (2-4 oraciones), "perQuestion": [ { "n": (número de la pregunta PRINCIPAL), "score": (1 a 10, medio punto ok; si tiene repregunta, este único puntaje evalúa pregunta+repregunta juntas), "assessment": (1-2 oraciones justificando el puntaje) } ], "strengths": [..max 5..], "improve": [..max 5..], "probes": [..2-3..], "language": ' + (langList.length ? '{ "lang": ("' + langList.join('"|"') + '"), "level": ("No demostrado"|"Básico"|"Intermedio"|"Avanzado"|"Nativo/Bilingüe"), "answeredInLanguage": (true|false), "comment": (1-2 oraciones sobre el nivel real) }' : "null") + " }");
+  lines.push("Incluí en perQuestion UNA entrada por cada pregunta PRINCIPAL (no una por repregunta).");
   lines.push("Español rioplatense, profesional. Nada de texto fuera del JSON.");
   return lines.join("\n");
 }
