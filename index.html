@@ -1461,6 +1461,7 @@ function ic(name, size, cls){
     key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8m0 0h-4m4 0v4M15.5 8.5L18 11"/>',
     users: '<circle cx="9" cy="9" r="3.2"/><path d="M3.5 19c.7-3 2.9-4.7 5.5-4.7s4.8 1.7 5.5 4.7"/><circle cx="17" cy="9.5" r="2.5"/><path d="M15.5 14.5c2 .2 3.7 1.8 4.3 4.5"/>',
     eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6v.4"/>',
     shield: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
     home: '<path d="M4 11.5L12 4l8 7.5"/><path d="M6 10v9.5h12V10"/>',
     file: '<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M10 13h5M10 16.5h5"/>',
@@ -1520,7 +1521,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
 
-var APP_VERSION = "v28.1-r41";
+var APP_VERSION = "v28.2-r42";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1693,7 +1694,7 @@ function DashboardList(){
   var d = state.dash;
   if (d.loading || d.items===null) return '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando entrevistas…</p></div>';
   if (d.error) return Note("err", esc(d.error)) + '<button class="btn btn-ghost btn-sm" data-action="reload-dash">'+ic('rotate',14)+' Reintentar</button>';
-  if (!d.items.length) return '<div class="center-block" style="padding:30px 12px">'+ic('list',26)+'<h2 style="font-size:16px">Todavía no hay entrevistas</h2><p>Creá tu primera entrevista y compartí el enlace al candidato.</p></div>';
+  if (!d.items.length) return '<div class="center-block" style="padding:30px 12px">'+ic('list',26)+'<h2 style="font-size:16px">Todavía no hay entrevistas</h2><p>Acá van a aparecer las entrevistas que hagas, con su puntaje. Para empezar, creá la primera y compartí el link al candidato.</p><button class="btn btn-primary btn-sm" data-action="go-config" style="margin-top:12px">'+ic('sparkle',14)+' Crear mi primera entrevista</button></div>';
   var completed = d.items.filter(function(x){return x.status==='completed';});
   var pend = d.items.filter(function(x){return x.status!=='completed';});
   var nApr = completed.filter(function(x){return x.score>=7;}).length;
@@ -1809,6 +1810,31 @@ Screens["admin"] = function(){
     AdminPanel();
 };
 
+function guideHidden(){ try{ return lget("voz_guide")==="off"; }catch(e){ return false; } }
+function GuideCard(){
+  if (guideHidden()){
+    return '<div style="margin-bottom:16px"><button class="btn btn-ghost btn-sm" data-action="show-guide">'+ic('info',14)+' ¿Cómo funciona? Ver la guía</button></div>';
+  }
+  var step = function(nStr, title, body, action, cta){
+    return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px">' +
+      '<div style="display:flex;align-items:center;gap:8px"><span style="flex-shrink:0;width:26px;height:26px;border-radius:8px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px">'+nStr+'</span><h4 style="margin:0;font-size:14px;color:var(--ink)">'+title+'</h4></div>' +
+      '<p style="margin:0;font-size:12.5px;color:var(--muted);line-height:1.5">'+body+'</p>' +
+      '<button class="btn btn-teal btn-sm" data-action="'+action+'" style="align-self:flex-start;margin-top:2px">'+cta+' ›</button>' +
+    '</div>';
+  };
+  return '<div style="background:var(--teal-tint);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:18px">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">' +
+      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('info',18)+'<h3 style="margin:0;font-size:15px;color:var(--ink)">¿Cómo funciona? Guía rápida</h3></div>' +
+      '<button data-action="hide-guide" title="Ocultar guía" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12.5px;font-weight:600">Ocultar ✕</button>' +
+    '</div>' +
+    '<p style="margin:0 0 14px;font-size:13px;color:var(--ink)">Hay 3 formas de trabajar. Elegí la que necesites y seguí los pasos:</p>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">' +
+      step('1','Entrevista por voz','Creás la entrevista y el sistema arma las preguntas solo. Te da un link para mandarle al candidato: responde por audio desde el celular y vos recibís la evaluación con puntaje.','go-config','Crear entrevista') +
+      step('2','Screening de CVs','Subís varios CV y describís el puesto. La IA los lee y te arma un ranking del mejor al peor. Al que más te sirve lo invitás a la entrevista con un clic.','go-cvhome','Ir a screening') +
+      step('3','Portal de búsquedas','Publicás un aviso y obtenés un link para compartir donde quieras. Las personas ven el aviso y cargan su CV solas: te llega directo al repositorio, ordenado por puesto.','go-jobs','Ir al portal') +
+    '</div>' +
+  '</div>';
+}
 Screens["rec-home"] = function(){
   if (supaConfigured()){
     var u = currentUser();
@@ -1820,10 +1846,11 @@ Screens["rec-home"] = function(){
         '<button class="btn btn-primary btn-sm" data-action="go-config">'+ic('sparkle',14)+' Nueva entrevista</button>' +
         '<button class="btn btn-ghost btn-sm" data-action="go-cvhome">'+ic('trophy',14)+' Screening de CVs</button>' +
         '<button class="btn btn-ghost btn-sm" data-action="go-jobs">'+ic('briefcase',14)+' Portal de búsquedas</button>' +
-        '<button class="btn btn-ghost btn-sm" data-action="reload-dash">'+ic('rotate',14)+'</button>' +
+        '<button class="btn btn-ghost btn-sm" data-action="reload-dash" title="Actualizar">'+ic('rotate',14)+'</button>' +
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
       '</div>' +
     '</div>' +
+    GuideCard() +
     MetricsPanel() +
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--teal)">'+ic('eye',18)+'<h3 style="font-size:15px;color:var(--ink)">Entrevistas realizadas</h3></div>' +
     DashboardList();
@@ -3822,6 +3849,8 @@ function bind(){
       else if (act === "go-newsearch") goNewSearch();
       else if (act === "go-jobs") goJobsHome();
       else if (act === "go-newjob") goNewJob();
+      else if (act === "hide-guide"){ try{ lset("voz_guide","off"); }catch(e){} render(); }
+      else if (act === "show-guide"){ try{ lset("voz_guide","on"); }catch(e){} render(); }
       else if (act === "open-joblink"){ var jc=el.getAttribute("data-code")||""; if(jc){ try{ window.open(computeJobLink(jc), "_blank"); }catch(e){} } }
       else if (act === "copy-joblink"){
         var jl=el.getAttribute("data-link")||"";
