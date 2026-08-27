@@ -42,7 +42,14 @@ function followupPrompt(body) {
   lines.push("El candidato respondió (transcripción automática por voz, puede tener errores menores):");
   lines.push('"""' + (body.answer || "(respuesta breve o vacía)") + '"""');
   lines.push("");
-  lines.push("Generá UNA sola REPREGUNTA breve, específica y natural que profundice en algo CONCRETO que dijo, o que le pida un ejemplo puntual si su respuesta fue genérica o corta. Tiene que sonar como un entrevistador real repreguntando en el momento. No repitas la pregunta original ni saludes. Máximo 25 palabras.");
+  lines.push("Generá UNA sola REPREGUNTA para profundizar. REGLAS OBLIGATORIAS:");
+  lines.push("1) ANCLÁ la repregunta a algo CONCRETO que el candidato nombró: una herramienta, tecnología, empresa, proyecto, tarea, número/resultado, decisión, problema o cliente. NOMBRÁ ese elemento textualmente dentro de la repregunta para que quede clarísimo de qué está hablando.");
+  lines.push("2) Pedí un DETALLE PUNTUAL y respondible: el paso a paso de cómo lo hizo, un número o resultado medible, un ejemplo específico de esa situación, qué decidió y por qué, o cómo resolvería un caso concreto del puesto.");
+  lines.push("3) Tiene que ENTENDERSE SOLA: el candidato debe saber exactamente sobre qué hablar sin adivinar tu intención.");
+  lines.push("4) PROHIBIDO usar frases vagas o abiertas del tipo: \"¿podés profundizar?\", \"¿algo más?\", \"contame más\", \"¿podés dar más detalles?\". Siempre apuntá a un tema específico.");
+  lines.push("5) Si la respuesta fue genérica, corta o vacía, elegí vos una tarea REAL y concreta del puesto de " + (body.position || "el puesto") + " y preguntá cómo la haría con un ejemplo puntual.");
+  lines.push("Ejemplo BIEN: \"Mencionaste que usabas Excel para el control de stock. ¿Qué fórmula o proceso usabas para detectar faltantes?\" — Ejemplo MAL: \"¿Podés profundizar sobre tu experiencia?\".");
+  lines.push("Que suene como un entrevistador real. No repitas la pregunta original ni saludes. Máximo 30 palabras.");
   lines.push("Escribila en " + (LN[lang] || "español") + ".");
   lines.push('Devolvé EXCLUSIVAMENTE un JSON con esta forma: { "followup": "la repregunta" }');
   return lines.join("\n");
@@ -304,7 +311,7 @@ module.exports = async function handler(req, res) {
     if (body.task === "followup") {
       var fq = String(body.question || "").slice(0, 1000);
       var fa = String(body.answer || "").slice(0, 4000);
-      var gf = await callGemini(key, [{ text: followupPrompt({ question: fq, answer: fa, position: body.position, level: body.level, language: body.language }) }], 300, 0.7);
+      var gf = await callGemini(key, [{ text: followupPrompt({ question: fq, answer: fa, position: body.position, level: body.level, language: body.language }) }], 300, 0.5);
       if (!gf.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gf.data && gf.data.error && gf.data.error.message) || ("HTTP " + gf.status) }); return; }
       var pf = parseJson(extractText(gf.data));
       var fu = pf && pf.followup ? String(pf.followup).slice(0, 300) : "";
