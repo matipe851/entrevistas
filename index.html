@@ -635,6 +635,10 @@ function dbListAttendance(){
   return supaFetch("/rest/v1/attendance?select=*&order=punched_at.desc&limit=500").then(function(r){ return r.json(); })
     .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
 }
+function dbUpdateAttendance(id, patch){
+  return supaFetch("/rest/v1/attendance?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1538,7 +1542,7 @@ var state = {
   emp: { loading:false, items:null, error:null, search:"", msg:"" },
   empform: null,
   abm: null,
-  asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen" },
+  asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"" },
   fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
@@ -1564,7 +1568,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.4-r48";
+var APP_VERSION = "v29.5-r49";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2128,14 +2132,35 @@ Screens["mod2-asistencia"] = function(){
     else {
       html += '<div style="display:grid;gap:8px">';
       sum.rows.forEach(function(r){
-        var estado = r.late!=null ? ('<span style="color:var(--amber);font-weight:700">Tarde '+fmtMinDur(r.late)+'</span>') : (r.entrada?'<span style="color:var(--green);font-weight:700">A tiempo</span>':'');
+        var estado;
+        if(r.estadoKind==="tarde") estado='<span style="color:var(--amber);font-weight:700">Tarde '+fmtMinDur(r.late)+'</span>';
+        else if(r.estadoKind==="atiempo") estado='<span style="color:var(--green);font-weight:700">A tiempo</span>';
+        else if(!r.matched) estado='<span style="font-size:11px;color:var(--brick)">sin match</span>';
+        else estado='<span style="font-size:11px;color:var(--muted)">sin turno cargado</span>';
         html += '<div class="qa-item">' +
           '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
             '<div style="flex:1;min-width:140px"><p style="margin:0;font-weight:700;font-size:14px;color:var(--ink)">'+esc(r.name)+(r.legajo?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(r.legajo)+'</span>'):'')+(!r.matched?' <span style="font-size:11px;color:var(--brick)">· sin match</span>':'')+'</p>' +
             '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">Entrada '+(r.entrada?esc(tsHM(r.entrada.punched_at)):'—')+' · Salida '+(r.salida?esc(tsHM(r.salida.punched_at)):'—')+' · '+fmtMinDur(r.workedMin)+(r.extra?(' · <span style="color:var(--blue)">+'+fmtMinDur(r.extra)+' extra</span>'):'')+'</p></div>' +
             '<div style="font-size:12px;text-align:right">'+estado+'</div>' +
-          '</div>' +
-        '</div>';
+          '</div>';
+        // Salida temprana: cartel + justificación
+        if(r.early){
+          if(r.early.justification){
+            html += '<div style="margin-top:10px;background:var(--surface-2);border-radius:9px;padding:8px 10px;font-size:12.5px;color:var(--ink)"><b style="color:var(--amber)">Salió '+fmtMinDur(r.early.min)+' antes.</b> Justificación: '+esc(r.early.justification)+' <button class="dl-audio" data-action="asist-justify" data-id="'+esc(r.early.salidaId)+'" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:11px;margin-left:6px">editar</button></div>';
+          } else if(state.asist.justifyId===r.early.salidaId){
+            html += '<div style="margin-top:10px;background:var(--amber-tint);border-radius:9px;padding:10px">' +
+              '<p style="margin:0 0 8px;font-size:12.5px;color:var(--amber);font-weight:700">Justificar salida temprana ('+fmtMinDur(r.early.min)+' antes)</p>' +
+              '<div class="input-row" style="align-items:flex-start;background:var(--surface)"><textarea id="f_justif" rows="2" placeholder="Motivo por el que se fue antes (ej: turno médico, permiso, etc.)">'+esc(state.asist.justifyText||"")+'</textarea></div>' +
+              '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" data-action="asist-justify-save" data-id="'+esc(r.early.salidaId)+'">Guardar</button><button class="btn btn-ghost btn-sm" data-action="asist-justify-cancel">Cancelar</button></div>' +
+            '</div>';
+          } else {
+            html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--amber-tint);border-radius:9px;padding:8px 10px">' +
+              '<span style="flex:1;min-width:120px;font-size:12.5px;color:var(--amber);font-weight:700">'+ic('alert',13)+' Se fue '+fmtMinDur(r.early.min)+' antes del horario.</span>' +
+              '<button class="btn btn-primary btn-sm" data-action="asist-justify" data-id="'+esc(r.early.salidaId)+'">Justificar</button>' +
+            '</div>';
+          }
+        }
+        html += '</div>';
       });
       html += '</div>';
       if(sum.absent.length){
@@ -3540,7 +3565,7 @@ function goMod2(){ resetInterview(); state.error=null; state.dash.detail=null; s
 function emptyEmpForm(){
   return { id:null, legajo_number:"", first_name:"", last_name:"", birth_date:"", dni:"", cuil:"", address:"", email:"", phone:"",
     hire_date:"", position:"", category:"", collective_agreement:"", contract_type:"", salary:"", status:"activo", notes:"",
-    shift_in:"", shift_out:"", work_days:"1,2,3,4,5", tolerance_min:10,
+    shift_in:"", shift_out:"", work_days:"1,2,3,4,5", tolerance_min:5,
     documents:[], saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
 }
 function goLegajo(){ state.emp.error=null; state.emp.msg=""; state.screen="mod2-legajo"; render(); loadEmployees(); }
@@ -3620,6 +3645,17 @@ function loadAsistencia(){
     }).catch(function(){ state.asist.loading=false; state.asist.error="No pude cargar la asistencia."; render(); });
 }
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
+/* Guarda la justificación de salida temprana en la fichada de salida. */
+function saveJustification(punchId){
+  var txt=(state.asist.justifyText||"").trim();
+  if(!txt){ return; }
+  dbUpdateAttendance(punchId, { justification:txt }).then(function(ok){
+    // Reflejamos localmente para no tener que recargar todo.
+    (state.asist.items||[]).forEach(function(p){ if(p.id===punchId) p.justification=txt; });
+    state.asist.justifyId=null; state.asist.justifyText=""; state.asist.msg = ok?"Justificación guardada.":"";
+    render();
+  });
+}
 
 /* Resumen del día: por cada empleado, primera entrada / última salida / horas / estado. */
 function asistDaySummary(){
@@ -3640,14 +3676,17 @@ function asistDaySummary(){
     g.salidas.sort(function(a,b){ return new Date(a.punched_at)-new Date(b.punched_at); });
     var entrada=g.entradas[0]||null; var salida=g.salidas[g.salidas.length-1]||null;
     var workedMin=null; if(entrada&&salida){ workedMin=(new Date(salida.punched_at)-new Date(entrada.punched_at))/60000; }
-    var late=null, extra=null;
+    var late=null, extra=null, estadoKind=null, hasShiftIn=false, early=null;
     var e=g.emp;
     if(e){
-      var si=hmToMin(e.shift_in), so=hmToMin(e.shift_out), tol=(typeof e.tolerance_min==="number"?e.tolerance_min:parseInt(e.tolerance_min,10))||0;
-      if(entrada&&si!=null){ var em=tsMinOfDay(entrada.punched_at); if(em!=null && em>si+tol) late=em-si; }
+      var si=hmToMin(e.shift_in), so=hmToMin(e.shift_out), tol=parseInt(e.tolerance_min,10); if(isNaN(tol)) tol=5;
+      if(si!=null) hasShiftIn=true;
+      if(entrada&&si!=null){ var em=tsMinOfDay(entrada.punched_at); if(em!=null){ if(em>si+tol){ late=em-si; estadoKind="tarde"; } else { estadoKind="atiempo"; } } }
       if(workedMin!=null&&si!=null&&so!=null){ var sched=so-si; if(sched>0 && workedMin>sched+15) extra=workedMin-sched; }
+      // Salida temprana: la última salida ocurrió antes del horario de salida (con 5 min de gracia).
+      if(salida&&so!=null){ var sm=tsMinOfDay(salida.punched_at); if(sm!=null && sm < so-5){ early={ min: so-sm, salidaId: salida.id, justification:(salida.justification||"") }; } }
     }
-    return { name:g.name, legajo:g.legajo, matched:g.matched, entrada:entrada, salida:salida, workedMin:workedMin, late:late, extra:extra, punches:g.entradas.length+g.salidas.length };
+    return { name:g.name, legajo:g.legajo, matched:g.matched, entrada:entrada, salida:salida, workedMin:workedMin, late:late, extra:extra, estadoKind:estadoKind, hasShiftIn:hasShiftIn, early:early, punches:g.entradas.length+g.salidas.length };
   });
   // Ausentes: empleados activos cuyo día laborable es hoy y no ficharon.
   var presentIds={}; Object.keys(groups).forEach(function(k){ if(groups[k].emp) presentIds[groups[k].emp.id]=true; });
@@ -4556,6 +4595,9 @@ function bind(){
       else if (act === "mov-open"){ openMovements(el.getAttribute("data-id")); }
       else if (act === "go-asistencia") goAsistencia();
       else if (act === "asist-view"){ state.asist.view=el.getAttribute("data-v")||"resumen"; render(); }
+      else if (act === "asist-justify"){ var jid=el.getAttribute("data-id"); var cur=(state.asist.items||[]).filter(function(p){return p.id===jid;})[0]; state.asist.justifyId=jid; state.asist.justifyText=(cur&&cur.justification)||""; render(); }
+      else if (act === "asist-justify-cancel"){ state.asist.justifyId=null; state.asist.justifyText=""; render(); }
+      else if (act === "asist-justify-save"){ var sid=el.getAttribute("data-id"); saveJustification(sid); }
       else if (act === "copy-fichlink"){ var fl=el.getAttribute("data-link")||""; try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(fl).then(function(){ el.innerHTML=ic('check',13)+' Copiado'; setTimeout(function(){ if(state.screen==="mod2-asistencia") render(); },1200); }, function(){ alert("Copiá el link: "+fl); }); } else alert("Copiá el link: "+fl); }catch(e){ alert("Copiá el link: "+fl); } }
       else if (act === "open-fichlink"){ var fc=el.getAttribute("data-code")||""; if(fc){ try{ window.open((pageBaseUrl()||PROD_BASE).replace(/[?#].*$/,"")+"?fichar="+encodeURIComponent(fc), "_blank"); }catch(e){} } }
       else if (act === "fichar-again"){ fichadorAgain(); }
@@ -4795,6 +4837,7 @@ function bind(){
   if ((f=document.getElementById("saveMovBtn"))) f.addEventListener("click", function(){ saveMovement(); });
   // ---- Asistencia (reclutador) ----
   if ((f=document.getElementById("f_asist_day"))) f.addEventListener("change", function(e){ state.asist.day=e.target.value; render(); });
+  if ((f=document.getElementById("f_justif"))) f.addEventListener("input", function(e){ state.asist.justifyText=e.target.value; });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
