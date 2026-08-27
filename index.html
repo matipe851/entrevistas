@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.7-r51";
+var APP_VERSION = "v29.8-r52";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2099,6 +2099,40 @@ Screens["emp-movements"] = function(){
   return html;
 };
 
+/* Fila de estado del día (foto a la izquierda + a tiempo/tarde + salida temprana con justificar). */
+function asistSummaryRowHtml(r){
+  var estado;
+  if(r.estadoKind==="tarde") estado='<span style="color:var(--amber);font-weight:700">Tarde '+fmtMinDur(r.late)+'</span>';
+  else if(r.estadoKind==="atiempo") estado='<span style="color:var(--green);font-weight:700">A tiempo</span>';
+  else if(!r.matched) estado='<span style="font-size:11px;color:var(--brick)">sin match</span>';
+  else estado='<span style="font-size:11px;color:var(--muted)">sin turno</span>';
+  var photo=(r.entrada&&r.entrada.photo_url)||(r.salida&&r.salida.photo_url)||"";
+  var h='<div class="qa-item">' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      (photo?'<a href="'+esc(photo)+'" target="_blank" rel="noopener" style="flex-shrink:0"><img src="'+esc(photo)+'" alt="" style="width:48px;height:48px;border-radius:10px;object-fit:cover"></a>':'<span style="flex-shrink:0;width:48px;height:48px;border-radius:10px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">'+ic('users',18)+'</span>') +
+      '<div style="flex:1;min-width:140px"><p style="margin:0;font-weight:700;font-size:14px;color:var(--ink)">'+esc(r.name)+(r.legajo?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(r.legajo)+'</span>'):'')+(!r.matched?' <span style="font-size:11px;color:var(--brick)">· sin match</span>':'')+'</p>' +
+      '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">Entrada '+(r.entrada?esc(tsHM(r.entrada.punched_at)):'—')+' · Salida '+(r.salida?esc(tsHM(r.salida.punched_at)):'—')+' · '+fmtMinDur(r.workedMin)+(r.extra?(' · <span style="color:var(--blue)">+'+fmtMinDur(r.extra)+' extra</span>'):'')+'</p></div>' +
+      '<div style="font-size:12px;text-align:right">'+estado+'</div>' +
+    '</div>';
+  if(r.early){
+    if(r.early.justification){
+      h += '<div style="margin-top:10px;background:var(--surface-2);border-radius:9px;padding:8px 10px;font-size:12.5px;color:var(--ink)"><b style="color:var(--amber)">Salió '+fmtMinDur(r.early.min)+' antes.</b> Justificación: '+esc(r.early.justification)+' <button class="dl-audio" data-action="asist-justify" data-id="'+esc(r.early.salidaId)+'" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:11px;margin-left:6px">editar</button></div>';
+    } else if(state.asist.justifyId===r.early.salidaId){
+      h += '<div style="margin-top:10px;background:var(--amber-tint);border-radius:9px;padding:10px">' +
+        '<p style="margin:0 0 8px;font-size:12.5px;color:var(--amber);font-weight:700">Justificar salida temprana ('+fmtMinDur(r.early.min)+' antes)</p>' +
+        '<div class="input-row" style="align-items:flex-start;background:var(--surface)"><textarea id="f_justif" rows="2" placeholder="Motivo por el que se fue antes (ej: turno médico, permiso, etc.)">'+esc(state.asist.justifyText||"")+'</textarea></div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" data-action="asist-justify-save" data-id="'+esc(r.early.salidaId)+'">Guardar</button><button class="btn btn-ghost btn-sm" data-action="asist-justify-cancel">Cancelar</button></div>' +
+      '</div>';
+    } else {
+      h += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--amber-tint);border-radius:9px;padding:8px 10px">' +
+        '<span style="flex:1;min-width:120px;font-size:12.5px;color:var(--amber);font-weight:700">'+ic('alert',13)+' Se fue '+fmtMinDur(r.early.min)+' antes del horario.</span>' +
+        '<button class="btn btn-primary btn-sm" data-action="asist-justify" data-id="'+esc(r.early.salidaId)+'">Justificar</button>' +
+      '</div>';
+    }
+  }
+  h += '</div>';
+  return h;
+}
 /* ---- Asistencia y horarios (reclutador) ---- */
 Screens["mod2-asistencia"] = function(){
   var s = state.asist;
@@ -2134,37 +2168,7 @@ Screens["mod2-asistencia"] = function(){
     if(!sum.rows.length && !sum.absent.length){ html += '<div class="center-block" style="padding:26px 12px">'+ic('clock',24)+'<p>No hay fichadas para este día.</p></div>'; }
     else {
       html += '<div style="display:grid;gap:8px">';
-      sum.rows.forEach(function(r){
-        var estado;
-        if(r.estadoKind==="tarde") estado='<span style="color:var(--amber);font-weight:700">Tarde '+fmtMinDur(r.late)+'</span>';
-        else if(r.estadoKind==="atiempo") estado='<span style="color:var(--green);font-weight:700">A tiempo</span>';
-        else if(!r.matched) estado='<span style="font-size:11px;color:var(--brick)">sin match</span>';
-        else estado='<span style="font-size:11px;color:var(--muted)">sin turno cargado</span>';
-        html += '<div class="qa-item">' +
-          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-            '<div style="flex:1;min-width:140px"><p style="margin:0;font-weight:700;font-size:14px;color:var(--ink)">'+esc(r.name)+(r.legajo?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(r.legajo)+'</span>'):'')+(!r.matched?' <span style="font-size:11px;color:var(--brick)">· sin match</span>':'')+'</p>' +
-            '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">Entrada '+(r.entrada?esc(tsHM(r.entrada.punched_at)):'—')+' · Salida '+(r.salida?esc(tsHM(r.salida.punched_at)):'—')+' · '+fmtMinDur(r.workedMin)+(r.extra?(' · <span style="color:var(--blue)">+'+fmtMinDur(r.extra)+' extra</span>'):'')+'</p></div>' +
-            '<div style="font-size:12px;text-align:right">'+estado+'</div>' +
-          '</div>';
-        // Salida temprana: cartel + justificación
-        if(r.early){
-          if(r.early.justification){
-            html += '<div style="margin-top:10px;background:var(--surface-2);border-radius:9px;padding:8px 10px;font-size:12.5px;color:var(--ink)"><b style="color:var(--amber)">Salió '+fmtMinDur(r.early.min)+' antes.</b> Justificación: '+esc(r.early.justification)+' <button class="dl-audio" data-action="asist-justify" data-id="'+esc(r.early.salidaId)+'" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:11px;margin-left:6px">editar</button></div>';
-          } else if(state.asist.justifyId===r.early.salidaId){
-            html += '<div style="margin-top:10px;background:var(--amber-tint);border-radius:9px;padding:10px">' +
-              '<p style="margin:0 0 8px;font-size:12.5px;color:var(--amber);font-weight:700">Justificar salida temprana ('+fmtMinDur(r.early.min)+' antes)</p>' +
-              '<div class="input-row" style="align-items:flex-start;background:var(--surface)"><textarea id="f_justif" rows="2" placeholder="Motivo por el que se fue antes (ej: turno médico, permiso, etc.)">'+esc(state.asist.justifyText||"")+'</textarea></div>' +
-              '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" data-action="asist-justify-save" data-id="'+esc(r.early.salidaId)+'">Guardar</button><button class="btn btn-ghost btn-sm" data-action="asist-justify-cancel">Cancelar</button></div>' +
-            '</div>';
-          } else {
-            html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--amber-tint);border-radius:9px;padding:8px 10px">' +
-              '<span style="flex:1;min-width:120px;font-size:12.5px;color:var(--amber);font-weight:700">'+ic('alert',13)+' Se fue '+fmtMinDur(r.early.min)+' antes del horario.</span>' +
-              '<button class="btn btn-primary btn-sm" data-action="asist-justify" data-id="'+esc(r.early.salidaId)+'">Justificar</button>' +
-            '</div>';
-          }
-        }
-        html += '</div>';
-      });
+      sum.rows.forEach(function(r){ html += asistSummaryRowHtml(r); });
       html += '</div>';
       if(sum.absent.length){
         html += '<div style="margin-top:14px"><p style="font-size:12.5px;font-weight:700;color:var(--brick);margin:0 0 8px">Ausentes ('+sum.absent.length+')</p><div style="display:grid;gap:6px">';
@@ -2203,9 +2207,14 @@ Screens["mod2-asistencia"] = function(){
       var dks=Object.keys(byDay).sort().reverse();
       if(!dks.length){ html += '<p style="font-size:13px;color:var(--muted)">Esta carpeta ya no tiene fichadas.</p>'; }
       dks.forEach(function(dk){
-        html += '<p style="font-size:12px;font-weight:700;color:var(--teal);margin:14px 0 8px">'+esc(dayLabel(dk))+' <span style="color:var(--muted);font-weight:400">· '+byDay[dk].length+' fichada'+(byDay[dk].length===1?'':'s')+'</span></p><div style="display:grid;gap:8px">';
+        html += '<p style="font-size:12px;font-weight:700;color:var(--teal);margin:16px 0 8px">'+esc(dayLabel(dk))+' <span style="color:var(--muted);font-weight:400">· '+byDay[dk].length+' fichada'+(byDay[dk].length===1?'':'s')+'</span></p>';
+        // Resumen de estado del día (a tiempo / tarde / salida temprana) con foto.
+        var dsum=asistDaySummary(dk);
+        if(dsum.rows.length){ html += '<div style="display:grid;gap:8px;margin-bottom:8px">'; dsum.rows.forEach(function(r){ html += asistSummaryRowHtml(r); }); html += '</div>'; }
+        // Detalle de cada fichada (para ver la foto de cada marca y poder eliminar).
+        html += '<details style="margin-bottom:4px"><summary style="cursor:pointer;font-size:12px;color:var(--muted);padding:2px 0">Ver cada fichada del día</summary><div style="display:grid;gap:8px;margin-top:8px">';
         byDay[dk].forEach(function(p){ html += arow(p); });
-        html += '</div>';
+        html += '</div></details>';
       });
     }
   }
@@ -3691,8 +3700,8 @@ function saveJustification(punchId){
 }
 
 /* Resumen del día: por cada empleado, primera entrada / última salida / horas / estado. */
-function asistDaySummary(){
-  var day=state.asist.day||todayISO();
+function asistDaySummary(dayArg){
+  var day=dayArg||state.asist.day||todayISO();
   var punches=(state.asist.items||[]).filter(function(p){ return tsDayKey(p.punched_at)===day; });
   var emps=state.emp.items||[];
   var empById={}; emps.forEach(function(e){ empById[e.id]=e; });
