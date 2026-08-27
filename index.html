@@ -639,6 +639,9 @@ function dbUpdateAttendance(id, patch){
   return supaFetch("/rest/v1/attendance?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify(patch) })
     .then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+function dbDeleteAttendance(id){
+  return supaFetch("/rest/v1/attendance?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1542,7 +1545,7 @@ var state = {
   emp: { loading:false, items:null, error:null, search:"", msg:"" },
   empform: null,
   abm: null,
-  asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"" },
+  asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null },
   fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
@@ -1568,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.5-r49";
+var APP_VERSION = "v29.6-r50";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2170,23 +2173,40 @@ Screens["mod2-asistencia"] = function(){
       }
     }
   } else {
-    var dayP=(s.items||[]).filter(function(p){ return tsDayKey(p.punched_at)===day; });
-    if(!dayP.length){ html += '<div class="center-block" style="padding:26px 12px">'+ic('clock',24)+'<p>No hay fichadas para este día.</p></div>'; }
-    else {
-      html += '<div style="display:grid;gap:8px">';
-      dayP.forEach(function(p){
-        var col=p.type==="entrada"?"var(--green)":"var(--brick)";
-        var nm=p.name_entered||"(sin nombre)";
-        var maps=(p.lat!=null&&p.lng!=null)?("https://www.google.com/maps?q="+p.lat+","+p.lng):"";
-        html += '<div class="qa-item" style="border-left:3px solid '+col+'">' +
-          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-            (p.photo_url?'<a href="'+esc(p.photo_url)+'" target="_blank" rel="noopener" style="flex-shrink:0"><img src="'+esc(p.photo_url)+'" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover"></a>':'<span style="flex-shrink:0;width:44px;height:44px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">'+ic('users',18)+'</span>') +
-            '<div style="flex:1;min-width:120px"><p style="margin:0;font-weight:700;font-size:13.5px;color:var(--ink)">'+esc(nm)+(p.legajo_number?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(p.legajo_number)+'</span>'):'')+'</p>' +
-            '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)"><span style="color:'+col+';font-weight:700;text-transform:uppercase">'+esc(p.type)+'</span> · '+esc(tsHM(p.punched_at))+(maps?(' · <a href="'+esc(maps)+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">ubicación</a>'):'')+(!p.employee_id?' · <span style="color:var(--brick)">sin match</span>':'')+'</p></div>' +
-          '</div>' +
-        '</div>';
-      });
+    // Vista "Todas las fichadas": organizadas en CARPETAS por mes/año.
+    var all=(s.items||[]);
+    var arow=function(p){
+      var col=p.type==="entrada"?"var(--green)":"var(--brick)";
+      var nm=p.name_entered||"(sin nombre)";
+      var maps=(p.lat!=null&&p.lng!=null)?("https://www.google.com/maps?q="+p.lat+","+p.lng):"";
+      return '<div class="qa-item" style="border-left:3px solid '+col+'">' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          (p.photo_url?'<a href="'+esc(p.photo_url)+'" target="_blank" rel="noopener" style="flex-shrink:0"><img src="'+esc(p.photo_url)+'" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover"></a>':'<span style="flex-shrink:0;width:44px;height:44px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">'+ic('users',18)+'</span>') +
+          '<div style="flex:1;min-width:120px"><p style="margin:0;font-weight:700;font-size:13.5px;color:var(--ink)">'+esc(nm)+(p.legajo_number?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(p.legajo_number)+'</span>'):'')+'</p>' +
+          '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)"><span style="color:'+col+';font-weight:700;text-transform:uppercase">'+esc(p.type)+'</span> · '+esc(tsHM(p.punched_at))+(maps?(' · <a href="'+esc(maps)+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">ubicación</a>'):'')+(!p.employee_id?' · <span style="color:var(--brick)">sin match</span>':'')+'</p></div>' +
+          '<button class="dl-audio" data-action="asist-del" data-id="'+esc(p.id)+'" title="Eliminar fichada" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">'+ic('trash',13)+' eliminar</button>' +
+        '</div>' +
+      '</div>';
+    };
+    if(!all.length){ html += '<div class="center-block" style="padding:26px 12px">'+ic('clock',24)+'<p>Todavía no hay fichadas.</p></div>'; }
+    else if(!s.folder){
+      var byMonth={}; all.forEach(function(p){ var mk=monthKey(p.punched_at); if(mk){ (byMonth[mk]=byMonth[mk]||[]).push(p); } });
+      var months=Object.keys(byMonth).sort().reverse();
+      html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Carpetas por mes. Tocá una para ver sus fichadas.</p>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
+      months.forEach(function(mk){ html += '<button class="tile tile-light" data-action="asist-folder" data-m="'+esc(mk)+'" style="text-align:left;cursor:pointer">'+ic('file',20)+'<h3 style="margin:8px 0 2px">'+esc(monthLabel(mk))+'</h3><p>'+byMonth[mk].length+' fichada'+(byMonth[mk].length===1?'':'s')+'</p></button>'; });
       html += '</div>';
+    } else {
+      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="asist-folder-back">'+ic('back',14)+' Carpetas</button><span style="font-weight:700;color:var(--ink);font-size:15px">'+esc(monthLabel(s.folder))+'</span></div>';
+      var monthP=all.filter(function(p){ return monthKey(p.punched_at)===s.folder; });
+      var byDay={}; monthP.forEach(function(p){ var dk=tsDayKey(p.punched_at); (byDay[dk]=byDay[dk]||[]).push(p); });
+      var dks=Object.keys(byDay).sort().reverse();
+      if(!dks.length){ html += '<p style="font-size:13px;color:var(--muted)">Esta carpeta ya no tiene fichadas.</p>'; }
+      dks.forEach(function(dk){
+        html += '<p style="font-size:12px;font-weight:700;color:var(--teal);margin:14px 0 8px">'+esc(dayLabel(dk))+' <span style="color:var(--muted);font-weight:400">· '+byDay[dk].length+' fichada'+(byDay[dk].length===1?'':'s')+'</span></p><div style="display:grid;gap:8px">';
+        byDay[dk].forEach(function(p){ html += arow(p); });
+        html += '</div>';
+      });
     }
   }
   return html;
@@ -3626,6 +3646,11 @@ function tsHM(ts){ try{ var d=new Date(ts); return ("0"+d.getHours()).slice(-2)+
 function tsMinOfDay(ts){ try{ var d=new Date(ts); return d.getHours()*60+d.getMinutes(); }catch(e){ return null; } }
 function dayWeekNum(dayStr){ try{ var p=dayStr.split("-"); var d=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); var wd=d.getDay(); return wd===0?7:wd; }catch(e){ return null; } } // 1=Lun..7=Dom
 function fmtMinDur(min){ if(min==null) return "—"; min=Math.max(0,Math.round(min)); var h=Math.floor(min/60), m=min%60; return h+"h "+("0"+m).slice(-2)+"m"; }
+var MONTH_NAMES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+var DOW_NAMES=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+function monthKey(ts){ try{ var d=new Date(ts); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2); }catch(e){ return ""; } }
+function monthLabel(mk){ try{ var p=mk.split("-"); return MONTH_NAMES[parseInt(p[1],10)-1]+" "+p[0]; }catch(e){ return mk; } }
+function dayLabel(dk){ try{ var p=dk.split("-"); var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10)); return DOW_NAMES[d.getDay()]+" "+p[2]+"/"+p[1]; }catch(e){ return dk; } }
 
 function goAsistencia(){ state.error=null; state.asist.msg=""; state.asist.error=null; if(!state.asist.day) state.asist.day=todayISO(); state.screen="mod2-asistencia"; render(); loadAsistencia(); }
 function loadAsistencia(){
@@ -3645,6 +3670,14 @@ function loadAsistencia(){
     }).catch(function(){ state.asist.loading=false; state.asist.error="No pude cargar la asistencia."; render(); });
 }
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
+/* Elimina una fichada. */
+function deleteAttendance(id){
+  if(!confirm("¿Eliminar esta fichada? No se puede deshacer.")) return;
+  dbDeleteAttendance(id).then(function(ok){
+    if(ok){ state.asist.items=(state.asist.items||[]).filter(function(p){ return p.id!==id; }); state.asist.msg="Fichada eliminada."; }
+    render();
+  });
+}
 /* Guarda la justificación de salida temprana en la fichada de salida. */
 function saveJustification(punchId){
   var txt=(state.asist.justifyText||"").trim();
@@ -4594,7 +4627,10 @@ function bind(){
       else if (act === "go-abm") goABM();
       else if (act === "mov-open"){ openMovements(el.getAttribute("data-id")); }
       else if (act === "go-asistencia") goAsistencia();
-      else if (act === "asist-view"){ state.asist.view=el.getAttribute("data-v")||"resumen"; render(); }
+      else if (act === "asist-view"){ state.asist.view=el.getAttribute("data-v")||"resumen"; if(state.asist.view==="log") state.asist.folder=null; render(); }
+      else if (act === "asist-folder"){ state.asist.folder=el.getAttribute("data-m")||null; render(); }
+      else if (act === "asist-folder-back"){ state.asist.folder=null; render(); }
+      else if (act === "asist-del"){ deleteAttendance(el.getAttribute("data-id")); }
       else if (act === "asist-justify"){ var jid=el.getAttribute("data-id"); var cur=(state.asist.items||[]).filter(function(p){return p.id===jid;})[0]; state.asist.justifyId=jid; state.asist.justifyText=(cur&&cur.justification)||""; render(); }
       else if (act === "asist-justify-cancel"){ state.asist.justifyId=null; state.asist.justifyText=""; render(); }
       else if (act === "asist-justify-save"){ var sid=el.getAttribute("data-id"); saveJustification(sid); }
