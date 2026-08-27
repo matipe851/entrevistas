@@ -1519,9 +1519,9 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
-try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, render:render }; }catch(e){}
+try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v28.2-r42";
+var APP_VERSION = "v28.3-r43";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2642,6 +2642,44 @@ function analyzeWithAI(){
     .then(function(r){ return r.json(); })
     .then(function(j){ if (j && j.ok && j.analysis) return j.analysis; throw new Error((j && j.error) || "sin_analisis"); });
 }
+/* ---- Transcripción por IA del audio (server-side): más confiable y multi-idioma que
+   la del navegador. Solo REEMPLAZA la transcripción si la IA devuelve texto; si falla
+   o viene vacía, se conserva lo que hubiera (no rompe el flujo). ---- */
+function blobToBase64(blob){
+  return new Promise(function(resolve){
+    try{
+      var fr = new FileReader();
+      fr.onload = function(){ var s = String(fr.result||""); var i = s.indexOf(","); resolve(i>=0 ? s.slice(i+1) : ""); };
+      fr.onerror = function(){ resolve(""); };
+      fr.readAsDataURL(blob);
+    }catch(e){ resolve(""); }
+  });
+}
+function transcribeOneAI(q){
+  var a = state.answers[q.id];
+  if (!a) return Promise.resolve();
+  var getBlob = (typeof Blob!=="undefined" && a.blob instanceof Blob) ? Promise.resolve(a.blob)
+    : (a.blobUrl && a.blobUrl.indexOf("blob:")===0 ? fetch(a.blobUrl).then(function(r){ return r.blob(); }).catch(function(){ return null; }) : Promise.resolve(null));
+  return getBlob.then(function(blob){
+    if (!blob) return;
+    return blobToBase64(blob).then(function(b64){
+      if (!b64) return;
+      var mime = (blob.type||"audio/webm").split(";")[0];
+      return withTimeout(
+        fetch(AI_ANALYZE_ENDPOINT, { method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ task:"transcribe", language:(q.lang||state.config.language||"es"), audio:{ data:b64, mimeType:mime } }) })
+          .then(function(r){ return r.json(); }), 30000)
+        .then(function(j){ if (j && j.ok && j.transcript && j.transcript.trim()){ state.answers[q.id].transcript = j.transcript.trim(); state.answers[q.id].aiTranscribed = true; } })
+        .catch(function(){});
+    });
+  }).catch(function(){});
+}
+/* Transcribe (en paralelo) todas las respuestas que tengan audio. Best-effort. */
+function transcribeAnswersWithAI(){
+  var qs = state.questions.filter(function(q){ var a=state.answers[q.id]; return a && ((typeof Blob!=="undefined" && a.blob instanceof Blob) || (a.blobUrl && a.blobUrl.indexOf("blob:")===0)); });
+  if (!qs.length) return Promise.resolve();
+  return Promise.all(qs.map(function(q){ return transcribeOneAI(q); }));
+}
 function generateQuestions(){
   var c = state.config;
   var target = c.count === "auto" ? (c.level==="Junior"?7:c.level==="Senior"?8:c.level==="Gerencial"?9:7) : (parseInt(c.count,10)||7);
@@ -2939,6 +2977,12 @@ Screens.interview = function(){
     (q.lang!=="es" ? Badge(LANG_LABEL[q.lang], q.lang==="en"?"Inglés":"Otro idioma") : '') +
   '</div>';
   html += '<p style="font-size:17px;line-height:1.55;font-family:Fraunces,Georgia,serif;font-weight:500;margin:0">'+esc(q.text)+'</p>';
+  // Aviso claro: si la pregunta está en otro idioma que el principal, hay que responder en ESE idioma.
+  var mainLang = state.config.language || "es";
+  if (q.lang && q.lang !== mainLang){
+    var lname = q.lang==="en" ? "inglés" : q.lang==="pt" ? "portugués" : (LANG_LABEL[q.lang]||"otro idioma");
+    html += '<div class="note note-warn" style="margin-top:12px">'+ic('alert',15)+'<span><strong>Respondé esta pregunta en '+lname+'.</strong> Sirve para evaluar tu nivel en ese idioma: si respondés en otro idioma, no se puede evaluar.</span></div>';
+  }
 
   html += '<div class="rec-wrap"><div class="rec-ring">' +
     '<svg width="168" height="168" viewBox="0 0 128 128">' +
@@ -3536,10 +3580,14 @@ function finalizeCandidate(){
     if (markUsed){ try{ markInterviewUsed(state.code, state.candidateEmail); }catch(e){} }
     state.autoSendState = st || "sent"; state.screen = screen; render();
   }
-  // Respaldo por si toda la cadena tarda demasiado (audios + IA + guardado): no dejamos al candidato colgado.
-  var hardStop = setTimeout(function(){ finish("cand-send", "error", false); }, 90000);
+  // Respaldo por si toda la cadena tarda demasiado (audios + transcripción + IA + guardado): no dejamos al candidato colgado.
+  var hardStop = setTimeout(function(){ finish("cand-send", "error", false); }, 120000);
 
-  withTimeout(uploadAllAudios(), 60000).catch(function(){ /* audios best-effort */ })
+  // Subimos los audios y (en paralelo) transcribimos con IA cada respuesta en su idioma.
+  Promise.all([
+    withTimeout(uploadAllAudios(), 60000).catch(function(){ /* audios best-effort */ }),
+    withTimeout(transcribeAnswersWithAI(), 55000).catch(function(){ /* transcripción best-effort */ })
+  ])
     .then(function(){
       return withTimeout(analyzeWithAI(), 45000)
         .then(function(ai){ state.report = reportFromAI(ai); })
@@ -3793,7 +3841,9 @@ function evaluate(){
     catch(e){ state.error = "No pude generar la evaluación. Probá de nuevo."; state.screen = "review"; }
     render();
   }
-  analyzeWithAI().then(function(ai){ state.report = reportFromAI(ai); state.screen = "report"; render(); })
+  withTimeout(transcribeAnswersWithAI(), 55000).catch(function(){})
+    .then(function(){ return analyzeWithAI(); })
+    .then(function(ai){ state.report = reportFromAI(ai); state.screen = "report"; render(); })
     .catch(function(){ fallback(); });
 }
 
