@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.6-r50";
+var APP_VERSION = "v29.7-r51";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2182,7 +2182,7 @@ Screens["mod2-asistencia"] = function(){
       return '<div class="qa-item" style="border-left:3px solid '+col+'">' +
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
           (p.photo_url?'<a href="'+esc(p.photo_url)+'" target="_blank" rel="noopener" style="flex-shrink:0"><img src="'+esc(p.photo_url)+'" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover"></a>':'<span style="flex-shrink:0;width:44px;height:44px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">'+ic('users',18)+'</span>') +
-          '<div style="flex:1;min-width:120px"><p style="margin:0;font-weight:700;font-size:13.5px;color:var(--ink)">'+esc(nm)+(p.legajo_number?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(p.legajo_number)+'</span>'):'')+'</p>' +
+          '<div style="flex:1;min-width:120px"><p style="margin:0;font-weight:700;font-size:13.5px;color:var(--ink)">'+esc(nm)+(p.legajo_number?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(p.legajo_number)+'</span>'):(p.dni?(' <span style="font-size:11px;color:var(--muted)">· DNI '+esc(p.dni)+'</span>'):''))+'</p>' +
           '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)"><span style="color:'+col+';font-weight:700;text-transform:uppercase">'+esc(p.type)+'</span> · '+esc(tsHM(p.punched_at))+(maps?(' · <a href="'+esc(maps)+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">ubicación</a>'):'')+(!p.employee_id?' · <span style="color:var(--brick)">sin match</span>':'')+'</p></div>' +
           '<button class="dl-audio" data-action="asist-del" data-id="'+esc(p.id)+'" title="Eliminar fichada" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">'+ic('trash',13)+' eliminar</button>' +
         '</div>' +
@@ -2239,7 +2239,7 @@ Screens["fichador"] = function(){
       '<label class="field"><span class="field-label">Nombre</span><div class="input-row"><input id="f_fi_first" value="'+esc(f.first||"")+'" placeholder="Nombre"></div></label>' +
       '<label class="field"><span class="field-label">Apellido</span><div class="input-row"><input id="f_fi_last" value="'+esc(f.last||"")+'" placeholder="Apellido"></div></label>' +
     '</div>' +
-    '<label class="field"><span class="field-label">N° de legajo</span><div class="input-row"><span style="color:var(--muted)">'+ic('file',15)+'</span><input id="f_fi_legajo" value="'+esc(f.legajo||"")+'" placeholder="Ej: 001"></div></label>' +
+    '<label class="field"><span class="field-label">N° de documento (DNI)</span><div class="input-row"><span style="color:var(--muted)">'+ic('file',15)+'</span><input id="f_fi_dni" inputmode="numeric" value="'+esc(f.dni||"")+'" placeholder="Ej: 30123456"></div><span class="field-hint">El mismo DNI que figura en tu legajo.</span></label>' +
   '</div>';
   html += '<div style="display:flex;gap:10px;margin-top:18px">' +
     '<button class="btn btn-block" id="fichEntradaBtn" style="background:var(--green);color:#fff" '+(f.sending?'disabled':'')+'>'+(f.sending?ic('loader',15,'spin'):ic('check',16))+' Entrada</button>' +
@@ -3736,7 +3736,7 @@ function asistDaySummary(){
 
 /* ===== Fichador público ===== */
 function loadFichador(code){
-  state.fichador={ code:code, loading:true, error:null, company:"", first:"", last:"", legajo:"", geo:null, geoErr:"", camErr:"", sending:false, result:null, phase:"form" };
+  state.fichador={ code:code, loading:true, error:null, company:"", first:"", last:"", dni:"", geo:null, geoErr:"", camErr:"", sending:false, result:null, phase:"form" };
   state.screen="fichador"; render();
   fetch("/api/fichar", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ code:code, action:"info" }) })
     .then(function(r){ return r.json(); })
@@ -3771,12 +3771,12 @@ function captureFichadorPhoto(){
 function doFichar(type){
   var f=state.fichador; if(!f||f.sending) return;
   if(!(f.first||"").trim() && !(f.last||"").trim()){ f.error="Cargá tu nombre y apellido."; render(); return; }
-  if(!(f.legajo||"").trim()){ f.error="Cargá tu número de legajo."; render(); return; }
+  if(!(f.dni||"").replace(/\D/g,"")){ f.error="Cargá tu número de documento (DNI)."; render(); return; }
   f.sending=true; f.error=null; render();
   captureFichadorPhoto().then(function(blob){
     var up = (blob && audioUploadConfigured()) ? uploadAudioToCloudinary(new File([blob],"fichada.jpg",{type:"image/jpeg"})).catch(function(){ return ""; }) : Promise.resolve("");
     return up.then(function(photoUrl){
-      var body={ code:f.code, action:"punch", type:type, first_name:(f.first||"").trim(), last_name:(f.last||"").trim(), legajo_number:(f.legajo||"").trim(), photo_url:photoUrl||"" };
+      var body={ code:f.code, action:"punch", type:type, first_name:(f.first||"").trim(), last_name:(f.last||"").trim(), dni:(f.dni||"").trim(), photo_url:photoUrl||"" };
       if(f.geo){ body.lat=f.geo.lat; body.lng=f.geo.lng; body.accuracy=f.geo.acc; }
       return fetch("/api/fichar",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) }).then(function(r){ return r.json(); });
     });
@@ -3786,7 +3786,7 @@ function doFichar(type){
     else { f.error=(j&&j.error==="no_legajo")?"Falta el número de legajo.":(j&&j.error==="closed")?"El fichador está cerrado.":(j&&j.error==="not_found")?"El fichador no es válido.":"No pudimos registrar la fichada. Probá de nuevo."; render(); }
   }).catch(function(){ f.sending=false; f.error="No pudimos conectar. Revisá tu conexión."; render(); });
 }
-function fichadorAgain(){ var f=state.fichador; if(!f) return; f.phase="form"; f.result=null; f.error=null; f.first=""; f.last=""; f.legajo=""; render(); }
+function fichadorAgain(){ var f=state.fichador; if(!f) return; f.phase="form"; f.result=null; f.error=null; f.first=""; f.last=""; f.dni=""; render(); }
 function addEmployeeDoc(file){
   var f=state.empform; if(!f||!file) return;
   if(file.size>10*1024*1024){ f.upMsg="El archivo supera los 10 MB."; render(); return; }
@@ -4877,7 +4877,7 @@ function bind(){
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
-  if ((f=document.getElementById("f_fi_legajo"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.legajo=e.target.value; });
+  if ((f=document.getElementById("f_fi_dni"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.dni=e.target.value; });
   if ((f=document.getElementById("fichEntradaBtn"))) f.addEventListener("click", function(){ doFichar("entrada"); });
   if ((f=document.getElementById("fichSalidaBtn"))) f.addEventListener("click", function(){ doFichar("salida"); });
   // Al mostrar el fichador (form), arrancamos cámara y ubicación.
