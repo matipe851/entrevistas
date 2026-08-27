@@ -1521,7 +1521,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v28.3-r43";
+var APP_VERSION = "v29.0-r44";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1752,31 +1752,32 @@ function DashboardList(){
 }
 
 /* ===================== HUB DE ÁREAS (CONSULTORA RRHH) ===================== */
+/* Tarjeta de área (activa = clickeable; inactiva = "próximamente"). Reutilizable por los hubs. */
+function areaTile(a){
+  if (a.active){
+    return '<button class="tile tile-dark" data-action="'+a.action+'"'+(a.dataAttr||'')+' style="text-align:left">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">' + ic(a.icon,22) +
+      '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:rgba(255,255,255,.18);color:#fff;padding:3px 9px;border-radius:999px">'+esc(a.tag)+'</span></div>' +
+      '<h3>'+esc(a.title)+'</h3><p>'+esc(a.desc)+'</p></button>';
+  }
+  return '<div class="tile tile-light" style="text-align:left;opacity:.6;cursor:default;border-style:dashed">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">' + ic(a.icon,22) +
+    '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--line);color:var(--muted);padding:3px 9px;border-radius:999px">'+esc(a.tag)+'</span></div>' +
+    '<h3>'+esc(a.title)+'</h3><p>'+esc(a.desc)+'</p></div>';
+}
+function areaCards(areas){ return areas.map(areaTile).join(""); }
+
 Screens["hub"] = function(){
   var u = currentUser();
   var areas = [
     { active:true,  action:"go-module-recruit", icon:"sparkle",   tag:"Módulo 1",
       title:"Reclutamiento y selección",
       desc:"Entrevistas por audio con preguntas a medida, evaluación automática y screening de CVs." },
-    { active:false, icon:"users",  tag:"Próximamente", title:"Capacitación y desarrollo",
-      desc:"Planes de formación y seguimiento del crecimiento del equipo." },
-    { active:false, icon:"eye",    tag:"Próximamente", title:"Evaluación de desempeño",
-      desc:"Objetivos, feedback y revisiones periódicas del personal." },
-    { active:false, icon:"shield", tag:"Próximamente", title:"Clima y cultura",
-      desc:"Encuestas de clima laboral y planes de acción." }
+    { active:true,  action:"go-module-admin-hr", icon:"users",    tag:"Módulo 2",
+      title:"Administración de personal",
+      desc:"Legajos, altas y bajas, asistencia, vacaciones, sueldos, capacitación, reportes y más." }
   ];
-  var cards = areas.map(function(a){
-    if (a.active){
-      return '<button class="tile tile-dark" data-action="'+a.action+'" style="text-align:left">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">' + ic(a.icon,22) +
-        '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:rgba(255,255,255,.18);color:#fff;padding:3px 9px;border-radius:999px">'+esc(a.tag)+'</span></div>' +
-        '<h3>'+esc(a.title)+'</h3><p>'+esc(a.desc)+'</p></button>';
-    }
-    return '<div class="tile tile-light" style="text-align:left;opacity:.6;cursor:default;border-style:dashed">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">' + ic(a.icon,22) +
-      '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--line);color:var(--muted);padding:3px 9px;border-radius:999px">'+esc(a.tag)+'</span></div>' +
-      '<h3>'+esc(a.title)+'</h3><p>'+esc(a.desc)+'</p></div>';
-  }).join("");
+  var cards = areaCards(areas);
   // Acceso a Administración: SOLO para la cuenta admin.
   var adminBtn = isAdminUser()
     ? '<button class="btn btn-ghost btn-sm" data-action="go-admin" style="color:var(--teal)">'+ic('shield',14)+' Administración</button>'
@@ -1790,8 +1791,33 @@ Screens["hub"] = function(){
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
       '</div>' +
     '</div>' +
-    '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Elegí el área con la que querés trabajar. Iremos sumando módulos; por ahora está activo <b>Reclutamiento y selección</b>.</p>' +
+    '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Elegí el módulo con el que querés trabajar. Cada uno agrupa sus propias herramientas.</p>' +
     '<div class="grid2">' + cards + '</div>';
+};
+
+/* ===================== MÓDULO 2: ADMINISTRACIÓN DE PERSONAL ===================== */
+Screens["mod2-home"] = function(){
+  var areas = [
+    { icon:"file",     tag:"Próximamente", title:"1 · Legajo del empleado",        desc:"Ficha completa de cada persona: datos personales, laborales y contacto." },
+    { icon:"plus",     tag:"Próximamente", title:"2 · Altas, bajas y modificaciones", desc:"Registrar ingresos, egresos y cambios (puesto, sueldo, jornada)." },
+    { icon:"clock",    tag:"Próximamente", title:"3 · Asistencia y horarios",       desc:"Control de presentismo, turnos, tardanzas y horas trabajadas." },
+    { icon:"home",     tag:"Próximamente", title:"4 · Vacaciones y licencias",      desc:"Solicitudes, saldos de días y aprobación de licencias." },
+    { icon:"briefcase",tag:"Próximamente", title:"5 · Liquidación de sueldos",      desc:"Cálculo de haberes, conceptos, recibos y net a pagar." },
+    { icon:"eye",      tag:"Próximamente", title:"6 · Evaluación de desempeño",     desc:"Objetivos, feedback y revisiones periódicas del personal." },
+    { icon:"users",    tag:"Próximamente", title:"7 · Capacitación",                desc:"Planes de formación, cursos y seguimiento del desarrollo." },
+    { icon:"shield",   tag:"Próximamente", title:"8 · Salud y seguridad",           desc:"Exámenes, ART, incidentes y cumplimiento de higiene y seguridad." },
+    { icon:"copy",     tag:"Próximamente", title:"9 · Documentación",               desc:"Contratos, recibos firmados y documentos de cada empleado." },
+    { icon:"check",    tag:"Próximamente", title:"10 · Beneficios",                 desc:"Obra social, bonos, descuentos y beneficios asignados." },
+    { icon:"list",     tag:"Próximamente", title:"11 · Reportes",                   desc:"Indicadores de headcount, rotación, ausentismo y costos." },
+    { icon:"back",     tag:"Próximamente", title:"12 · Off boarding",               desc:"Proceso de egreso: liquidación final, entrega y documentación." }
+  ];
+  return Header() +
+    backlink("go-hub","Volver a áreas") +
+    '<div style="margin-bottom:6px"><span style="font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--teal)">Módulo 2</span>' +
+      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('users',20)+'<h2 style="font-size:18px;color:var(--ink)">Administración de personal</h2></div>' +
+    '</div>' +
+    '<p style="font-size:13px;color:var(--muted);margin:6px 0 18px">Todas las herramientas para gestionar al personal ya dado de alta. Vamos a ir activando cada área.</p>' +
+    '<div class="grid2">' + areaCards(areas) + '</div>';
 };
 
 /* ===================== ÁREA DE ADMINISTRACIÓN (solo admin) ===================== */
@@ -3125,6 +3151,7 @@ function resetInterview(){ state.questions=[]; state.answers={}; state.idx=0; st
 function goHome(){ resetInterview(); state.error=null; enterRecruiter(); }
 function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="rec-home"; render(); if (supaConfigured() && isLoggedIn()) loadDashboard(); }
 function goHub(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="hub"; render(); }
+function goMod2(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod2-home"; render(); }
 function goAdmin(){ if(!isAdminUser()) return; state.error=null; state.screen="admin"; render(); loadAdminList(); }
 
 /* ================================================================
@@ -3875,6 +3902,7 @@ function bind(){
       else if (act === "go-recruiterhome") goRecruiterHome();
       else if (act === "go-hub") goHub();
       else if (act === "go-module-recruit") goRecruiterHome();
+      else if (act === "go-module-admin-hr") goMod2();
       else if (act === "go-admin") goAdmin();
       else if (act === "copy-bulk"){
         var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
