@@ -597,6 +597,22 @@ function dbSetJobActive(id, active){
   return supaFetch("/rest/v1/job_posts?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify({ active:!!active }) })
     .then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* ----- Módulo 2 · Legajo del empleado ----- */
+function dbListEmployees(){
+  return supaFetch("/rest/v1/employees?select=*&order=created_at.desc")
+    .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); }).catch(function(){ return []; });
+}
+function dbCreateEmployee(row){
+  return supaFetch("/rest/v1/employees", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateEmployee(id, patch){
+  return supaFetch("/rest/v1/employees?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeleteEmployee(id){
+  return supaFetch("/rest/v1/employees?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1497,6 +1513,8 @@ var state = {
   jobs: { loading:false, items:null, error:null, msg:"", saving:false, error2:null },
   newjob: { position:"", company:"", focus:"", description:"", must:"", nice:"", benefits:"", salary:"", language:"es" },
   jobpublic: { loading:false, job:null, error:null, name:"", email:"", fileName:"", cvText:"", cvUrl:"", uploading:false, upMsg:"", sending:false, sent:false, applyErr:null },
+  emp: { loading:false, items:null, error:null, search:"", msg:"" },
+  empform: null,
   brand: { name:"", logo:"" },
   myApproved: null,
   admin: { loading:false, items:null, error:null },
@@ -1521,7 +1539,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.0-r44";
+var APP_VERSION = "v29.1-r45";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1798,7 +1816,7 @@ Screens["hub"] = function(){
 /* ===================== MÓDULO 2: ADMINISTRACIÓN DE PERSONAL ===================== */
 Screens["mod2-home"] = function(){
   var areas = [
-    { icon:"file",     tag:"Próximamente", title:"1 · Legajo del empleado",        desc:"Ficha completa de cada persona: datos personales, laborales y contacto." },
+    { active:true, action:"go-legajo", icon:"file", tag:"Activo", title:"1 · Legajo del empleado", desc:"Ficha completa de cada persona: datos personales, laborales, contacto y documentación." },
     { icon:"plus",     tag:"Próximamente", title:"2 · Altas, bajas y modificaciones", desc:"Registrar ingresos, egresos y cambios (puesto, sueldo, jornada)." },
     { icon:"clock",    tag:"Próximamente", title:"3 · Asistencia y horarios",       desc:"Control de presentismo, turnos, tardanzas y horas trabajadas." },
     { icon:"home",     tag:"Próximamente", title:"4 · Vacaciones y licencias",      desc:"Solicitudes, saldos de días y aprobación de licencias." },
@@ -1818,6 +1836,106 @@ Screens["mod2-home"] = function(){
     '</div>' +
     '<p style="font-size:13px;color:var(--muted);margin:6px 0 18px">Todas las herramientas para gestionar al personal ya dado de alta. Vamos a ir activando cada área.</p>' +
     '<div class="grid2">' + areaCards(areas) + '</div>';
+};
+
+/* ---- Legajo: lista de empleados ---- */
+Screens["mod2-legajo"] = function(){
+  var e = state.emp;
+  var html = Header();
+  html += backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
+    '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('file',20)+'<h2 style="font-size:18px;color:var(--ink)">Legajo del empleado</h2></div>' +
+    '<button class="btn btn-primary btn-sm" data-action="emp-new">'+ic('plus',14)+' Nuevo empleado</button>' +
+  '</div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 16px">La ficha de cada empleado con sus datos personales, laborales y documentación. Tocá un empleado para ver o editar su legajo.</p>';
+  if (e.msg) html += Note("ok", esc(e.msg));
+  if (e.loading || e.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando empleados…</p></div>'; return html; }
+  if (e.error){ html += Note("err", esc(e.error)); return html; }
+  if (!e.items.length){ html += '<div class="center-block" style="padding:28px 12px">'+ic('file',26)+'<h2 style="font-size:16px">Todavía no cargaste ningún empleado</h2><p>Creá el primer legajo con los datos de la persona y su documentación.</p><button class="btn btn-primary btn-sm" data-action="emp-new" style="margin-top:12px">'+ic('plus',14)+' Cargar primer empleado</button></div>'; return html; }
+  html += '<div class="input-row" style="margin-bottom:12px"><span style="color:var(--muted)">'+ic('eye',14)+'</span><input id="f_emp_search" type="text" placeholder="Buscar por nombre, DNI o puesto…" value="'+esc(e.search||"")+'" autocomplete="off"></div>';
+  html += '<div id="empList" style="display:grid;gap:8px">';
+  e.items.forEach(function(x){
+    var ndoc = Array.isArray(x.documents)?x.documents.length:0;
+    var inactive = (x.status==="inactivo");
+    var skey = (empFullName(x)+" "+(x.dni||"")+" "+(x.position||"")+" "+(x.cuil||"")).toLowerCase();
+    html += '<div class="qa-item emprow" data-search="'+esc(skey)+'" style="cursor:pointer'+(inactive?';opacity:.6':'')+'" data-action="emp-open" data-id="'+esc(x.id)+'">' +
+      '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+        '<span style="flex-shrink:0;width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(x)[0]||"?").toUpperCase())+'</span>' +
+        '<div style="flex:1;min-width:140px">' +
+          '<p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(empFullName(x))+(inactive?' <span style="font-size:11px;color:var(--brick)">· inactivo</span>':'')+'</p>' +
+          '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">'+esc(x.position||'—')+(x.dni?(' · DNI '+esc(x.dni)):'')+(ndoc?(' · '+ndoc+' doc'+(ndoc===1?'':'s')):'')+'</p>' +
+        '</div>' +
+        '<span style="color:var(--muted)">'+ic('chevron',16)+'</span>' +
+      '</div>' +
+    '</div>';
+  });
+  html += '</div>';
+  html += '<p id="empNoMatch" style="display:none;font-size:13px;color:var(--muted);text-align:center;margin-top:14px">Ningún empleado coincide con la búsqueda.</p>';
+  return html;
+};
+
+/* ---- Legajo: ficha (crear / editar) ---- */
+function empInput(id, label, val, type, ph, hint){
+  return '<label class="field"><span class="field-label">'+label+'</span>' +
+    '<div class="input-row"><input id="'+id+'" '+(type?('type="'+type+'" '):'')+'placeholder="'+esc(ph||'')+'" value="'+esc(val||'')+'"></div>' +
+    (hint?'<span class="field-hint">'+hint+'</span>':'') + '</label>';
+}
+Screens["emp-form"] = function(){
+  var f = state.empform; if(!f){ return Header() + Centered(ic('alert',24), "No hay legajo abierto", "Volvé al listado."); }
+  var isEdit = !!f.id;
+  var CONTRACTS = ["","Tiempo indeterminado","Período de prueba","Plazo fijo","Eventual","Temporada","Pasantía","Part-time","Monotributo / Locación"];
+  var DOCLABELS = ["CV","Título","Certificado","Contrato","DNI","Otro"];
+  var html = Header();
+  html += backlink("go-legajo","Volver al legajo");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;color:var(--teal)">'+ic('file',20)+'<h2 style="font-size:18px;color:var(--ink)">'+(isEdit?'Editar legajo':'Nuevo empleado')+'</h2></div>';
+  if (f.error) html += Note("err", esc(f.error));
+  // Datos personales
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 12px">Datos personales</h3><div style="display:grid;gap:14px">' +
+    '<div class="grid2" style="gap:14px">'+empInput("f_emp_first","Nombre",f.first_name)+empInput("f_emp_last","Apellido",f.last_name)+'</div>' +
+    '<div class="grid2" style="gap:14px">'+empInput("f_emp_dni","DNI",f.dni,"","Ej: 30.123.456")+empInput("f_emp_cuil","CUIL",f.cuil,"","Ej: 20-30123456-3")+'</div>' +
+    empInput("f_emp_birth","Fecha de nacimiento",f.birth_date,"date") +
+  '</div></div>';
+  // Contacto
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 12px">Contacto</h3><div style="display:grid;gap:14px">' +
+    '<div class="grid2" style="gap:14px">'+empInput("f_emp_email","Email",f.email,"","nombre@correo.com")+empInput("f_emp_phone","Teléfono",f.phone,"","Ej: 11 2345 6789")+'</div>' +
+    empInput("f_emp_address","Domicilio",f.address,"","Calle, número, localidad, provincia") +
+  '</div></div>';
+  // Datos laborales
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 12px">Datos laborales</h3><div style="display:grid;gap:14px">' +
+    '<div class="grid2" style="gap:14px">'+empInput("f_emp_hire","Fecha de ingreso",f.hire_date,"date")+empInput("f_emp_position","Puesto",f.position,"","Ej: Vendedor")+'</div>' +
+    '<div class="grid2" style="gap:14px">'+empInput("f_emp_category","Categoría",f.category,"","Ej: Categoría B")+empInput("f_emp_convenio","Convenio colectivo",f.collective_agreement,"","Ej: Comercio (CCT 130/75)")+'</div>' +
+    '<div class="grid2" style="gap:14px">' +
+      '<label class="field"><span class="field-label">Tipo de contrato</span><select class="bare" id="f_emp_contract">'+CONTRACTS.map(function(o){ return '<option value="'+esc(o)+'"'+((f.contract_type||"")===o?' selected':'')+'>'+(o||'— Elegir —')+'</option>'; }).join('')+'</select></label>' +
+      '<label class="field"><span class="field-label">Estado</span><select class="bare" id="f_emp_status">'+["activo","inactivo"].map(function(o){ return '<option value="'+o+'"'+((f.status||"activo")===o?' selected':'')+'>'+(o.charAt(0).toUpperCase()+o.slice(1))+'</option>'; }).join('')+'</select></label>' +
+    '</div>' +
+  '</div></div>';
+  // Documentación
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 6px">Documentación</h3>' +
+    '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Adjuntá CV, títulos, certificados o contrato (PDF o imagen, máx. 10 MB c/u).</p>' +
+    (!audioUploadConfigured()?Note("info","Para adjuntar archivos falta configurar Cloudinary. Igual podés guardar el resto del legajo."):'') +
+    '<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:10px">' +
+      '<label class="field" style="flex:0 0 auto"><span class="field-label">Tipo</span><select class="bare" id="f_emp_doclabel" style="min-width:130px">'+DOCLABELS.map(function(o){ return '<option'+((f.docLabel||"CV")===o?' selected':'')+'>'+o+'</option>'; }).join('')+'</select></label>' +
+      '<label class="field" style="flex:1;min-width:180px"><span class="field-label">Archivo</span><input id="f_emp_docfile" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)"></label>' +
+    '</div>' +
+    (f.upMsg?'<p style="font-size:12px;color:'+(/No pude|supera/.test(f.upMsg)?'var(--brick)':'var(--teal)')+';margin:0 0 10px">'+(f.uploading?ic('loader',12,'spin')+' ':'')+esc(f.upMsg)+'</p>':'') +
+    (f.documents && f.documents.length ? ('<div style="display:grid;gap:8px">'+f.documents.map(function(d,i){
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-2);border-radius:10px">' +
+        '<span style="flex-shrink:0;font-size:11px;font-weight:700;color:var(--teal);background:var(--teal-tint);padding:3px 8px;border-radius:999px">'+esc(d.label||'Doc')+'</span>' +
+        '<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="flex:1;min-width:0;font-size:13px;color:var(--ink);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.filename||'archivo')+'</a>' +
+        '<button class="dl-audio" data-action="emp-doc-del" data-idx="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">quitar</button>' +
+      '</div>';
+    }).join('')+'</div>') : '<p style="font-size:12.5px;color:var(--muted);margin:0">Sin documentos cargados todavía.</p>') +
+  '</div>';
+  // Notas
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 12px">Notas (opcional)</h3>' +
+    '<div class="input-row" style="align-items:flex-start"><span style="color:var(--muted);margin-top:2px">'+ic('list',15)+'</span><textarea id="f_emp_notes" rows="3" placeholder="Observaciones internas sobre el empleado.">'+esc(f.notes||"")+'</textarea></div>' +
+  '</div>';
+  html += '<div class="flex-actions">' +
+    '<button class="btn btn-primary" id="saveEmpBtn" '+(f.saving?'disabled':'')+'>'+(f.saving?ic('loader',15,'spin')+' Guardando…':ic('check',15)+' '+(isEdit?'Guardar cambios':'Guardar legajo'))+'</button>' +
+    (isEdit?'<button class="btn btn-ghost" data-action="emp-del" data-id="'+esc(f.id)+'" style="color:var(--brick)">'+ic('trash',14)+' Eliminar legajo</button>':'') +
+    '<button class="btn btn-ghost" data-action="go-legajo" style="margin-left:auto">Cancelar</button>' +
+  '</div>';
+  return html;
 };
 
 /* ===================== ÁREA DE ADMINISTRACIÓN (solo admin) ===================== */
@@ -3152,6 +3270,69 @@ function goHome(){ resetInterview(); state.error=null; enterRecruiter(); }
 function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="rec-home"; render(); if (supaConfigured() && isLoggedIn()) loadDashboard(); }
 function goHub(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="hub"; render(); }
 function goMod2(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod2-home"; render(); }
+/* ---- Módulo 2 · Legajo del empleado ---- */
+function emptyEmpForm(){
+  return { id:null, first_name:"", last_name:"", birth_date:"", dni:"", cuil:"", address:"", email:"", phone:"",
+    hire_date:"", position:"", category:"", collective_agreement:"", contract_type:"", status:"activo", notes:"",
+    documents:[], saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
+}
+function goLegajo(){ state.emp.error=null; state.emp.msg=""; state.screen="mod2-legajo"; render(); loadEmployees(); }
+function loadEmployees(){
+  if(!(supaConfigured() && isLoggedIn())){ state.emp.items=[]; render(); return; }
+  state.emp.loading=true; state.emp.error=null; render();
+  dbListEmployees().then(function(items){ state.emp.loading=false; state.emp.items=items; render(); })
+    .catch(function(){ state.emp.loading=false; state.emp.error="No pude cargar los empleados."; render(); });
+}
+function newEmployee(){ state.empform=emptyEmpForm(); state.screen="emp-form"; render(); }
+function openEmployee(id){
+  var e=(state.emp.items||[]).filter(function(z){return z.id===id;})[0];
+  if(!e) return;
+  var f=emptyEmpForm();
+  ["id","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","status","notes"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
+  f.documents = Array.isArray(e.documents)?e.documents.slice():[];
+  state.empform=f; state.screen="emp-form"; render();
+}
+function empFormRow(){
+  var f=state.empform;
+  return { first_name:(f.first_name||"").trim(), last_name:(f.last_name||"").trim(),
+    birth_date:(f.birth_date||"")||null, dni:(f.dni||"").trim(), cuil:(f.cuil||"").trim(),
+    address:(f.address||"").trim(), email:(f.email||"").trim(), phone:(f.phone||"").trim(),
+    hire_date:(f.hire_date||"")||null, position:(f.position||"").trim(), category:(f.category||"").trim(),
+    collective_agreement:(f.collective_agreement||"").trim(), contract_type:(f.contract_type||"").trim(),
+    status:f.status||"activo", notes:(f.notes||"").trim(), documents:Array.isArray(f.documents)?f.documents:[] };
+}
+function saveEmployee(){
+  var f=state.empform; if(!f) return;
+  if(!(f.first_name||"").trim() && !(f.last_name||"").trim()){ f.error="Poné al menos el nombre y el apellido."; render(); return; }
+  f.saving=true; f.error=""; render();
+  var row=empFormRow();
+  var wasEdit=!!f.id;
+  var p = wasEdit ? dbUpdateEmployee(f.id, row) : dbCreateEmployee(row);
+  p.then(function(){
+    state.empform=null; state.emp.items=null; state.emp.msg = wasEdit?"Legajo actualizado.":"Empleado agregado al legajo.";
+    state.screen="mod2-legajo"; render(); loadEmployees();
+  }).catch(function(){
+    f.saving=false;
+    f.error="No pude guardar. Si es la primera vez, revisá que hayas corrido el SQL del legajo (sql_empleados.sql) en Supabase.";
+    render();
+  });
+}
+function addEmployeeDoc(file){
+  var f=state.empform; if(!f||!file) return;
+  if(file.size>10*1024*1024){ f.upMsg="El archivo supera los 10 MB."; render(); return; }
+  if(!audioUploadConfigured()){ f.upMsg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
+  f.uploading=true; f.upMsg="Subiendo "+file.name+"…"; render();
+  uploadAudioToCloudinary(file).then(function(url){
+    f.documents=f.documents||[]; f.documents.push({ label:f.docLabel||"Documento", filename:file.name, url:url });
+    f.uploading=false; f.upMsg=""; render();
+  }).catch(function(){ f.uploading=false; f.upMsg="No pude subir el archivo. Probá de nuevo."; render(); });
+}
+function removeEmployeeDoc(idx){ var f=state.empform; if(!f||!f.documents) return; f.documents.splice(idx,1); render(); }
+function deleteEmployee(id){
+  if(!confirm("¿Eliminar este legajo? Se borran los datos del empleado del sistema.")) return;
+  dbDeleteEmployee(id).then(function(){ state.emp.msg="Legajo eliminado."; loadEmployees(); });
+}
+function empFullName(e){ return ((e.first_name||"")+" "+(e.last_name||"")).trim() || "(sin nombre)"; }
 function goAdmin(){ if(!isAdminUser()) return; state.error=null; state.screen="admin"; render(); loadAdminList(); }
 
 /* ================================================================
@@ -3903,6 +4084,11 @@ function bind(){
       else if (act === "go-hub") goHub();
       else if (act === "go-module-recruit") goRecruiterHome();
       else if (act === "go-module-admin-hr") goMod2();
+      else if (act === "go-legajo") goLegajo();
+      else if (act === "emp-new") newEmployee();
+      else if (act === "emp-open"){ openEmployee(el.getAttribute("data-id")); }
+      else if (act === "emp-doc-del"){ removeEmployeeDoc(parseInt(el.getAttribute("data-idx"),10)); }
+      else if (act === "emp-del"){ deleteEmployee(el.getAttribute("data-id")); }
       else if (act === "go-admin") goAdmin();
       else if (act === "copy-bulk"){
         var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
@@ -4091,6 +4277,29 @@ function bind(){
   if ((f=document.getElementById("f_job_benefits"))) f.addEventListener("input", function(e){ state.newjob.benefits=e.target.value; });
   if ((f=document.getElementById("f_job_salary"))) f.addEventListener("input", function(e){ state.newjob.salary=e.target.value; });
   if ((f=document.getElementById("saveJobBtn"))) f.addEventListener("click", function(){ saveNewJob(); });
+  // ---- Legajo: buscador de empleados (filtra sin recargar) ----
+  if ((f=document.getElementById("f_emp_search"))){
+    var applyEmpFilter=function(){
+      var qq=(state.emp.search||"").trim().toLowerCase(); var shown=0;
+      var rows=document.querySelectorAll("#empList .emprow");
+      rows.forEach(function(row){ var k=row.getAttribute("data-search")||""; var m=!qq||k.indexOf(qq)>=0; row.style.display=m?"":"none"; if(m)shown++; });
+      var nm=document.getElementById("empNoMatch"); if(nm) nm.style.display=(rows.length && !shown)?"block":"none";
+    };
+    f.addEventListener("input", function(e){ state.emp.search=e.target.value; applyEmpFilter(); });
+    applyEmpFilter();
+  }
+  // ---- Legajo: campos de la ficha ----
+  [["f_emp_first","first_name"],["f_emp_last","last_name"],["f_emp_dni","dni"],["f_emp_cuil","cuil"],["f_emp_birth","birth_date"],
+   ["f_emp_email","email"],["f_emp_phone","phone"],["f_emp_address","address"],["f_emp_hire","hire_date"],["f_emp_position","position"],
+   ["f_emp_category","category"],["f_emp_convenio","collective_agreement"]].forEach(function(p){
+    var el=document.getElementById(p[0]); if(el) el.addEventListener("input", function(e){ if(state.empform) state.empform[p[1]]=e.target.value; });
+  });
+  if ((f=document.getElementById("f_emp_contract"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.contract_type=e.target.value; });
+  if ((f=document.getElementById("f_emp_status"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.status=e.target.value; });
+  if ((f=document.getElementById("f_emp_notes"))) f.addEventListener("input", function(e){ if(state.empform) state.empform.notes=e.target.value; });
+  if ((f=document.getElementById("f_emp_doclabel"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.docLabel=e.target.value; });
+  if ((f=document.getElementById("f_emp_docfile"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) addEmployeeDoc(file); e.target.value=""; });
+  if ((f=document.getElementById("saveEmpBtn"))) f.addEventListener("click", function(){ saveEmployee(); });
   // ---- Aviso público: formulario de postulación ----
   if ((f=document.getElementById("f_jp_name"))) f.addEventListener("input", function(e){ state.jobpublic.name=e.target.value; });
   if ((f=document.getElementById("f_jp_email"))) f.addEventListener("input", function(e){ state.jobpublic.email=e.target.value; });
