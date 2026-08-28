@@ -1545,7 +1545,7 @@ var state = {
   emp: { loading:false, items:null, error:null, search:"", msg:"" },
   empform: null,
   abm: null,
-  asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null },
+  asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null, ctlMonth:null, ctlEmp:null },
   fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
@@ -1569,9 +1569,9 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
-try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); } }; }catch(e){}
+try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); } }; }catch(e){}
 
-var APP_VERSION = "v30.1-r56";
+var APP_VERSION = "v30.2-r57";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2219,6 +2219,7 @@ Screens["mod2-asistencia"] = function(){
     '<div style="display:flex;gap:6px;align-self:flex-end">' +
       '<button class="pill-time" data-action="asist-view" data-v="resumen" style="cursor:pointer;border:none;background:'+((s.view||"resumen")==="resumen"?'var(--teal)':'var(--surface-2)')+';color:'+((s.view||"resumen")==="resumen"?'#fff':'var(--ink)')+'">Resumen del día</button>' +
       '<button class="pill-time" data-action="asist-view" data-v="log" style="cursor:pointer;border:none;background:'+(s.view==="log"?'var(--teal)':'var(--surface-2)')+';color:'+(s.view==="log"?'#fff':'var(--ink)')+'">Todas las fichadas</button>' +
+      '<button class="pill-time" data-action="asist-view" data-v="control" style="cursor:pointer;border:none;background:'+(s.view==="control"?'var(--teal)':'var(--surface-2)')+';color:'+(s.view==="control"?'#fff':'var(--ink)')+'">Control</button>' +
     '</div>' +
   '</div>';
   var day=s.day||todayISO();
@@ -2235,7 +2236,7 @@ Screens["mod2-asistencia"] = function(){
         html += '</div></div>';
       }
     }
-  } else {
+  } else if(s.view==="log"){
     // Vista "Todas las fichadas": organizadas en CARPETAS por mes/año.
     var all=(s.items||[]);
     var arow=function(p){
@@ -2275,6 +2276,65 @@ Screens["mod2-asistencia"] = function(){
         byDay[dk].forEach(function(p){ html += arow(p); });
         html += '</div></details>';
       });
+    }
+  } else {
+    // Vista "Control": Control > mes > empleado > documento (tarde / ausencias / extra / franco).
+    var allC=(s.items||[]);
+    if(!allC.length){ html += '<div class="center-block" style="padding:26px 12px">'+ic('file',24)+'<p>Todavía no hay datos para el control.</p></div>'; }
+    else if(!s.ctlMonth){
+      var byM={}; allC.forEach(function(p){ var m=monthKey(p.punched_at); if(m){ (byM[m]=byM[m]||0); byM[m]++; } });
+      var ms=Object.keys(byM).sort().reverse();
+      html += '<div style="display:flex;align-items:center;gap:8px;margin:0 0 10px;color:var(--teal)">'+ic('file',18)+'<span style="font-weight:800;font-size:15px;color:var(--ink)">Control</span></div>';
+      html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Un documento por mes y por empleado: llegadas tarde, ausencias, horas extra y francos trabajados. Elegí un mes.</p>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">';
+      ms.forEach(function(m){ html += '<button class="tile tile-light" data-action="asist-ctl-month" data-m="'+esc(m)+'" style="text-align:left;cursor:pointer">'+ic('file',20)+'<h3 style="margin:8px 0 2px">'+esc(monthLabel(m))+'</h3><p>Ver empleados</p></button>'; });
+      html += '</div>';
+    } else if(!s.ctlEmp){
+      var listC=asistMonthControl(s.ctlMonth);
+      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="asist-ctl-monthback">'+ic('back',14)+' Meses</button><span style="font-weight:800;color:var(--ink);font-size:15px">Control · '+esc(monthLabel(s.ctlMonth))+'</span>';
+      html += '<button class="btn btn-ghost btn-sm" data-action="asist-ctl-dlmonth" data-m="'+esc(s.ctlMonth)+'" style="margin-left:auto">'+ic('download',14)+' Descargar mes (CSV)</button></div>';
+      if(!listC.length){ html += '<p style="font-size:13px;color:var(--muted)">No hay empleados con datos en este mes.</p>'; }
+      else {
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
+        listC.forEach(function(en){
+          var nov=en.count?(en.count+' novedad'+(en.count===1?'':'es')):'Sin novedades';
+          var col=en.count?'var(--amber)':'var(--muted)';
+          html += '<button class="tile tile-light" data-action="asist-ctl-emp" data-e="'+esc(en.emp.id)+'" style="text-align:left;cursor:pointer">' +
+            '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(en.emp)[0]||"?").toUpperCase())+'</span>' +
+            '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(en.emp))+'</h3>' +
+            '<p style="color:'+col+'">'+esc(nov)+'</p></button>';
+        });
+        html += '</div>';
+      }
+    } else {
+      var listE=asistMonthControl(s.ctlMonth); var en=null; listE.forEach(function(x){ if(x.emp.id===s.ctlEmp) en=x; });
+      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="asist-ctl-empback">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(monthLabel(s.ctlMonth))+'</span></div>';
+      if(!en){ html += '<p style="font-size:13px;color:var(--muted)">No encontré a este empleado en el mes.</p>'; }
+      else {
+        var secRows=function(title, color, arr, fmtFn){
+          var body = arr.length ? arr.map(fmtFn).join("") : '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>';
+          return '<div style="margin-bottom:14px"><p style="font-size:12.5px;font-weight:800;color:'+color+';margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">'+esc(title)+' ('+arr.length+')</p><div style="display:grid;gap:6px">'+body+'</div></div>';
+        };
+        var chip=function(dateStr, detail, bg){ return '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 11px;background:'+bg+';border-radius:9px;font-size:13px;color:var(--ink)"><span style="font-weight:600">'+esc(dayLabel(dateStr))+'</span><span style="color:var(--muted)">'+detail+'</span></div>'; };
+        html += '<div class="card">';
+        html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;flex-wrap:wrap">' +
+          '<span style="flex-shrink:0;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal);font-weight:800;font-size:18px">'+esc((empFullName(en.emp)[0]||"?").toUpperCase())+'</span>' +
+          '<div><h2 style="font-size:18px;margin:0;color:var(--ink)">'+esc(empFullName(en.emp))+'</h2><p style="margin:2px 0 0;font-size:12.5px;color:var(--muted)">'+(en.emp.legajo_number?('Legajo '+esc(en.emp.legajo_number)+' · '):'')+esc(monthLabel(s.ctlMonth))+'</p></div>' +
+          '<button class="btn btn-teal btn-sm" data-action="asist-ctl-dlemp" data-m="'+esc(s.ctlMonth)+'" data-e="'+esc(en.emp.id)+'" style="margin-left:auto">'+ic('download',14)+' Descargar (CSV)</button>' +
+        '</div>';
+        html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 16px">' +
+          '<span class="badge" style="background:var(--amber-tint);color:var(--amber)">Tarde: '+en.late.length+'</span>' +
+          '<span class="badge" style="background:var(--brick-tint);color:var(--brick)">Ausencias: '+en.absent.length+'</span>' +
+          '<span class="badge" style="background:var(--teal-tint);color:var(--teal-strong)">Horas extra: '+en.extra.length+'</span>' +
+          '<span class="badge" style="background:var(--purple-tint);color:var(--purple)">Francos trabajados: '+en.franco.length+'</span>' +
+        '</div>';
+        html += secRows("Llegadas tarde","var(--amber)", en.late, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+(x.just?(' · <span style="color:var(--teal)">justif.</span>'):''), "var(--amber-tint)"); });
+        html += secRows("Ausencias","var(--brick)", en.absent, function(x){ return chip(x.date, "No fichó", "var(--brick-tint)"); });
+        html += secRows("Horas extra","var(--teal-strong)", en.extra, function(x){ return chip(x.date, esc(fmtMinDur(x.min)), "var(--teal-tint)"); });
+        html += secRows("Francos trabajados","var(--purple)", en.franco, function(x){ return chip(x.date, "Entró "+esc(x.hm||""), "var(--purple-tint)"); });
+        if(!en.count){ html += '<p style="font-size:13px;color:var(--green);margin:0">Sin novedades este mes.</p>'; }
+        html += '</div>';
+      }
     }
   }
   return html;
@@ -3831,10 +3891,11 @@ function asistDaySummary(dayArg){
     g.salidas.sort(function(a,b){ return new Date(a.punched_at)-new Date(b.punched_at); });
     var entrada=g.entradas[0]||null; var salida=g.salidas[g.salidas.length-1]||null;
     var workedMin=null; if(entrada&&salida){ workedMin=(new Date(salida.punched_at)-new Date(entrada.punched_at))/60000; }
-    var late=null, extra=null, estadoKind=null, hasShiftIn=false, early=null;
+    var late=null, extra=null, estadoKind=null, hasShiftIn=false, early=null, worksToday=null;
     var e=g.emp;
     if(e){
       var eff=effectiveShift(e, day);
+      worksToday=eff.works;
       var si=hmToMin(eff.in), so=hmToMin(eff.out), tol=parseInt(e.tolerance_min,10); if(isNaN(tol)) tol=5;
       if(si!=null) hasShiftIn=true;
       if(entrada&&si!=null){ var em=tsMinOfDay(entrada.punched_at); if(em!=null){ if(em>si+tol){ late=em-si; estadoKind="tarde"; } else { estadoKind="atiempo"; } } }
@@ -3843,7 +3904,7 @@ function asistDaySummary(dayArg){
       if(salida&&so!=null){ var sm=tsMinOfDay(salida.punched_at); if(sm!=null && sm < so-5){ early={ min: so-sm, salidaId: salida.id, justification:(salida.justification||"") }; } }
     }
     var lateInfo=(estadoKind==="tarde"&&entrada)?{ min:late, entradaId:entrada.id, justification:(entrada.justification||"") }:null;
-    return { name:g.name, legajo:g.legajo, matched:g.matched, entrada:entrada, salida:salida, workedMin:workedMin, late:late, extra:extra, estadoKind:estadoKind, hasShiftIn:hasShiftIn, early:early, lateInfo:lateInfo, punches:g.entradas.length+g.salidas.length };
+    return { name:g.name, legajo:g.legajo, matched:g.matched, empId:(e?e.id:null), works:worksToday, entrada:entrada, salida:salida, workedMin:workedMin, late:late, extra:extra, estadoKind:estadoKind, hasShiftIn:hasShiftIn, early:early, lateInfo:lateInfo, punches:g.entradas.length+g.salidas.length };
   });
   // Ausentes: empleados activos cuyo día laborable es hoy y no ficharon.
   var presentIds={}; Object.keys(groups).forEach(function(k){ if(groups[k].emp) presentIds[groups[k].emp.id]=true; });
@@ -3855,6 +3916,85 @@ function asistDaySummary(dayArg){
     });
   }
   return { rows:rows, absent:absent, day:day, count:punches.length };
+}
+
+/* Control mensual: por cada empleado del mes, junta llegadas tarde, ausencias,
+   horas extra y días de franco trabajados. mk = "YYYY-MM". */
+function asistMonthControl(mk){
+  var emps=(state.emp.items||[]);
+  var empById={}; emps.forEach(function(e){ empById[e.id]=e; });
+  var y=parseInt(mk.slice(0,4),10), mo=parseInt(mk.slice(5,7),10);
+  if(!y||!mo) return [];
+  var dim=new Date(y, mo, 0).getDate();
+  var today=todayISO();
+  var byEmp={};
+  function slot(id){ if(!byEmp[id]) byEmp[id]={ emp:empById[id]||null, late:[], absent:[], extra:[], franco:[] }; return byEmp[id]; }
+  for(var d=1; d<=dim; d++){
+    var dayISO=mk+"-"+("0"+d).slice(-2);
+    if(today && dayISO>today) continue; // no contamos días futuros
+    var sum=asistDaySummary(dayISO);
+    sum.rows.forEach(function(r){
+      if(!r.empId) return; // fichadas sin match no entran al control
+      var s=slot(r.empId);
+      if(r.works===false){
+        // Día franco: sólo cuenta como "trabajó franco" (no aplican tarde/extra).
+        if(r.entrada) s.franco.push({ date:dayISO, hm:tsHM(r.entrada.punched_at) });
+      } else {
+        if(r.estadoKind==="tarde" && r.late!=null) s.late.push({ date:dayISO, min:r.late, just:(r.lateInfo&&r.lateInfo.justification)||"" });
+        if(r.extra!=null) s.extra.push({ date:dayISO, min:r.extra });
+      }
+    });
+    sum.absent.forEach(function(e){ slot(e.id).absent.push({ date:dayISO }); });
+  }
+  // Todos los empleados activos tienen su carpeta (aunque no tengan novedades).
+  emps.forEach(function(e){ if((e.status||"activo")==="activo" && !byEmp[e.id]) slot(e.id); });
+  var list=Object.keys(byEmp).map(function(id){ return byEmp[id]; }).filter(function(s){ return s.emp; });
+  list.forEach(function(s){ s.count=s.late.length+s.absent.length+s.extra.length+s.franco.length; });
+  list.sort(function(a,b){ return empFullName(a.emp).localeCompare(empFullName(b.emp)); });
+  return list;
+}
+/* Arma el CSV del control de un empleado en un mes. */
+function controlEmpCSV(mk, entry){
+  var rows=[["Empleado", empFullName(entry.emp)],["Legajo", entry.emp.legajo_number||""],["Mes", monthLabel(mk)],[]];
+  rows.push(["Novedad","Fecha","Detalle"]);
+  entry.late.forEach(function(x){ rows.push(["Llegada tarde", x.date, fmtMinDur(x.min)+(x.just?(" — justif.: "+x.just):"")]); });
+  entry.absent.forEach(function(x){ rows.push(["Ausencia", x.date, "No fichó (día laborable)"]); });
+  entry.extra.forEach(function(x){ rows.push(["Horas extra", x.date, fmtMinDur(x.min)]); });
+  entry.franco.forEach(function(x){ rows.push(["Trabajó franco", x.date, "Entró "+(x.hm||"")]); });
+  if(!entry.count) rows.push(["Sin novedades","",""]);
+  return rows.map(function(r){ return r.map(function(c){ var v=String(c==null?"":c); return /[",\n;]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }).join(","); }).join("\r\n");
+}
+function downloadControlEmp(mk, empId){
+  var list=asistMonthControl(mk); var entry=null; list.forEach(function(s){ if(s.emp.id===empId) entry=s; });
+  if(!entry) return;
+  try{
+    var csv="﻿"+controlEmpCSV(mk, entry);
+    var blob=new Blob([csv], { type:"text/csv;charset=utf-8" });
+    var url=URL.createObjectURL(blob);
+    var fname="control_"+mk+"_"+(empFullName(entry.emp).replace(/[^\w]+/g,"_"))+".csv";
+    plainBrowserDownload(url, fname);
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  }catch(e){}
+}
+function downloadControlMonth(mk){
+  var list=asistMonthControl(mk);
+  var out=[["Control de asistencia — "+monthLabel(mk)],[],["Empleado","Legajo","Novedad","Fecha","Detalle"]];
+  list.forEach(function(entry){
+    var nm=empFullName(entry.emp), lg=entry.emp.legajo_number||"";
+    function push(nov, date, det){ out.push([nm, lg, nov, date, det]); }
+    entry.late.forEach(function(x){ push("Llegada tarde", x.date, fmtMinDur(x.min)+(x.just?(" — justif.: "+x.just):"")); });
+    entry.absent.forEach(function(x){ push("Ausencia", x.date, "No fichó (día laborable)"); });
+    entry.extra.forEach(function(x){ push("Horas extra", x.date, fmtMinDur(x.min)); });
+    entry.franco.forEach(function(x){ push("Trabajó franco", x.date, "Entró "+(x.hm||"")); });
+    if(!entry.count) push("Sin novedades","","");
+  });
+  try{
+    var csv="﻿"+out.map(function(r){ return r.map(function(c){ var v=String(c==null?"":c); return /[",\n;]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }).join(","); }).join("\r\n");
+    var blob=new Blob([csv], { type:"text/csv;charset=utf-8" });
+    var url=URL.createObjectURL(blob);
+    plainBrowserDownload(url, "control_"+mk+"_todos.csv");
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  }catch(e){}
 }
 
 /* ===== Fichador público ===== */
@@ -4764,9 +4904,15 @@ function bind(){
       else if (act === "go-abm") goABM();
       else if (act === "mov-open"){ openMovements(el.getAttribute("data-id")); }
       else if (act === "go-asistencia") goAsistencia();
-      else if (act === "asist-view"){ state.asist.view=el.getAttribute("data-v")||"resumen"; if(state.asist.view==="log") state.asist.folder=null; render(); }
+      else if (act === "asist-view"){ state.asist.view=el.getAttribute("data-v")||"resumen"; if(state.asist.view==="log") state.asist.folder=null; if(state.asist.view!=="control"){ state.asist.ctlMonth=null; state.asist.ctlEmp=null; } render(); }
       else if (act === "asist-folder"){ state.asist.folder=el.getAttribute("data-m")||null; render(); }
       else if (act === "asist-folder-back"){ state.asist.folder=null; render(); }
+      else if (act === "asist-ctl-month"){ state.asist.ctlMonth=el.getAttribute("data-m")||null; state.asist.ctlEmp=null; render(); }
+      else if (act === "asist-ctl-emp"){ state.asist.ctlEmp=el.getAttribute("data-e")||null; render(); }
+      else if (act === "asist-ctl-monthback"){ state.asist.ctlMonth=null; state.asist.ctlEmp=null; render(); }
+      else if (act === "asist-ctl-empback"){ state.asist.ctlEmp=null; render(); }
+      else if (act === "asist-ctl-dlemp"){ downloadControlEmp(el.getAttribute("data-m"), el.getAttribute("data-e")); }
+      else if (act === "asist-ctl-dlmonth"){ downloadControlMonth(el.getAttribute("data-m")); }
       else if (act === "asist-del"){ deleteAttendance(el.getAttribute("data-id")); }
       else if (act === "asist-justify"){ var jid=el.getAttribute("data-id"); var cur=(state.asist.items||[]).filter(function(p){return p.id===jid;})[0]; state.asist.justifyId=jid; state.asist.justifyText=(cur&&cur.justification)||""; render(); }
       else if (act === "asist-justify-cancel"){ state.asist.justifyId=null; state.asist.justifyText=""; render(); }
