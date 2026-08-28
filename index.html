@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.8-r52";
+var APP_VERSION = "v29.9-r53";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2114,6 +2114,23 @@ function asistSummaryRowHtml(r){
       '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">Entrada '+(r.entrada?esc(tsHM(r.entrada.punched_at)):'—')+' · Salida '+(r.salida?esc(tsHM(r.salida.punched_at)):'—')+' · '+fmtMinDur(r.workedMin)+(r.extra?(' · <span style="color:var(--blue)">+'+fmtMinDur(r.extra)+' extra</span>'):'')+'</p></div>' +
       '<div style="font-size:12px;text-align:right">'+estado+'</div>' +
     '</div>';
+  // Llegada tarde: cartel + justificación (se guarda en la fichada de ENTRADA)
+  if(r.lateInfo){
+    if(r.lateInfo.justification){
+      h += '<div style="margin-top:10px;background:var(--surface-2);border-radius:9px;padding:8px 10px;font-size:12.5px;color:var(--ink)"><b style="color:var(--amber)">Llegó '+fmtMinDur(r.lateInfo.min)+' tarde.</b> Justificación: '+esc(r.lateInfo.justification)+' <button class="dl-audio" data-action="asist-justify" data-id="'+esc(r.lateInfo.entradaId)+'" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:11px;margin-left:6px">editar</button></div>';
+    } else if(state.asist.justifyId===r.lateInfo.entradaId){
+      h += '<div style="margin-top:10px;background:var(--amber-tint);border-radius:9px;padding:10px">' +
+        '<p style="margin:0 0 8px;font-size:12.5px;color:var(--amber);font-weight:700">Justificar llegada tarde ('+fmtMinDur(r.lateInfo.min)+' tarde)</p>' +
+        '<div class="input-row" style="align-items:flex-start;background:var(--surface)"><textarea id="f_justif" rows="2" placeholder="Motivo de la llegada tarde (ej: problema de transporte, turno médico, etc.)">'+esc(state.asist.justifyText||"")+'</textarea></div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" data-action="asist-justify-save" data-id="'+esc(r.lateInfo.entradaId)+'">Guardar</button><button class="btn btn-ghost btn-sm" data-action="asist-justify-cancel">Cancelar</button></div>' +
+      '</div>';
+    } else {
+      h += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--amber-tint);border-radius:9px;padding:8px 10px">' +
+        '<span style="flex:1;min-width:120px;font-size:12.5px;color:var(--amber);font-weight:700">'+ic('alert',13)+' Llegó '+fmtMinDur(r.lateInfo.min)+' tarde.</span>' +
+        '<button class="btn btn-primary btn-sm" data-action="asist-justify" data-id="'+esc(r.lateInfo.entradaId)+'">Justificar</button>' +
+      '</div>';
+    }
+  }
   if(r.early){
     if(r.early.justification){
       h += '<div style="margin-top:10px;background:var(--surface-2);border-radius:9px;padding:8px 10px;font-size:12.5px;color:var(--ink)"><b style="color:var(--amber)">Salió '+fmtMinDur(r.early.min)+' antes.</b> Justificación: '+esc(r.early.justification)+' <button class="dl-audio" data-action="asist-justify" data-id="'+esc(r.early.salidaId)+'" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:11px;margin-left:6px">editar</button></div>';
@@ -3728,7 +3745,8 @@ function asistDaySummary(dayArg){
       // Salida temprana: la última salida ocurrió antes del horario de salida (con 5 min de gracia).
       if(salida&&so!=null){ var sm=tsMinOfDay(salida.punched_at); if(sm!=null && sm < so-5){ early={ min: so-sm, salidaId: salida.id, justification:(salida.justification||"") }; } }
     }
-    return { name:g.name, legajo:g.legajo, matched:g.matched, entrada:entrada, salida:salida, workedMin:workedMin, late:late, extra:extra, estadoKind:estadoKind, hasShiftIn:hasShiftIn, early:early, punches:g.entradas.length+g.salidas.length };
+    var lateInfo=(estadoKind==="tarde"&&entrada)?{ min:late, entradaId:entrada.id, justification:(entrada.justification||"") }:null;
+    return { name:g.name, legajo:g.legajo, matched:g.matched, entrada:entrada, salida:salida, workedMin:workedMin, late:late, extra:extra, estadoKind:estadoKind, hasShiftIn:hasShiftIn, early:early, lateInfo:lateInfo, punches:g.entradas.length+g.salidas.length };
   });
   // Ausentes: empleados activos cuyo día laborable es hoy y no ficharon.
   var presentIds={}; Object.keys(groups).forEach(function(k){ if(groups[k].emp) presentIds[groups[k].emp.id]=true; });
