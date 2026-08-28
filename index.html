@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.9-r53";
+var APP_VERSION = "v29.9-r54";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -3788,10 +3788,21 @@ function captureFichadorPhoto(){
   return new Promise(function(resolve){
     try{
       var v=document.getElementById("ficamvideo");
-      if(!v || !rt.camStream || !v.videoWidth){ resolve(null); return; }
-      var cv=document.createElement("canvas"); cv.width=Math.min(640,v.videoWidth); cv.height=Math.round(cv.width*(v.videoHeight/v.videoWidth));
-      cv.getContext("2d").drawImage(v,0,0,cv.width,cv.height);
-      cv.toBlob(function(blob){ resolve(blob||null); }, "image/jpeg", 0.82);
+      if(!v || !rt.camStream){ resolve(null); return; }
+      var tries=0;
+      var grab=function(){
+        if(v.videoWidth && v.videoHeight){
+          try{
+            var cv=document.createElement("canvas"); cv.width=Math.min(640,v.videoWidth); cv.height=Math.round(cv.width*(v.videoHeight/v.videoWidth));
+            cv.getContext("2d").drawImage(v,0,0,cv.width,cv.height);
+            cv.toBlob(function(blob){ resolve(blob||null); }, "image/jpeg", 0.82);
+          }catch(e){ resolve(null); }
+          return;
+        }
+        // El video puede tardar un instante en tener imagen; reintentamos un rato.
+        if(tries++ < 15){ setTimeout(grab, 130); } else { resolve(null); }
+      };
+      grab();
     }catch(e){ resolve(null); }
   });
 }
@@ -3799,8 +3810,11 @@ function doFichar(type){
   var f=state.fichador; if(!f||f.sending) return;
   if(!(f.first||"").trim() && !(f.last||"").trim()){ f.error="Cargá tu nombre y apellido."; render(); return; }
   if(!(f.dni||"").replace(/\D/g,"")){ f.error="Cargá tu número de documento (DNI)."; render(); return; }
-  f.sending=true; f.error=null; render();
+  f.error=null;
+  // IMPORTANTE: capturamos la foto ANTES de re-renderizar (el video sigue en vivo).
+  // Si se rendereaba primero, el <video> se recreaba vacío y la foto salía en negro.
   captureFichadorPhoto().then(function(blob){
+    f.sending=true; render();
     var up = (blob && audioUploadConfigured()) ? uploadAudioToCloudinary(new File([blob],"fichada.jpg",{type:"image/jpeg"})).catch(function(){ return ""; }) : Promise.resolve("");
     return up.then(function(photoUrl){
       var body={ code:f.code, action:"punch", type:type, first_name:(f.first||"").trim(), last_name:(f.last||"").trim(), dni:(f.dni||"").trim(), photo_url:photoUrl||"" };
