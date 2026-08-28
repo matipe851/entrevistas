@@ -1569,9 +1569,9 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
-try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); } }; }catch(e){}
+try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); } }; }catch(e){}
 
-var APP_VERSION = "v30.2-r57";
+var APP_VERSION = "v30.3-r58";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2356,7 +2356,7 @@ Screens["fichador"] = function(){
   if (f.error) html += Note("err", esc(f.error));
   // Cámara
   html += '<div style="position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3;margin-bottom:12px;display:flex;align-items:center;justify-content:center">' +
-    '<video id="ficamvideo" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>' +
+    '<div id="ficamslot" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center"></div>' +
     (f.camErr?'<span style="position:absolute;color:#fff;font-size:12.5px;padding:12px;text-align:center">'+esc(f.camErr)+'</span>':'') +
   '</div>';
   // Ubicación
@@ -4006,14 +4006,33 @@ function loadFichador(code){
     .then(function(j){ state.fichador.loading=false; if(j&&j.ok){ state.fichador.company=j.company||""; } else { state.fichador.error=(j&&j.error)||"error"; } render(); })
     .catch(function(){ state.fichador.loading=false; state.fichador.error="network"; render(); });
 }
+// Video persistente: un ÚNICO <video> que sobrevive a los re-render, para que
+// el stream nunca se congele y la foto sea siempre el frame en vivo.
+function ensureCamVideo(){
+  if(!rt.camVideo){
+    var v=document.createElement("video");
+    v.id="ficamvideo"; v.autoplay=true; v.muted=true; v.defaultMuted=true; v.playsInline=true;
+    v.setAttribute("playsinline",""); v.setAttribute("muted",""); v.setAttribute("autoplay","");
+    v.style.cssText="width:100%;height:100%;object-fit:cover;transform:scaleX(-1)";
+    rt.camVideo=v;
+  }
+  return rt.camVideo;
+}
+function mountCamVideo(){
+  var slot=document.getElementById("ficamslot"); if(!slot) return rt.camVideo||null;
+  var v=ensureCamVideo();
+  if(v.parentNode!==slot){ try{ slot.innerHTML=""; slot.appendChild(v); }catch(e){} }
+  return v;
+}
 function startFichadorCamera(){
-  if(rt.camStream){ var v0=document.getElementById("ficamvideo"); if(v0){ try{ v0.srcObject=rt.camStream; v0.play&&v0.play().catch(function(){}); }catch(e){} } return; }
+  var v=mountCamVideo(); if(!v) return;
+  if(rt.camStream){ try{ if(v.srcObject!==rt.camStream) v.srcObject=rt.camStream; v.play&&v.play().catch(function(){}); }catch(e){} return; }
   if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)){ state.fichador.camErr="Tu dispositivo no permite usar la cámara."; render(); return; }
   navigator.mediaDevices.getUserMedia({ video:{ facingMode:"user" }, audio:false }).then(function(stream){
-    rt.camStream=stream; var v=document.getElementById("ficamvideo"); if(v){ v.srcObject=stream; v.play&&v.play().catch(function(){}); }
+    rt.camStream=stream; var vv=mountCamVideo()||v; try{ vv.srcObject=stream; vv.play&&vv.play().catch(function(){}); }catch(e){}
   }).catch(function(){ state.fichador.camErr="No pudimos acceder a la cámara. Igual podés fichar sin foto."; render(); });
 }
-function stopFichadorCamera(){ try{ if(rt.camStream){ rt.camStream.getTracks().forEach(function(t){ t.stop(); }); rt.camStream=null; } }catch(e){} }
+function stopFichadorCamera(){ try{ if(rt.camStream){ rt.camStream.getTracks().forEach(function(t){ t.stop(); }); rt.camStream=null; } if(rt.camVideo){ try{ rt.camVideo.srcObject=null; }catch(e){} } }catch(e){} }
 function requestFichadorGeo(){
   if(!(navigator.geolocation && navigator.geolocation.getCurrentPosition)){ state.fichador.geoErr="Sin ubicación disponible."; render(); return; }
   navigator.geolocation.getCurrentPosition(function(pos){
@@ -4023,22 +4042,29 @@ function requestFichadorGeo(){
 function captureFichadorPhoto(){
   return new Promise(function(resolve){
     try{
-      var v=document.getElementById("ficamvideo");
+      var v=rt.camVideo || document.getElementById("ficamvideo");
       if(!v || !rt.camStream){ resolve(null); return; }
-      var tries=0;
-      var grab=function(){
-        if(v.videoWidth && v.videoHeight){
-          try{
-            var cv=document.createElement("canvas"); cv.width=Math.min(640,v.videoWidth); cv.height=Math.round(cv.width*(v.videoHeight/v.videoWidth));
-            cv.getContext("2d").drawImage(v,0,0,cv.width,cv.height);
-            cv.toBlob(function(blob){ resolve(blob||null); }, "image/jpeg", 0.82);
-          }catch(e){ resolve(null); }
-          return;
-        }
-        // El video puede tardar un instante en tener imagen; reintentamos un rato.
-        if(tries++ < 15){ setTimeout(grab, 130); } else { resolve(null); }
+      var done=false;
+      var draw=function(){
+        if(done) return; done=true;
+        try{
+          var w=v.videoWidth||640, h=v.videoHeight||480;
+          var cv=document.createElement("canvas"); cv.width=Math.min(640,w); cv.height=Math.round(cv.width*(h/w));
+          cv.getContext("2d").drawImage(v,0,0,cv.width,cv.height);
+          cv.toBlob(function(blob){ resolve(blob||null); }, "image/jpeg", 0.82);
+        }catch(e){ resolve(null); }
       };
-      grab();
+      var tries=0;
+      var waitReady=function(){
+        if(v.videoWidth && v.videoHeight && v.readyState>=2){
+          // Capturamos el PRÓXIMO frame realmente pintado → siempre en vivo.
+          if(typeof v.requestVideoFrameCallback==="function"){ try{ v.requestVideoFrameCallback(function(){ draw(); }); return; }catch(e){} }
+          setTimeout(draw, 60); return;
+        }
+        if(tries++ < 20){ setTimeout(waitReady, 100); } else { resolve(null); }
+      };
+      try{ v.play && v.play().catch(function(){}); }catch(e){}
+      waitReady();
     }catch(e){ resolve(null); }
   });
 }
