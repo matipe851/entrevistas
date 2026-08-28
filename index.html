@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); } }; }catch(e){}
 
-var APP_VERSION = "v30.3-r58";
+var APP_VERSION = "v30.4-r59";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2315,7 +2315,11 @@ Screens["mod2-asistencia"] = function(){
           var body = arr.length ? arr.map(fmtFn).join("") : '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>';
           return '<div style="margin-bottom:14px"><p style="font-size:12.5px;font-weight:800;color:'+color+';margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">'+esc(title)+' ('+arr.length+')</p><div style="display:grid;gap:6px">'+body+'</div></div>';
         };
-        var chip=function(dateStr, detail, bg){ return '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 11px;background:'+bg+';border-radius:9px;font-size:13px;color:var(--ink)"><span style="font-weight:600">'+esc(dayLabel(dateStr))+'</span><span style="color:var(--muted)">'+detail+'</span></div>'; };
+        var chip=function(dateStr, detail, bg, just){
+          var head='<div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><span style="font-weight:600">'+esc(dayLabel(dateStr))+'</span><span style="color:var(--muted)">'+detail+'</span></div>';
+          var note=just?('<div style="margin-top:5px;font-size:12px;color:var(--teal-strong);background:var(--surface);border-radius:7px;padding:5px 8px">'+ic('check',11)+' Justificación: '+esc(just)+'</div>'):'';
+          return '<div style="padding:8px 11px;background:'+bg+';border-radius:9px;font-size:13px;color:var(--ink)">'+head+note+'</div>';
+        };
         html += '<div class="card">';
         html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;flex-wrap:wrap">' +
           '<span style="flex-shrink:0;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal);font-weight:800;font-size:18px">'+esc((empFullName(en.emp)[0]||"?").toUpperCase())+'</span>' +
@@ -2324,13 +2328,15 @@ Screens["mod2-asistencia"] = function(){
         '</div>';
         html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 16px">' +
           '<span class="badge" style="background:var(--amber-tint);color:var(--amber)">Tarde: '+en.late.length+'</span>' +
-          '<span class="badge" style="background:var(--brick-tint);color:var(--brick)">Ausencias: '+en.absent.length+'</span>' +
+          '<span class="badge" style="background:var(--brick-tint);color:var(--brick)">Salidas anticipadas: '+en.early.length+'</span>' +
           '<span class="badge" style="background:var(--teal-tint);color:var(--teal-strong)">Horas extra: '+en.extra.length+'</span>' +
+          '<span class="badge" style="background:var(--brick-tint);color:var(--brick)">Ausencias: '+en.absent.length+'</span>' +
           '<span class="badge" style="background:var(--purple-tint);color:var(--purple)">Francos trabajados: '+en.franco.length+'</span>' +
         '</div>';
-        html += secRows("Llegadas tarde","var(--amber)", en.late, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+(x.just?(' · <span style="color:var(--teal)">justif.</span>'):''), "var(--amber-tint)"); });
+        html += secRows("Llegadas tarde","var(--amber)", en.late, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+" tarde", "var(--amber-tint)", x.just); });
+        html += secRows("Salidas anticipadas (se fue antes)","var(--brick)", en.early, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+" antes"+(x.out?(' · salió '+esc(x.out)):''), "var(--brick-tint)", x.just); });
+        html += secRows("Horas extra","var(--teal-strong)", en.extra, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+(x.out?(' · salió '+esc(x.out)):''), "var(--teal-tint)"); });
         html += secRows("Ausencias","var(--brick)", en.absent, function(x){ return chip(x.date, "No fichó", "var(--brick-tint)"); });
-        html += secRows("Horas extra","var(--teal-strong)", en.extra, function(x){ return chip(x.date, esc(fmtMinDur(x.min)), "var(--teal-tint)"); });
         html += secRows("Francos trabajados","var(--purple)", en.franco, function(x){ return chip(x.date, "Entró "+esc(x.hm||""), "var(--purple-tint)"); });
         if(!en.count){ html += '<p style="font-size:13px;color:var(--green);margin:0">Sin novedades este mes.</p>'; }
         html += '</div>';
@@ -3899,9 +3905,10 @@ function asistDaySummary(dayArg){
       var si=hmToMin(eff.in), so=hmToMin(eff.out), tol=parseInt(e.tolerance_min,10); if(isNaN(tol)) tol=5;
       if(si!=null) hasShiftIn=true;
       if(entrada&&si!=null){ var em=tsMinOfDay(entrada.punched_at); if(em!=null){ if(em>si+tol){ late=em-si; estadoKind="tarde"; } else { estadoKind="atiempo"; } } }
-      if(workedMin!=null&&si!=null&&so!=null){ var sched=so-si; if(sched>0 && workedMin>sched+15) extra=workedMin-sched; }
-      // Salida temprana: la última salida ocurrió antes del horario de salida (con 5 min de gracia).
-      if(salida&&so!=null){ var sm=tsMinOfDay(salida.punched_at); if(sm!=null && sm < so-5){ early={ min: so-sm, salidaId: salida.id, justification:(salida.justification||"") }; } }
+      // Horas extra: se cuentan al fichar la SALIDA, según cuánto se quedó pasado su horario de salida (15 min de gracia).
+      if(salida&&si!=null&&so!=null&&so>si){ var somx=tsMinOfDay(salida.punched_at); if(somx!=null && somx>so+15) extra=somx-so; }
+      // Salida anticipada: la última salida ocurrió antes del horario de salida (con 5 min de gracia).
+      if(salida&&si!=null&&so!=null&&so>si){ var sm=tsMinOfDay(salida.punched_at); if(sm!=null && sm < so-5){ early={ min: so-sm, salidaId: salida.id, justification:(salida.justification||"") }; } }
     }
     var lateInfo=(estadoKind==="tarde"&&entrada)?{ min:late, entradaId:entrada.id, justification:(entrada.justification||"") }:null;
     return { name:g.name, legajo:g.legajo, matched:g.matched, empId:(e?e.id:null), works:worksToday, entrada:entrada, salida:salida, workedMin:workedMin, late:late, extra:extra, estadoKind:estadoKind, hasShiftIn:hasShiftIn, early:early, lateInfo:lateInfo, punches:g.entradas.length+g.salidas.length };
@@ -3928,7 +3935,7 @@ function asistMonthControl(mk){
   var dim=new Date(y, mo, 0).getDate();
   var today=todayISO();
   var byEmp={};
-  function slot(id){ if(!byEmp[id]) byEmp[id]={ emp:empById[id]||null, late:[], absent:[], extra:[], franco:[] }; return byEmp[id]; }
+  function slot(id){ if(!byEmp[id]) byEmp[id]={ emp:empById[id]||null, late:[], absent:[], extra:[], franco:[], early:[] }; return byEmp[id]; }
   for(var d=1; d<=dim; d++){
     var dayISO=mk+"-"+("0"+d).slice(-2);
     if(today && dayISO>today) continue; // no contamos días futuros
@@ -3937,11 +3944,14 @@ function asistMonthControl(mk){
       if(!r.empId) return; // fichadas sin match no entran al control
       var s=slot(r.empId);
       if(r.works===false){
-        // Día franco: sólo cuenta como "trabajó franco" (no aplican tarde/extra).
+        // Día franco: sólo cuenta como "trabajó franco" (no aplican tarde/extra/salida anticipada).
         if(r.entrada) s.franco.push({ date:dayISO, hm:tsHM(r.entrada.punched_at) });
       } else {
         if(r.estadoKind==="tarde" && r.late!=null) s.late.push({ date:dayISO, min:r.late, just:(r.lateInfo&&r.lateInfo.justification)||"" });
-        if(r.extra!=null) s.extra.push({ date:dayISO, min:r.extra });
+        // Horas extra: se contabilizan al fichar la salida, según el horario.
+        if(r.extra!=null) s.extra.push({ date:dayISO, min:r.extra, out:(r.salida?tsHM(r.salida.punched_at):"") });
+        // Salida anticipada (se fue antes): se carga con su justificación.
+        if(r.early) s.early.push({ date:dayISO, min:r.early.min, just:(r.early.justification||""), out:(r.salida?tsHM(r.salida.punched_at):"") });
       }
     });
     sum.absent.forEach(function(e){ slot(e.id).absent.push({ date:dayISO }); });
@@ -3949,19 +3959,20 @@ function asistMonthControl(mk){
   // Todos los empleados activos tienen su carpeta (aunque no tengan novedades).
   emps.forEach(function(e){ if((e.status||"activo")==="activo" && !byEmp[e.id]) slot(e.id); });
   var list=Object.keys(byEmp).map(function(id){ return byEmp[id]; }).filter(function(s){ return s.emp; });
-  list.forEach(function(s){ s.count=s.late.length+s.absent.length+s.extra.length+s.franco.length; });
+  list.forEach(function(s){ s.count=s.late.length+s.absent.length+s.extra.length+s.franco.length+s.early.length; });
   list.sort(function(a,b){ return empFullName(a.emp).localeCompare(empFullName(b.emp)); });
   return list;
 }
 /* Arma el CSV del control de un empleado en un mes. */
 function controlEmpCSV(mk, entry){
   var rows=[["Empleado", empFullName(entry.emp)],["Legajo", entry.emp.legajo_number||""],["Mes", monthLabel(mk)],[]];
-  rows.push(["Novedad","Fecha","Detalle"]);
-  entry.late.forEach(function(x){ rows.push(["Llegada tarde", x.date, fmtMinDur(x.min)+(x.just?(" — justif.: "+x.just):"")]); });
-  entry.absent.forEach(function(x){ rows.push(["Ausencia", x.date, "No fichó (día laborable)"]); });
-  entry.extra.forEach(function(x){ rows.push(["Horas extra", x.date, fmtMinDur(x.min)]); });
-  entry.franco.forEach(function(x){ rows.push(["Trabajó franco", x.date, "Entró "+(x.hm||"")]); });
-  if(!entry.count) rows.push(["Sin novedades","",""]);
+  rows.push(["Novedad","Fecha","Detalle","Justificación"]);
+  entry.late.forEach(function(x){ rows.push(["Llegada tarde", x.date, fmtMinDur(x.min), x.just||""]); });
+  entry.early.forEach(function(x){ rows.push(["Salida anticipada", x.date, fmtMinDur(x.min)+" antes"+(x.out?(" (salió "+x.out+")"):""), x.just||""]); });
+  entry.extra.forEach(function(x){ rows.push(["Horas extra", x.date, fmtMinDur(x.min)+(x.out?(" (salió "+x.out+")"):""), ""]); });
+  entry.absent.forEach(function(x){ rows.push(["Ausencia", x.date, "No fichó (día laborable)", ""]); });
+  entry.franco.forEach(function(x){ rows.push(["Trabajó franco", x.date, "Entró "+(x.hm||""), ""]); });
+  if(!entry.count) rows.push(["Sin novedades","","",""]);
   return rows.map(function(r){ return r.map(function(c){ var v=String(c==null?"":c); return /[",\n;]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }).join(","); }).join("\r\n");
 }
 function downloadControlEmp(mk, empId){
@@ -3978,15 +3989,16 @@ function downloadControlEmp(mk, empId){
 }
 function downloadControlMonth(mk){
   var list=asistMonthControl(mk);
-  var out=[["Control de asistencia — "+monthLabel(mk)],[],["Empleado","Legajo","Novedad","Fecha","Detalle"]];
+  var out=[["Control de asistencia — "+monthLabel(mk)],[],["Empleado","Legajo","Novedad","Fecha","Detalle","Justificación"]];
   list.forEach(function(entry){
     var nm=empFullName(entry.emp), lg=entry.emp.legajo_number||"";
-    function push(nov, date, det){ out.push([nm, lg, nov, date, det]); }
-    entry.late.forEach(function(x){ push("Llegada tarde", x.date, fmtMinDur(x.min)+(x.just?(" — justif.: "+x.just):"")); });
-    entry.absent.forEach(function(x){ push("Ausencia", x.date, "No fichó (día laborable)"); });
-    entry.extra.forEach(function(x){ push("Horas extra", x.date, fmtMinDur(x.min)); });
-    entry.franco.forEach(function(x){ push("Trabajó franco", x.date, "Entró "+(x.hm||"")); });
-    if(!entry.count) push("Sin novedades","","");
+    function push(nov, date, det, just){ out.push([nm, lg, nov, date, det, just||""]); }
+    entry.late.forEach(function(x){ push("Llegada tarde", x.date, fmtMinDur(x.min), x.just||""); });
+    entry.early.forEach(function(x){ push("Salida anticipada", x.date, fmtMinDur(x.min)+" antes"+(x.out?(" (salió "+x.out+")"):""), x.just||""); });
+    entry.extra.forEach(function(x){ push("Horas extra", x.date, fmtMinDur(x.min)+(x.out?(" (salió "+x.out+")"):""), ""); });
+    entry.absent.forEach(function(x){ push("Ausencia", x.date, "No fichó (día laborable)", ""); });
+    entry.franco.forEach(function(x){ push("Trabajó franco", x.date, "Entró "+(x.hm||""), ""); });
+    if(!entry.count) push("Sin novedades","","","");
   });
   try{
     var csv="﻿"+out.map(function(r){ return r.map(function(c){ var v=String(c==null?"":c); return /[",\n;]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }).join(","); }).join("\r\n");
