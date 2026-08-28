@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
 
-var APP_VERSION = "v29.9-r54";
+var APP_VERSION = "v30.0-r55";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1950,20 +1950,45 @@ Screens["emp-form"] = function(){
   '</div></div>';
   // Turno / horario (usado en Asistencia para detectar tardanzas, ausencias y horas extra)
   var DAYS=[["1","Lun"],["2","Mar"],["3","Mié"],["4","Jue"],["5","Vie"],["6","Sáb"],["7","Dom"]];
-  var wdset=String(f.work_days||"").split(",").map(function(s){return s.trim();});
+  var dayBtns=function(daysCsv, action, wIdx){
+    var set=String(daysCsv||"").split(",").map(function(s){return s.trim();});
+    return DAYS.map(function(d){ var on=set.indexOf(d[0])>=0; return '<button type="button" class="pill-time" data-action="'+action+'" data-day="'+d[0]+'"'+(wIdx!=null?(' data-w="'+wIdx+'"'):'')+' style="cursor:pointer;border:1px solid var(--border);background:'+(on?'var(--teal)':'var(--surface)')+';color:'+(on?'#fff':'var(--ink)')+';'+(on?'font-weight:800':'opacity:.85')+'">'+d[1]+'</button>'; }).join('');
+  };
+  var schedType=f.schedule_type||"fijo";
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 6px">Turno / horario</h3>' +
     '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Se usa en «Asistencia» para marcar llegadas tarde, ausencias y horas extra.</p>' +
     '<div style="display:grid;gap:14px">' +
       '<div class="grid2" style="gap:14px">' +
+        '<label class="field"><span class="field-label">Tipo de horario</span><select class="bare" id="f_emp_schedtype">' +
+          '<option value="fijo"'+(schedType==="fijo"?" selected":"")+'>Fijo (mismo todos los días)</option>' +
+          '<option value="rotativo"'+(schedType==="rotativo"?" selected":"")+'>Rotativo (ciclo de semanas)</option>' +
+        '</select></label>' +
+        '<label class="field"><span class="field-label">Tolerancia llegada tarde (min)</span><div class="input-row"><input id="f_emp_tol" type="number" min="0" value="'+esc(String(f.tolerance_min!=null?f.tolerance_min:5))+'"></div></label>' +
+      '</div>';
+  if(schedType!=="rotativo"){
+    html += '<div class="grid2" style="gap:14px">' +
         '<label class="field"><span class="field-label">Hora de entrada</span><div class="input-row"><input id="f_emp_shiftin" type="time" value="'+esc(f.shift_in||"")+'"></div></label>' +
         '<label class="field"><span class="field-label">Hora de salida</span><div class="input-row"><input id="f_emp_shiftout" type="time" value="'+esc(f.shift_out||"")+'"></div></label>' +
       '</div>' +
-      '<label class="field"><span class="field-label">Tolerancia para llegada tarde (minutos)</span><div class="input-row" style="max-width:160px"><input id="f_emp_tol" type="number" min="0" value="'+esc(String(f.tolerance_min!=null?f.tolerance_min:10))+'"></div></label>' +
-      '<div><span class="field-label" style="display:block;margin-bottom:8px">Días laborables</span><div style="display:flex;gap:6px;flex-wrap:wrap">' +
-        DAYS.map(function(d){ var on=wdset.indexOf(d[0])>=0; return '<button type="button" class="pill-time" data-action="emp-wday" data-day="'+d[0]+'" style="cursor:pointer;border:none;background:'+(on?'var(--teal)':'var(--surface-2)')+';color:'+(on?'#fff':'var(--ink)')+';'+(on?'font-weight:800':'opacity:.85')+'">'+d[1]+'</button>'; }).join('') +
-      '</div><span class="field-hint" style="display:block;margin-top:6px">Los días no marcados cuentan como franco.</span></div>' +
-    '</div>' +
-  '</div>';
+      '<div><span class="field-label" style="display:block;margin-bottom:8px">Días laborables</span><div style="display:flex;gap:6px;flex-wrap:wrap">' + dayBtns(f.work_days, "emp-wday", null) +
+      '</div><span class="field-hint" style="display:block;margin-top:6px">Los días no marcados cuentan como franco.</span></div>';
+  } else {
+    html += '<label class="field"><span class="field-label">Inicio del ciclo (lunes de la Semana 1)</span><div class="input-row" style="max-width:220px"><input id="f_emp_rotstart" type="date" value="'+esc(f.rotation_start||"")+'"></div><span class="field-hint">El ciclo se repite: pasada la última semana, vuelve a la Semana 1.</span></label>';
+    var rot=Array.isArray(f.rotation)?f.rotation:[];
+    if(!rot.length){ html += '<p style="font-size:12.5px;color:var(--muted);margin:0">Agregá las semanas del ciclo (cada una con su horario y sus días).</p>'; }
+    rot.forEach(function(w,i){
+      html += '<div style="border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--surface-2)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:13px;color:var(--ink)">Semana '+(i+1)+'</b><button type="button" class="dl-audio" data-action="emp-rot-del" data-w="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">quitar</button></div>' +
+        '<div class="grid2" style="gap:12px">' +
+          '<label class="field"><span class="field-label">Entrada</span><div class="input-row" style="background:var(--surface)"><input class="rot-in" data-w="'+i+'" type="time" value="'+esc(w.in||"")+'"></div></label>' +
+          '<label class="field"><span class="field-label">Salida</span><div class="input-row" style="background:var(--surface)"><input class="rot-out" data-w="'+i+'" type="time" value="'+esc(w.out||"")+'"></div></label>' +
+        '</div>' +
+        '<div style="margin-top:10px"><span class="field-label" style="display:block;margin-bottom:6px">Días laborables (los no marcados = franco)</span><div style="display:flex;gap:6px;flex-wrap:wrap">' + dayBtns(w.days, "emp-rot-wday", i) + '</div></div>' +
+      '</div>';
+    });
+    html += '<button type="button" class="btn btn-ghost btn-sm" data-action="emp-rot-add" style="align-self:flex-start">'+ic('plus',14)+' Agregar semana</button>';
+  }
+  html += '</div></div>';
   // Documentación
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 6px">Documentación</h3>' +
     '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Adjuntá CV, títulos, certificados o contrato (PDF o imagen, máx. 10 MB c/u).</p>' +
@@ -3612,6 +3637,7 @@ function emptyEmpForm(){
   return { id:null, legajo_number:"", first_name:"", last_name:"", birth_date:"", dni:"", cuil:"", address:"", email:"", phone:"",
     hire_date:"", position:"", category:"", collective_agreement:"", contract_type:"", salary:"", status:"activo", notes:"",
     shift_in:"", shift_out:"", work_days:"1,2,3,4,5", tolerance_min:5,
+    schedule_type:"fijo", rotation:[], rotation_start:"",
     documents:[], saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
 }
 function goLegajo(){ state.emp.error=null; state.emp.msg=""; state.screen="mod2-legajo"; render(); loadEmployees(); }
@@ -3626,7 +3652,9 @@ function openEmployee(id){
   var e=(state.emp.items||[]).filter(function(z){return z.id===id;})[0];
   if(!e) return;
   var f=emptyEmpForm();
-  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
+  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min","schedule_type","rotation_start"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
+  f.rotation = Array.isArray(e.rotation) ? e.rotation.map(function(r){ return { in:(r.in||""), out:(r.out||""), days:String(r.days||"") }; }) : [];
+  if(!f.schedule_type) f.schedule_type="fijo";
   f.documents = Array.isArray(e.documents)?e.documents.slice():[];
   state.empform=f; state.screen="emp-form"; render();
 }
@@ -3639,6 +3667,7 @@ function empFormRow(){
     collective_agreement:(f.collective_agreement||"").trim(), contract_type:(f.contract_type||"").trim(),
     salary:(f.salary||"").trim(), status:f.status||"activo", notes:(f.notes||"").trim(),
     shift_in:(f.shift_in||"").trim(), shift_out:(f.shift_out||"").trim(), work_days:(f.work_days||"").trim(), tolerance_min:(parseInt(f.tolerance_min,10)||0),
+    schedule_type:(f.schedule_type||"fijo"), rotation:(Array.isArray(f.rotation)?f.rotation.map(function(r){ return { in:(r.in||"").trim(), out:(r.out||"").trim(), days:String(r.days||"").trim() }; }):[]), rotation_start:(f.rotation_start||"")||null,
     documents:Array.isArray(f.documents)?f.documents:[] };
 }
 function saveEmployee(){
@@ -3648,7 +3677,7 @@ function saveEmployee(){
   var row=empFormRow();
   var wasEdit=!!f.id;
   // Resiliente: si las columnas nuevas (legajo_number/salary) aún no existen, reintentamos sin ellas.
-  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min;
+  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min; delete slim.schedule_type; delete slim.rotation; delete slim.rotation_start;
   function attempt(r){ return wasEdit ? dbUpdateEmployee(f.id, r) : dbCreateEmployee(r); }
   attempt(row).catch(function(){ return attempt(slim); }).then(function(saved){
     // Al dar de alta un empleado nuevo, registramos el movimiento "Alta" (best-effort).
@@ -3671,6 +3700,19 @@ function tsDayKey(ts){ try{ var d=new Date(ts); return d.getFullYear()+"-"+("0"+
 function tsHM(ts){ try{ var d=new Date(ts); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }catch(e){ return ""; } }
 function tsMinOfDay(ts){ try{ var d=new Date(ts); return d.getHours()*60+d.getMinutes(); }catch(e){ return null; } }
 function dayWeekNum(dayStr){ try{ var p=dayStr.split("-"); var d=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); var wd=d.getDay(); return wd===0?7:wd; }catch(e){ return null; } } // 1=Lun..7=Dom
+function parseYMD(str){ try{ var p=String(str).split("-"); return new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); }catch(e){ return null; } }
+function rotationWeekIndex(startStr, dayStr, len){
+  try{ var s=parseYMD(startStr), d=parseYMD(dayStr); if(!s||!d||!len) return 0; var diff=Math.floor((d.getTime()-s.getTime())/(24*3600*1000)); var wk=Math.floor(diff/7); wk=((wk%len)+len)%len; return wk; }catch(e){ return 0; }
+}
+/* Devuelve el turno vigente de un empleado para una fecha: {in, out, days}. Soporta rotativo. */
+function effectiveShift(e, dayStr){
+  if((e.schedule_type||"fijo")==="rotativo" && Array.isArray(e.rotation) && e.rotation.length && e.rotation_start){
+    var wk=rotationWeekIndex(e.rotation_start, dayStr, e.rotation.length);
+    var r=e.rotation[wk]||e.rotation[0]||{};
+    return { in:(r.in||""), out:(r.out||""), days:String(r.days||"") };
+  }
+  return { in:(e.shift_in||""), out:(e.shift_out||""), days:String(e.work_days||"") };
+}
 function fmtMinDur(min){ if(min==null) return "—"; min=Math.max(0,Math.round(min)); var h=Math.floor(min/60), m=min%60; return h+"h "+("0"+m).slice(-2)+"m"; }
 var MONTH_NAMES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 var DOW_NAMES=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
@@ -3738,7 +3780,8 @@ function asistDaySummary(dayArg){
     var late=null, extra=null, estadoKind=null, hasShiftIn=false, early=null;
     var e=g.emp;
     if(e){
-      var si=hmToMin(e.shift_in), so=hmToMin(e.shift_out), tol=parseInt(e.tolerance_min,10); if(isNaN(tol)) tol=5;
+      var eff=effectiveShift(e, day);
+      var si=hmToMin(eff.in), so=hmToMin(eff.out), tol=parseInt(e.tolerance_min,10); if(isNaN(tol)) tol=5;
       if(si!=null) hasShiftIn=true;
       if(entrada&&si!=null){ var em=tsMinOfDay(entrada.punched_at); if(em!=null){ if(em>si+tol){ late=em-si; estadoKind="tarde"; } else { estadoKind="atiempo"; } } }
       if(workedMin!=null&&si!=null&&so!=null){ var sched=so-si; if(sched>0 && workedMin>sched+15) extra=workedMin-sched; }
@@ -3754,7 +3797,7 @@ function asistDaySummary(dayArg){
   if(wd){
     emps.forEach(function(e){
       if((e.status||"activo")!=="activo") return;
-      var wdays=String(e.work_days||"").split(",").map(function(s){return s.trim();});
+      var wdays=String(effectiveShift(e, day).days||"").split(",").map(function(s){return s.trim();});
       if(wdays.indexOf(String(wd))>=0 && !presentIds[e.id]) absent.push(e);
     });
   }
@@ -4681,6 +4724,11 @@ function bind(){
       else if (act === "emp-wday"){
         if(state.empform){ var dcode=el.getAttribute("data-day"); var arr=String(state.empform.work_days||"").split(",").map(function(s){return s.trim();}).filter(Boolean); var at=arr.indexOf(dcode); if(at>=0) arr.splice(at,1); else arr.push(dcode); arr.sort(); state.empform.work_days=arr.join(","); render(); }
       }
+      else if (act === "emp-rot-add"){ if(state.empform){ state.empform.rotation=state.empform.rotation||[]; var prev=state.empform.rotation[state.empform.rotation.length-1]; state.empform.rotation.push({ in:(prev&&prev.in)||"09:00", out:(prev&&prev.out)||"18:00", days:"1,2,3,4,5" }); render(); } }
+      else if (act === "emp-rot-del"){ if(state.empform){ var wi=parseInt(el.getAttribute("data-w"),10); if(state.empform.rotation&&state.empform.rotation[wi]!=null){ state.empform.rotation.splice(wi,1); render(); } } }
+      else if (act === "emp-rot-wday"){
+        if(state.empform){ var wj=parseInt(el.getAttribute("data-w"),10); var dc=el.getAttribute("data-day"); var wk=state.empform.rotation&&state.empform.rotation[wj]; if(wk){ var ar=String(wk.days||"").split(",").map(function(s){return s.trim();}).filter(Boolean); var ix=ar.indexOf(dc); if(ix>=0) ar.splice(ix,1); else ar.push(dc); ar.sort(); wk.days=ar.join(","); render(); } }
+      }
       else if (act === "go-admin") goAdmin();
       else if (act === "copy-bulk"){
         var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
@@ -4899,6 +4947,10 @@ function bind(){
     var el=document.getElementById(p[0]); if(el) el.addEventListener("input", function(e){ if(state.empform) state.empform[p[1]]=e.target.value; });
   });
   if ((f=document.getElementById("f_emp_contract"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.contract_type=e.target.value; });
+  if ((f=document.getElementById("f_emp_schedtype"))) f.addEventListener("change", function(e){ if(state.empform){ state.empform.schedule_type=e.target.value; if(e.target.value==="rotativo" && !(state.empform.rotation||[]).length){ state.empform.rotation=[{ in:(state.empform.shift_in||"09:00"), out:(state.empform.shift_out||"18:00"), days:(state.empform.work_days||"1,2,3,4,5") }]; } render(); } });
+  if ((f=document.getElementById("f_emp_rotstart"))) f.addEventListener("input", function(e){ if(state.empform) state.empform.rotation_start=e.target.value; });
+  document.querySelectorAll("input.rot-in").forEach(function(el){ el.addEventListener("input", function(e){ if(state.empform){ var wi=parseInt(el.getAttribute("data-w"),10); if(state.empform.rotation&&state.empform.rotation[wi]) state.empform.rotation[wi].in=e.target.value; } }); });
+  document.querySelectorAll("input.rot-out").forEach(function(el){ el.addEventListener("input", function(e){ if(state.empform){ var wi=parseInt(el.getAttribute("data-w"),10); if(state.empform.rotation&&state.empform.rotation[wi]) state.empform.rotation[wi].out=e.target.value; } }); });
   if ((f=document.getElementById("f_emp_status"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.status=e.target.value; });
   if ((f=document.getElementById("f_emp_notes"))) f.addEventListener("input", function(e){ if(state.empform) state.empform.notes=e.target.value; });
   if ((f=document.getElementById("f_emp_doclabel"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.docLabel=e.target.value; });
