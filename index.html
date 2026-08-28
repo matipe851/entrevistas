@@ -1569,9 +1569,9 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
-try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render }; }catch(e){}
+try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); } }; }catch(e){}
 
-var APP_VERSION = "v30.0-r55";
+var APP_VERSION = "v30.1-r56";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1973,20 +1973,37 @@ Screens["emp-form"] = function(){
       '<div><span class="field-label" style="display:block;margin-bottom:8px">Días laborables</span><div style="display:flex;gap:6px;flex-wrap:wrap">' + dayBtns(f.work_days, "emp-wday", null) +
       '</div><span class="field-hint" style="display:block;margin-top:6px">Los días no marcados cuentan como franco.</span></div>';
   } else {
-    html += '<label class="field"><span class="field-label">Inicio del ciclo (lunes de la Semana 1)</span><div class="input-row" style="max-width:220px"><input id="f_emp_rotstart" type="date" value="'+esc(f.rotation_start||"")+'"></div><span class="field-hint">El ciclo se repite: pasada la última semana, vuelve a la Semana 1.</span></label>';
-    var rot=Array.isArray(f.rotation)?f.rotation:[];
-    if(!rot.length){ html += '<p style="font-size:12.5px;color:var(--muted);margin:0">Agregá las semanas del ciclo (cada una con su horario y sus días).</p>'; }
-    rot.forEach(function(w,i){
-      html += '<div style="border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--surface-2)">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:13px;color:var(--ink)">Semana '+(i+1)+'</b><button type="button" class="dl-audio" data-action="emp-rot-del" data-w="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">quitar</button></div>' +
-        '<div class="grid2" style="gap:12px">' +
-          '<label class="field"><span class="field-label">Entrada</span><div class="input-row" style="background:var(--surface)"><input class="rot-in" data-w="'+i+'" type="time" value="'+esc(w.in||"")+'"></div></label>' +
-          '<label class="field"><span class="field-label">Salida</span><div class="input-row" style="background:var(--surface)"><input class="rot-out" data-w="'+i+'" type="time" value="'+esc(w.out||"")+'"></div></label>' +
+    var rotPat=f.rotation_pattern||"semanal";
+    html += '<label class="field"><span class="field-label">Modalidad rotativa</span><select class="bare" id="f_emp_rotpattern">' +
+        '<option value="semanal"'+(rotPat==="semanal"?" selected":"")+'>Por día de la semana (cada día su horario)</option>' +
+        '<option value="corrido"'+(rotPat==="corrido"?" selected":"")+'>Turnos corridos NxM (el franco se corre)</option>' +
+      '</select></label>';
+    if(rotPat==="semanal"){
+      var ws=(f.week_shifts && typeof f.week_shifts==="object") ? f.week_shifts : {};
+      html += '<div style="display:grid;gap:8px">';
+      DAYS.forEach(function(d){
+        var sh=ws[d[0]]; var works=!!sh;
+        html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--border);border-radius:10px;padding:8px 10px;background:var(--surface-2)">' +
+          '<button type="button" class="pill-time" data-action="emp-wk-toggle" data-day="'+d[0]+'" style="min-width:60px;cursor:pointer;border:1px solid var(--border);background:'+(works?'var(--teal)':'var(--surface)')+';color:'+(works?'#fff':'var(--ink)')+';'+(works?'font-weight:800':'opacity:.85')+'">'+d[1]+'</button>' +
+          (works
+            ? ('<span style="font-size:12px;color:var(--muted)">Entra</span><div class="input-row" style="max-width:118px;background:var(--surface)"><input class="wk-in" data-day="'+d[0]+'" type="time" value="'+esc(sh.in||"")+'"></div>' +
+               '<span style="font-size:12px;color:var(--muted)">Sale</span><div class="input-row" style="max-width:118px;background:var(--surface)"><input class="wk-out" data-day="'+d[0]+'" type="time" value="'+esc(sh.out||"")+'"></div>')
+            : '<span style="font-size:12.5px;color:var(--muted)">Franco</span>') +
+        '</div>';
+      });
+      html += '</div><span class="field-hint" style="display:block;margin-top:6px">Tocá cada día para marcar si trabaja (con su horario) o si es franco.</span>';
+    } else {
+      var wn=parseInt(f.work_n,10)||5, on=parseInt(f.off_n,10)||2;
+      html += '<div class="grid2" style="gap:14px">' +
+          '<label class="field"><span class="field-label">Días de trabajo (N)</span><div class="input-row" style="max-width:120px"><input id="f_emp_workn" type="number" min="1" value="'+esc(String(f.work_n!=null?f.work_n:5))+'"></div></label>' +
+          '<label class="field"><span class="field-label">Días de franco (M)</span><div class="input-row" style="max-width:120px"><input id="f_emp_offn" type="number" min="1" value="'+esc(String(f.off_n!=null?f.off_n:2))+'"></div></label>' +
         '</div>' +
-        '<div style="margin-top:10px"><span class="field-label" style="display:block;margin-bottom:6px">Días laborables (los no marcados = franco)</span><div style="display:flex;gap:6px;flex-wrap:wrap">' + dayBtns(w.days, "emp-rot-wday", i) + '</div></div>' +
-      '</div>';
-    });
-    html += '<button type="button" class="btn btn-ghost btn-sm" data-action="emp-rot-add" style="align-self:flex-start">'+ic('plus',14)+' Agregar semana</button>';
+        '<div class="grid2" style="gap:14px">' +
+          '<label class="field"><span class="field-label">Hora de entrada</span><div class="input-row"><input id="f_emp_shiftin" type="time" value="'+esc(f.shift_in||"")+'"></div></label>' +
+          '<label class="field"><span class="field-label">Hora de salida</span><div class="input-row"><input id="f_emp_shiftout" type="time" value="'+esc(f.shift_out||"")+'"></div></label>' +
+        '</div>' +
+        '<label class="field"><span class="field-label">Primer día de trabajo del ciclo</span><div class="input-row" style="max-width:220px"><input id="f_emp_corrstart" type="date" value="'+esc(f.rotation_start||"")+'"></div><span class="field-hint">Ej: '+wn+'x'+on+' → trabaja '+wn+' días y libra '+on+'; el ciclo se repite y el franco se va corriendo de día.</span></label>';
+    }
   }
   html += '</div></div>';
   // Documentación
@@ -3637,7 +3654,7 @@ function emptyEmpForm(){
   return { id:null, legajo_number:"", first_name:"", last_name:"", birth_date:"", dni:"", cuil:"", address:"", email:"", phone:"",
     hire_date:"", position:"", category:"", collective_agreement:"", contract_type:"", salary:"", status:"activo", notes:"",
     shift_in:"", shift_out:"", work_days:"1,2,3,4,5", tolerance_min:5,
-    schedule_type:"fijo", rotation:[], rotation_start:"",
+    schedule_type:"fijo", rotation:[], rotation_start:"", rotation_pattern:"semanal", week_shifts:{}, work_n:5, off_n:2,
     documents:[], saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
 }
 function goLegajo(){ state.emp.error=null; state.emp.msg=""; state.screen="mod2-legajo"; render(); loadEmployees(); }
@@ -3652,9 +3669,12 @@ function openEmployee(id){
   var e=(state.emp.items||[]).filter(function(z){return z.id===id;})[0];
   if(!e) return;
   var f=emptyEmpForm();
-  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min","schedule_type","rotation_start"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
+  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min","schedule_type","rotation_start","rotation_pattern","work_n","off_n"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
   f.rotation = Array.isArray(e.rotation) ? e.rotation.map(function(r){ return { in:(r.in||""), out:(r.out||""), days:String(r.days||"") }; }) : [];
+  f.week_shifts = (e.week_shifts && typeof e.week_shifts==="object") ? JSON.parse(JSON.stringify(e.week_shifts)) : {};
   if(!f.schedule_type) f.schedule_type="fijo";
+  if(!f.rotation_pattern) f.rotation_pattern="semanal";
+  if(f.work_n==null) f.work_n=5; if(f.off_n==null) f.off_n=2;
   f.documents = Array.isArray(e.documents)?e.documents.slice():[];
   state.empform=f; state.screen="emp-form"; render();
 }
@@ -3668,6 +3688,7 @@ function empFormRow(){
     salary:(f.salary||"").trim(), status:f.status||"activo", notes:(f.notes||"").trim(),
     shift_in:(f.shift_in||"").trim(), shift_out:(f.shift_out||"").trim(), work_days:(f.work_days||"").trim(), tolerance_min:(parseInt(f.tolerance_min,10)||0),
     schedule_type:(f.schedule_type||"fijo"), rotation:(Array.isArray(f.rotation)?f.rotation.map(function(r){ return { in:(r.in||"").trim(), out:(r.out||"").trim(), days:String(r.days||"").trim() }; }):[]), rotation_start:(f.rotation_start||"")||null,
+    rotation_pattern:(f.rotation_pattern||"semanal"), week_shifts:(f.week_shifts&&typeof f.week_shifts==="object"?f.week_shifts:{}), work_n:(parseInt(f.work_n,10)||null), off_n:(parseInt(f.off_n,10)||null),
     documents:Array.isArray(f.documents)?f.documents:[] };
 }
 function saveEmployee(){
@@ -3677,7 +3698,7 @@ function saveEmployee(){
   var row=empFormRow();
   var wasEdit=!!f.id;
   // Resiliente: si las columnas nuevas (legajo_number/salary) aún no existen, reintentamos sin ellas.
-  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min; delete slim.schedule_type; delete slim.rotation; delete slim.rotation_start;
+  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min; delete slim.schedule_type; delete slim.rotation; delete slim.rotation_start; delete slim.rotation_pattern; delete slim.week_shifts; delete slim.work_n; delete slim.off_n;
   function attempt(r){ return wasEdit ? dbUpdateEmployee(f.id, r) : dbCreateEmployee(r); }
   attempt(row).catch(function(){ return attempt(slim); }).then(function(saved){
     // Al dar de alta un empleado nuevo, registramos el movimiento "Alta" (best-effort).
@@ -3704,14 +3725,47 @@ function parseYMD(str){ try{ var p=String(str).split("-"); return new Date(parse
 function rotationWeekIndex(startStr, dayStr, len){
   try{ var s=parseYMD(startStr), d=parseYMD(dayStr); if(!s||!d||!len) return 0; var diff=Math.floor((d.getTime()-s.getTime())/(24*3600*1000)); var wk=Math.floor(diff/7); wk=((wk%len)+len)%len; return wk; }catch(e){ return 0; }
 }
-/* Devuelve el turno vigente de un empleado para una fecha: {in, out, days}. Soporta rotativo. */
+function cycleDayIndex(startStr, dayStr, cyc){
+  var s=parseYMD(startStr), d=parseYMD(dayStr); if(!s||!d||!cyc) return -1;
+  var diff=Math.floor((d.getTime()-s.getTime())/(24*3600*1000));
+  return ((diff%cyc)+cyc)%cyc;
+}
+/* Turno vigente de un empleado para una fecha: {in, out, works}. Soporta fijo y rotativo. */
 function effectiveShift(e, dayStr){
-  if((e.schedule_type||"fijo")==="rotativo" && Array.isArray(e.rotation) && e.rotation.length && e.rotation_start){
+  var wd=dayWeekNum(dayStr);
+  function inCsv(csv){ return String(csv||"").split(",").map(function(s){return s.trim();}).indexOf(String(wd))>=0; }
+  if((e.schedule_type||"fijo")!=="rotativo"){
+    return { in:(e.shift_in||""), out:(e.shift_out||""), works: inCsv(e.work_days) };
+  }
+  var pat=e.rotation_pattern||"semanal";
+  if(pat==="semanal"){
+    var ws=(e.week_shifts && typeof e.week_shifts==="object") ? e.week_shifts : {};
+    var hasWs=Object.keys(ws).length>0;
+    if(!hasWs && Array.isArray(e.rotation) && e.rotation.length && e.rotation_start){
+      var lwk=rotationWeekIndex(e.rotation_start, dayStr, e.rotation.length);
+      var lr=e.rotation[lwk]||e.rotation[0]||{};
+      return { in:(lr.in||""), out:(lr.out||""), works: inCsv(lr.days) };
+    }
+    var sh=ws[String(wd)];
+    if(sh) return { in:(sh.in||""), out:(sh.out||""), works:true };
+    return { in:"", out:"", works:false };
+  }
+  if(pat==="corrido"){
+    var n=parseInt(e.work_n,10)||0, m=parseInt(e.off_n,10)||0, cyc=n+m;
+    if(cyc>0 && e.rotation_start){
+      var idx=cycleDayIndex(e.rotation_start, dayStr, cyc);
+      var works=(idx>=0 && idx<n);
+      return { in:works?(e.shift_in||""):"", out:works?(e.shift_out||""):"", works:works };
+    }
+    return { in:(e.shift_in||""), out:(e.shift_out||""), works: inCsv(e.work_days) };
+  }
+  // Compatibilidad: rotación por semanas (versión anterior).
+  if(Array.isArray(e.rotation) && e.rotation.length && e.rotation_start){
     var wk=rotationWeekIndex(e.rotation_start, dayStr, e.rotation.length);
     var r=e.rotation[wk]||e.rotation[0]||{};
-    return { in:(r.in||""), out:(r.out||""), days:String(r.days||"") };
+    return { in:(r.in||""), out:(r.out||""), works: inCsv(r.days) };
   }
-  return { in:(e.shift_in||""), out:(e.shift_out||""), days:String(e.work_days||"") };
+  return { in:(e.shift_in||""), out:(e.shift_out||""), works: inCsv(e.work_days) };
 }
 function fmtMinDur(min){ if(min==null) return "—"; min=Math.max(0,Math.round(min)); var h=Math.floor(min/60), m=min%60; return h+"h "+("0"+m).slice(-2)+"m"; }
 var MONTH_NAMES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -3797,8 +3851,7 @@ function asistDaySummary(dayArg){
   if(wd){
     emps.forEach(function(e){
       if((e.status||"activo")!=="activo") return;
-      var wdays=String(effectiveShift(e, day).days||"").split(",").map(function(s){return s.trim();});
-      if(wdays.indexOf(String(wd))>=0 && !presentIds[e.id]) absent.push(e);
+      if(effectiveShift(e, day).works && !presentIds[e.id]) absent.push(e);
     });
   }
   return { rows:rows, absent:absent, day:day, count:punches.length };
@@ -4724,10 +4777,8 @@ function bind(){
       else if (act === "emp-wday"){
         if(state.empform){ var dcode=el.getAttribute("data-day"); var arr=String(state.empform.work_days||"").split(",").map(function(s){return s.trim();}).filter(Boolean); var at=arr.indexOf(dcode); if(at>=0) arr.splice(at,1); else arr.push(dcode); arr.sort(); state.empform.work_days=arr.join(","); render(); }
       }
-      else if (act === "emp-rot-add"){ if(state.empform){ state.empform.rotation=state.empform.rotation||[]; var prev=state.empform.rotation[state.empform.rotation.length-1]; state.empform.rotation.push({ in:(prev&&prev.in)||"09:00", out:(prev&&prev.out)||"18:00", days:"1,2,3,4,5" }); render(); } }
-      else if (act === "emp-rot-del"){ if(state.empform){ var wi=parseInt(el.getAttribute("data-w"),10); if(state.empform.rotation&&state.empform.rotation[wi]!=null){ state.empform.rotation.splice(wi,1); render(); } } }
-      else if (act === "emp-rot-wday"){
-        if(state.empform){ var wj=parseInt(el.getAttribute("data-w"),10); var dc=el.getAttribute("data-day"); var wk=state.empform.rotation&&state.empform.rotation[wj]; if(wk){ var ar=String(wk.days||"").split(",").map(function(s){return s.trim();}).filter(Boolean); var ix=ar.indexOf(dc); if(ix>=0) ar.splice(ix,1); else ar.push(dc); ar.sort(); wk.days=ar.join(","); render(); } }
+      else if (act === "emp-wk-toggle"){
+        if(state.empform){ state.empform.week_shifts=(state.empform.week_shifts&&typeof state.empform.week_shifts==="object")?state.empform.week_shifts:{}; var wdc=el.getAttribute("data-day"); if(state.empform.week_shifts[wdc]){ delete state.empform.week_shifts[wdc]; } else { state.empform.week_shifts[wdc]={ in:(state.empform.shift_in||"09:00"), out:(state.empform.shift_out||"18:00") }; } render(); }
       }
       else if (act === "go-admin") goAdmin();
       else if (act === "copy-bulk"){
@@ -4947,10 +4998,13 @@ function bind(){
     var el=document.getElementById(p[0]); if(el) el.addEventListener("input", function(e){ if(state.empform) state.empform[p[1]]=e.target.value; });
   });
   if ((f=document.getElementById("f_emp_contract"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.contract_type=e.target.value; });
-  if ((f=document.getElementById("f_emp_schedtype"))) f.addEventListener("change", function(e){ if(state.empform){ state.empform.schedule_type=e.target.value; if(e.target.value==="rotativo" && !(state.empform.rotation||[]).length){ state.empform.rotation=[{ in:(state.empform.shift_in||"09:00"), out:(state.empform.shift_out||"18:00"), days:(state.empform.work_days||"1,2,3,4,5") }]; } render(); } });
-  if ((f=document.getElementById("f_emp_rotstart"))) f.addEventListener("input", function(e){ if(state.empform) state.empform.rotation_start=e.target.value; });
-  document.querySelectorAll("input.rot-in").forEach(function(el){ el.addEventListener("input", function(e){ if(state.empform){ var wi=parseInt(el.getAttribute("data-w"),10); if(state.empform.rotation&&state.empform.rotation[wi]) state.empform.rotation[wi].in=e.target.value; } }); });
-  document.querySelectorAll("input.rot-out").forEach(function(el){ el.addEventListener("input", function(e){ if(state.empform){ var wi=parseInt(el.getAttribute("data-w"),10); if(state.empform.rotation&&state.empform.rotation[wi]) state.empform.rotation[wi].out=e.target.value; } }); });
+  if ((f=document.getElementById("f_emp_schedtype"))) f.addEventListener("change", function(e){ if(state.empform){ state.empform.schedule_type=e.target.value; render(); } });
+  if ((f=document.getElementById("f_emp_rotpattern"))) f.addEventListener("change", function(e){ if(state.empform){ state.empform.rotation_pattern=e.target.value; render(); } });
+  if ((f=document.getElementById("f_emp_workn"))) f.addEventListener("input", function(e){ if(state.empform) state.empform.work_n=parseInt(e.target.value,10)||null; });
+  if ((f=document.getElementById("f_emp_offn"))) f.addEventListener("input", function(e){ if(state.empform) state.empform.off_n=parseInt(e.target.value,10)||null; });
+  if ((f=document.getElementById("f_emp_corrstart"))) f.addEventListener("input", function(e){ if(state.empform) state.empform.rotation_start=e.target.value; });
+  document.querySelectorAll("input.wk-in").forEach(function(el){ el.addEventListener("input", function(e){ if(state.empform){ var dc=el.getAttribute("data-day"); state.empform.week_shifts=(state.empform.week_shifts&&typeof state.empform.week_shifts==="object")?state.empform.week_shifts:{}; if(!state.empform.week_shifts[dc]) state.empform.week_shifts[dc]={}; state.empform.week_shifts[dc].in=e.target.value; } }); });
+  document.querySelectorAll("input.wk-out").forEach(function(el){ el.addEventListener("input", function(e){ if(state.empform){ var dc=el.getAttribute("data-day"); state.empform.week_shifts=(state.empform.week_shifts&&typeof state.empform.week_shifts==="object")?state.empform.week_shifts:{}; if(!state.empform.week_shifts[dc]) state.empform.week_shifts[dc]={}; state.empform.week_shifts[dc].out=e.target.value; } }); });
   if ((f=document.getElementById("f_emp_status"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.status=e.target.value; });
   if ((f=document.getElementById("f_emp_notes"))) f.addEventListener("input", function(e){ if(state.empform) state.empform.notes=e.target.value; });
   if ((f=document.getElementById("f_emp_doclabel"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.docLabel=e.target.value; });
