@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); } }; }catch(e){}
 
-var APP_VERSION = "v30.9-r64";
+var APP_VERSION = "v31.0-r65";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2162,12 +2162,20 @@ function asistSummaryRowHtml(r){
   else if(r.estadoKind==="atiempo") estado='<span style="color:var(--green);font-weight:700">A tiempo</span>';
   else if(!r.matched) estado='<span style="font-size:11px;color:var(--brick)">sin match</span>';
   else estado='<span style="font-size:11px;color:var(--muted)">sin turno</span>';
-  var photo=(r.entrada&&r.entrada.photo_url)||(r.salida&&r.salida.photo_url)||"";
   var geoP=(r.entrada&&r.entrada.lat!=null&&r.entrada.lng!=null)?r.entrada:((r.salida&&r.salida.lat!=null&&r.salida.lng!=null)?r.salida:null);
   var geoLink=geoP?('https://www.google.com/maps?q='+geoP.lat+','+geoP.lng):'';
+  // Foto de ENTRADA y de SALIDA por separado (cada marca con la foto de esa persona en ese momento).
+  var thumb=function(p, label, col){
+    if(!(p && p.photo_url)) return '';
+    return '<a href="'+esc(p.photo_url)+'" target="_blank" rel="noopener" title="Foto de '+label+'" style="position:relative;flex-shrink:0;display:block">' +
+      '<img src="'+esc(p.photo_url)+'" alt="'+label+'" style="width:48px;height:48px;border-radius:10px;object-fit:cover;border:2px solid '+col+'">' +
+      '<span style="position:absolute;bottom:-3px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:800;letter-spacing:.03em;color:#fff;background:'+col+';border-radius:6px;padding:1px 5px;white-space:nowrap">'+label+'</span></a>';
+  };
+  var photosHtml = thumb(r.entrada,'ENTRADA','var(--green)') + thumb(r.salida,'SALIDA','var(--brick)');
+  if(!photosHtml){ photosHtml = '<span style="flex-shrink:0;width:48px;height:48px;border-radius:10px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">'+ic('users',18)+'</span>'; }
   var h='<div class="qa-item">' +
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-      (photo?'<a href="'+esc(photo)+'" target="_blank" rel="noopener" style="flex-shrink:0"><img src="'+esc(photo)+'" alt="" style="width:48px;height:48px;border-radius:10px;object-fit:cover"></a>':'<span style="flex-shrink:0;width:48px;height:48px;border-radius:10px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">'+ic('users',18)+'</span>') +
+      '<div style="display:flex;gap:8px;flex-shrink:0">'+photosHtml+'</div>' +
       '<div style="flex:1;min-width:140px"><p style="margin:0;font-weight:700;font-size:14px;color:var(--ink)">'+esc(r.name)+(r.legajo?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(r.legajo)+'</span>'):'')+(!r.matched?' <span style="font-size:11px;color:var(--brick)">· sin match</span>':'')+'</p>' +
       '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">Entrada '+(r.entrada?esc(tsHM(r.entrada.punched_at)):'—')+' · Salida '+(r.salida?esc(tsHM(r.salida.punched_at)):'—')+' · '+fmtMinDur(r.workedMin)+(r.extra?(' · <span style="color:var(--blue)">+'+fmtMinDur(r.extra)+' extra</span>'):'')+(geoLink?(' · <a href="'+esc(geoLink)+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">'+ic('globe',11)+' ubicación</a>'):'')+'</p></div>' +
       '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><div style="font-size:12px;text-align:right">'+estado+'</div>' +
