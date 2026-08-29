@@ -77,9 +77,20 @@ module.exports = async function handler(req, res) {
         var er = await fetch(base + "/rest/v1/employees?owner=eq." + encodeURIComponent(owner) + "&select=id,first_name,last_name,status,dni,legajo_number&limit=5000", { headers: headers });
         var erows = await er.json();
         if (Array.isArray(erows)) {
+          // 1) Por N° de documento (DNI), comparando sólo dígitos.
           for (var i = 0; i < erows.length; i++) {
             var ed = String(erows[i].dni || "").replace(/\D/g, "");
             if (ed && ed === dniDigits) { emp = erows[i]; break; }
+          }
+          // 2) Fallback: por N° de legajo (por si cargaron el legajo en lugar del DNI).
+          if (!emp) {
+            var raw = dni.trim().toLowerCase();
+            for (var k = 0; k < erows.length; k++) {
+              var lg = String(erows[k].legajo_number || "").trim();
+              if (!lg) continue;
+              var lgd = lg.replace(/\D/g, "");
+              if (lg.toLowerCase() === raw || (lgd && lgd === dniDigits)) { emp = erows[k]; break; }
+            }
           }
         }
       } catch (e) {}
