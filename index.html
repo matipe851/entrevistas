@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); } }; }catch(e){}
 
-var APP_VERSION = "v30.4-r59";
+var APP_VERSION = "v30.5-r60";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -4051,32 +4051,67 @@ function requestFichadorGeo(){
     if(state.fichador){ state.fichador.geo={ lat:pos.coords.latitude, lng:pos.coords.longitude, acc:pos.coords.accuracy }; state.fichador.geoErr=""; render(); }
   }, function(){ if(state.fichador){ state.fichador.geoErr="No pudimos obtener la ubicación (dá permiso para mayor control)."; render(); } }, { enableHighAccuracy:true, timeout:8000, maximumAge:30000 });
 }
+// Dibuja un frame (video o bitmap) a un canvas y devuelve el blob JPEG.
+function frameToBlob(src, w, h, resolve){
+  try{
+    var cw=Math.min(640, w||640), ch=Math.round(cw*((h||480)/(w||640)));
+    var cv=document.createElement("canvas"); cv.width=cw; cv.height=ch;
+    cv.getContext("2d").drawImage(src,0,0,cw,ch);
+    cv.toBlob(function(blob){ resolve(blob||null); }, "image/jpeg", 0.82);
+  }catch(e){ resolve(null); }
+}
+// Captura desde el <video> (fallback para navegadores sin ImageCapture, ej. iOS).
+function captureFromVideo(resolve){
+  var v=rt.camVideo || document.getElementById("ficamvideo");
+  if(!v || !rt.camStream){ resolve(null); return; }
+  var done=false;
+  var draw=function(){ if(done) return; done=true; frameToBlob(v, v.videoWidth||640, v.videoHeight||480, resolve); };
+  var tries=0;
+  var waitReady=function(){
+    if(v.videoWidth && v.videoHeight && v.readyState>=2){
+      if(typeof v.requestVideoFrameCallback==="function"){ try{ v.requestVideoFrameCallback(function(){ draw(); }); return; }catch(e){} }
+      setTimeout(draw, 60); return;
+    }
+    if(tries++ < 25){ setTimeout(waitReady, 100); } else { resolve(null); }
+  };
+  try{ v.play && v.play().catch(function(){}); }catch(e){}
+  waitReady();
+}
 function captureFichadorPhoto(){
   return new Promise(function(resolve){
     try{
-      var v=rt.camVideo || document.getElementById("ficamvideo");
-      if(!v || !rt.camStream){ resolve(null); return; }
-      var done=false;
-      var draw=function(){
-        if(done) return; done=true;
+      if(!rt.camStream){ resolve(null); return; }
+      var track=(rt.camStream.getVideoTracks&&rt.camStream.getVideoTracks()[0])||null;
+      // Preferimos ImageCapture: toma el frame EN VIVO directo de la cámara,
+      // sin depender del <video> del DOM (que a veces queda congelado tras un re-render).
+      if(track && typeof ImageCapture!=="undefined"){
         try{
-          var w=v.videoWidth||640, h=v.videoHeight||480;
-          var cv=document.createElement("canvas"); cv.width=Math.min(640,w); cv.height=Math.round(cv.width*(h/w));
-          cv.getContext("2d").drawImage(v,0,0,cv.width,cv.height);
-          cv.toBlob(function(blob){ resolve(blob||null); }, "image/jpeg", 0.82);
-        }catch(e){ resolve(null); }
-      };
-      var tries=0;
-      var waitReady=function(){
-        if(v.videoWidth && v.videoHeight && v.readyState>=2){
-          // Capturamos el PRÓXIMO frame realmente pintado → siempre en vivo.
-          if(typeof v.requestVideoFrameCallback==="function"){ try{ v.requestVideoFrameCallback(function(){ draw(); }); return; }catch(e){} }
-          setTimeout(draw, 60); return;
-        }
-        if(tries++ < 20){ setTimeout(waitReady, 100); } else { resolve(null); }
-      };
-      try{ v.play && v.play().catch(function(){}); }catch(e){}
-      waitReady();
+          var ic=new ImageCapture(track);
+          ic.grabFrame().then(function(bmp){
+            frameToBlob(bmp, bmp.width, bmp.height, function(blob){ try{ bmp.close&&bmp.close(); }catch(e){} if(blob) resolve(blob); else captureFromVideo(resolve); });
+          }).catch(function(){ captureFromVideo(resolve); });
+          return;
+        }catch(e){ /* seguimos con el fallback */ }
+      }
+      captureFromVideo(resolve);
+    }catch(e){ resolve(null); }
+  });
+}
+// Devuelve la ubicación: la que ya teníamos, o la pide en el momento (con un límite de espera).
+function ensureFichadorGeo(){
+  return new Promise(function(resolve){
+    try{
+      var f=state.fichador;
+      if(f && f.geo){ resolve(f.geo); return; }
+      if(!(navigator.geolocation && navigator.geolocation.getCurrentPosition)){ resolve(null); return; }
+      var settled=false;
+      var done=function(g){ if(settled) return; settled=true; resolve(g); };
+      navigator.geolocation.getCurrentPosition(function(pos){
+        var g={ lat:pos.coords.latitude, lng:pos.coords.longitude, acc:pos.coords.accuracy };
+        if(state.fichador){ state.fichador.geo=g; state.fichador.geoErr=""; }
+        done(g);
+      }, function(){ if(state.fichador && !state.fichador.geo) state.fichador.geoErr="No pudimos obtener la ubicación (dá permiso)."; done(null); }, { enableHighAccuracy:true, timeout:7000, maximumAge:60000 });
+      setTimeout(function(){ done((state.fichador&&state.fichador.geo)||null); }, 7500);
     }catch(e){ resolve(null); }
   });
 }
@@ -4086,13 +4121,14 @@ function doFichar(type){
   if(!(f.dni||"").replace(/\D/g,"")){ f.error="Cargá tu número de documento (DNI)."; render(); return; }
   f.error=null;
   // IMPORTANTE: capturamos la foto ANTES de re-renderizar (el video sigue en vivo).
-  // Si se rendereaba primero, el <video> se recreaba vacío y la foto salía en negro.
-  captureFichadorPhoto().then(function(blob){
+  // La ubicación se pide en paralelo, así no se pierde si todavía no había resuelto.
+  Promise.all([ captureFichadorPhoto(), ensureFichadorGeo() ]).then(function(arr){
+    var blob=arr[0], geo=arr[1]||f.geo||null;
     f.sending=true; render();
     var up = (blob && audioUploadConfigured()) ? uploadAudioToCloudinary(new File([blob],"fichada.jpg",{type:"image/jpeg"})).catch(function(){ return ""; }) : Promise.resolve("");
     return up.then(function(photoUrl){
       var body={ code:f.code, action:"punch", type:type, first_name:(f.first||"").trim(), last_name:(f.last||"").trim(), dni:(f.dni||"").trim(), photo_url:photoUrl||"" };
-      if(f.geo){ body.lat=f.geo.lat; body.lng=f.geo.lng; body.accuracy=f.geo.acc; }
+      if(geo){ body.lat=geo.lat; body.lng=geo.lng; body.accuracy=geo.acc; }
       return fetch("/api/fichar",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) }).then(function(r){ return r.json(); });
     });
   }).then(function(j){
