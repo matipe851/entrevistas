@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); } }; }catch(e){}
 
-var APP_VERSION = "v30.5-r60";
+var APP_VERSION = "v30.6-r61";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2142,6 +2142,20 @@ Screens["emp-movements"] = function(){
 };
 
 /* Fila de estado del día (foto a la izquierda + a tiempo/tarde + salida temprana con justificar). */
+// Fila de UNA fichada (con foto, hora, ubicación y botón eliminar). Se usa en varias vistas.
+function asistPunchRowHtml(p){
+  var col=p.type==="entrada"?"var(--green)":"var(--brick)";
+  var nm=p.name_entered||"(sin nombre)";
+  var maps=(p.lat!=null&&p.lng!=null)?("https://www.google.com/maps?q="+p.lat+","+p.lng):"";
+  return '<div class="qa-item" style="border-left:3px solid '+col+'">' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      (p.photo_url?'<a href="'+esc(p.photo_url)+'" target="_blank" rel="noopener" style="flex-shrink:0"><img src="'+esc(p.photo_url)+'" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover"></a>':'<span style="flex-shrink:0;width:44px;height:44px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">'+ic('users',18)+'</span>') +
+      '<div style="flex:1;min-width:120px"><p style="margin:0;font-weight:700;font-size:13.5px;color:var(--ink)">'+esc(nm)+(p.legajo_number?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(p.legajo_number)+'</span>'):(p.dni?(' <span style="font-size:11px;color:var(--muted)">· DNI '+esc(p.dni)+'</span>'):''))+'</p>' +
+      '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)"><span style="color:'+col+';font-weight:700;text-transform:uppercase">'+esc(p.type)+'</span> · '+esc(tsHM(p.punched_at))+(maps?(' · <a href="'+esc(maps)+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">ubicación</a>'):'')+(!p.employee_id?' · <span style="color:var(--brick)">sin match</span>':'')+'</p></div>' +
+      '<button class="dl-audio" data-action="asist-del" data-id="'+esc(p.id)+'" title="Eliminar fichada" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">'+ic('trash',13)+' eliminar</button>' +
+    '</div>' +
+  '</div>';
+}
 function asistSummaryRowHtml(r){
   var estado;
   if(r.estadoKind==="tarde") estado='<span style="color:var(--amber);font-weight:700">Tarde '+fmtMinDur(r.late)+'</span>';
@@ -2235,23 +2249,18 @@ Screens["mod2-asistencia"] = function(){
         sum.absent.forEach(function(e){ html += '<div style="padding:8px 10px;background:var(--brick-tint);border-radius:9px;font-size:13px;color:var(--ink)">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+' — no fichó</div>'; });
         html += '</div></div>';
       }
+      // Fichadas individuales del día (para revisar y eliminar las que se hicieron por error).
+      var dayPunches=(s.items||[]).filter(function(p){ return tsDayKey(p.punched_at)===day; }).sort(function(a,b){ return new Date(b.punched_at)-new Date(a.punched_at); });
+      if(dayPunches.length){
+        html += '<details style="margin-top:14px"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--teal);padding:4px 0">Ver / eliminar cada fichada del día ('+dayPunches.length+')</summary><div style="display:grid;gap:8px;margin-top:8px">';
+        dayPunches.forEach(function(p){ html += asistPunchRowHtml(p); });
+        html += '</div></details>';
+      }
     }
   } else if(s.view==="log"){
     // Vista "Todas las fichadas": organizadas en CARPETAS por mes/año.
     var all=(s.items||[]);
-    var arow=function(p){
-      var col=p.type==="entrada"?"var(--green)":"var(--brick)";
-      var nm=p.name_entered||"(sin nombre)";
-      var maps=(p.lat!=null&&p.lng!=null)?("https://www.google.com/maps?q="+p.lat+","+p.lng):"";
-      return '<div class="qa-item" style="border-left:3px solid '+col+'">' +
-        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-          (p.photo_url?'<a href="'+esc(p.photo_url)+'" target="_blank" rel="noopener" style="flex-shrink:0"><img src="'+esc(p.photo_url)+'" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover"></a>':'<span style="flex-shrink:0;width:44px;height:44px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)">'+ic('users',18)+'</span>') +
-          '<div style="flex:1;min-width:120px"><p style="margin:0;font-weight:700;font-size:13.5px;color:var(--ink)">'+esc(nm)+(p.legajo_number?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(p.legajo_number)+'</span>'):(p.dni?(' <span style="font-size:11px;color:var(--muted)">· DNI '+esc(p.dni)+'</span>'):''))+'</p>' +
-          '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)"><span style="color:'+col+';font-weight:700;text-transform:uppercase">'+esc(p.type)+'</span> · '+esc(tsHM(p.punched_at))+(maps?(' · <a href="'+esc(maps)+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">ubicación</a>'):'')+(!p.employee_id?' · <span style="color:var(--brick)">sin match</span>':'')+'</p></div>' +
-          '<button class="dl-audio" data-action="asist-del" data-id="'+esc(p.id)+'" title="Eliminar fichada" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">'+ic('trash',13)+' eliminar</button>' +
-        '</div>' +
-      '</div>';
-    };
+    var arow=asistPunchRowHtml;
     if(!all.length){ html += '<div class="center-block" style="padding:26px 12px">'+ic('clock',24)+'<p>Todavía no hay fichadas.</p></div>'; }
     else if(!s.folder){
       var byMonth={}; all.forEach(function(p){ var mk=monthKey(p.punched_at); if(mk){ (byMonth[mk]=byMonth[mk]||[]).push(p); } });
@@ -2373,7 +2382,7 @@ Screens["fichador"] = function(){
       '<label class="field"><span class="field-label">Nombre</span><div class="input-row"><input id="f_fi_first" value="'+esc(f.first||"")+'" placeholder="Nombre"></div></label>' +
       '<label class="field"><span class="field-label">Apellido</span><div class="input-row"><input id="f_fi_last" value="'+esc(f.last||"")+'" placeholder="Apellido"></div></label>' +
     '</div>' +
-    '<label class="field"><span class="field-label">N° de documento (DNI)</span><div class="input-row"><span style="color:var(--muted)">'+ic('file',15)+'</span><input id="f_fi_dni" inputmode="numeric" value="'+esc(f.dni||"")+'" placeholder="Ej: 30123456"></div><span class="field-hint">El mismo DNI que figura en tu legajo.</span></label>' +
+    '<label class="field"><span class="field-label">N° de documento (DNI) o legajo</span><div class="input-row"><span style="color:var(--muted)">'+ic('file',15)+'</span><input id="f_fi_dni" inputmode="numeric" value="'+esc(f.dni||"")+'" placeholder="Ej: 30123456"></div><span class="field-hint">El mismo DNI (o N° de legajo) que figura en tu legajo.</span></label>' +
   '</div>';
   html += '<div style="display:flex;gap:10px;margin-top:18px">' +
     '<button class="btn btn-block" id="fichEntradaBtn" style="background:var(--green);color:#fff" '+(f.sending?'disabled':'')+'>'+(f.sending?ic('loader',15,'spin'):ic('check',16))+' Entrada</button>' +
