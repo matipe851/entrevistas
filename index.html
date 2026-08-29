@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); } }; }catch(e){}
 
-var APP_VERSION = "v30.8-r63";
+var APP_VERSION = "v30.9-r64";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -3362,13 +3362,21 @@ var WEB3FORMS_KEY = "bc827930-037b-41dd-b03b-63d59d485c53";
 var CLOUDINARY_CLOUD_NAME = "memtugeu";
 var CLOUDINARY_UPLOAD_PRESET = "ml_default";
 function audioUploadConfigured(){ return !!(CLOUDINARY_CLOUD_NAME && CLOUDINARY_UPLOAD_PRESET); }
-function uploadAudioToCloudinary(blob){
-  var fd = new FormData();
-  fd.append("file", blob);
-  fd.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-  return fetch("https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD_NAME + "/auto/upload", { method:"POST", body: fd })
-    .then(function(r){ return r.json(); })
-    .then(function(j){ if (j && j.secure_url) return j.secure_url; throw new Error((j && j.error && j.error.message) || "Falló la subida del audio"); });
+function uploadAudioToCloudinary(blob, publicId){
+  function attempt(withPid){
+    var fd = new FormData();
+    fd.append("file", blob);
+    fd.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    // public_id único: evita que las subidas con el mismo nombre de archivo
+    // se pisen entre sí (todas terminaban apuntando al mismo asset/URL).
+    if (withPid && publicId) fd.append("public_id", publicId);
+    return fetch("https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD_NAME + "/auto/upload", { method:"POST", body: fd })
+      .then(function(r){ return r.json(); })
+      .then(function(j){ if (j && j.secure_url) return j.secure_url; throw new Error((j && j.error && j.error.message) || "Falló la subida"); });
+  }
+  // Si el preset no permite public_id, reintentamos sin él (el nombre de archivo único ya ayuda).
+  if (publicId) return attempt(true).catch(function(){ return attempt(false); });
+  return attempt(false);
 }
 /* Sube todos los audios grabados y guarda las URLs en state.audioUrls (best-effort). */
 function uploadAllAudios(){
@@ -4152,7 +4160,8 @@ function doFichar(type){
   Promise.all([ captureFichadorPhoto(), ensureFichadorGeo() ]).then(function(arr){
     var blob=arr[0], geo=arr[1]||f.geo||null;
     f.sending=true; render();
-    var up = (blob && audioUploadConfigured()) ? uploadAudioToCloudinary(new File([blob],"fichada.jpg",{type:"image/jpeg"})).catch(function(){ return ""; }) : Promise.resolve("");
+    var uid = "fichada_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+    var up = (blob && audioUploadConfigured()) ? uploadAudioToCloudinary(new File([blob], uid+".jpg", {type:"image/jpeg"}), "fichadas/"+uid).catch(function(){ return ""; }) : Promise.resolve("");
     return up.then(function(photoUrl){
       var body={ code:f.code, action:"punch", type:type, first_name:(f.first||"").trim(), last_name:(f.last||"").trim(), dni:(f.dni||"").trim(), photo_url:photoUrl||"" };
       if(geo){ body.lat=geo.lat; body.lng=geo.lng; body.accuracy=geo.acc; }
