@@ -357,7 +357,10 @@ module.exports = async function handler(req, res) {
       var dtext = String(body.text || "").slice(0, 15000);
       if (!dtext) { res.status(200).json({ ok: false, error: "no_text" }); return; }
       var schema, guide;
-      if (dom === "salud") {
+      if (dom === "documentacion") {
+        schema = '{ "type":"contrato|recibo|certificado|constancia|otro", "title":"", "doc_date":"YYYY-MM-DD", "expiry_date":"YYYY-MM-DD", "signed":true, "detail":"" }';
+        guide = "Es un documento laboral (contrato, recibo de sueldo, certificado, constancia u otro). 'title' es una descripción corta. 'doc_date' es la fecha del documento y 'expiry_date' su vencimiento si lo tuviera. 'signed' es true si el documento está firmado (firma ológrafa o digital), si no false.";
+      } else if (dom === "salud") {
         schema = '{ "type":"preocupacional|periodico|art|accidente|epp|apto", "subtype":"fisico|psicologico|ambiental|laboral|in_itinere|", "title":"", "entity":"", "result":"apto|apto_restricciones|no_apto|", "date":"YYYY-MM-DD", "expiry_date":"YYYY-MM-DD", "detail":"" }';
         guide = "Es un documento de salud ocupacional (apto médico, examen preocupacional o periódico, póliza/constancia de ART, entrega de EPP o denuncia de accidente). 'entity' es el prestador, clínica o ART. 'subtype' aplica solo a preocupacional (fisico/psicologico/ambiental) o accidente (laboral/in_itinere).";
       } else {
