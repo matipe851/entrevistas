@@ -1571,7 +1571,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); } }; }catch(e){}
 
-var APP_VERSION = "v31.0-r65";
+var APP_VERSION = "v31.1-r66";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2353,12 +2353,14 @@ Screens["mod2-asistencia"] = function(){
           '<span class="badge" style="background:var(--teal-tint);color:var(--teal-strong)">Horas extra: '+en.extra.length+'</span>' +
           '<span class="badge" style="background:var(--brick-tint);color:var(--brick)">Ausencias: '+en.absent.length+'</span>' +
           '<span class="badge" style="background:var(--purple-tint);color:var(--purple)">Francos trabajados: '+en.franco.length+'</span>' +
+          '<span class="badge" style="background:var(--green-tint);color:var(--green)">Francos (según legajo): '+((en.rest||[]).length)+'</span>' +
         '</div>';
         html += secRows("Llegadas tarde","var(--amber)", en.late, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+" tarde", "var(--amber-tint)", x.just); });
         html += secRows("Salidas anticipadas (se fue antes)","var(--brick)", en.early, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+" antes"+(x.out?(' · salió '+esc(x.out)):''), "var(--brick-tint)", x.just); });
         html += secRows("Horas extra","var(--teal-strong)", en.extra, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+(x.out?(' · salió '+esc(x.out)):''), "var(--teal-tint)"); });
         html += secRows("Ausencias","var(--brick)", en.absent, function(x){ return chip(x.date, "No fichó", "var(--brick-tint)"); });
         html += secRows("Francos trabajados","var(--purple)", en.franco, function(x){ return chip(x.date, "Entró "+esc(x.hm||""), "var(--purple-tint)"); });
+        html += secRows("Francos según legajo (día de descanso)","var(--green)", (en.rest||[]), function(x){ return chip(x.date, "Franco", "var(--green-tint)"); });
         if(!en.count){ html += '<p style="font-size:13px;color:var(--green);margin:0">Sin novedades este mes.</p>'; }
         html += '</div>';
       }
@@ -3978,13 +3980,15 @@ function asistMonthControl(mk){
   var dim=new Date(y, mo, 0).getDate();
   var today=todayISO();
   var byEmp={};
-  function slot(id){ if(!byEmp[id]) byEmp[id]={ emp:empById[id]||null, late:[], absent:[], extra:[], franco:[], early:[] }; return byEmp[id]; }
+  function slot(id){ if(!byEmp[id]) byEmp[id]={ emp:empById[id]||null, late:[], absent:[], extra:[], franco:[], early:[], rest:[] }; return byEmp[id]; }
   for(var d=1; d<=dim; d++){
     var dayISO=mk+"-"+("0"+d).slice(-2);
     if(today && dayISO>today) continue; // no contamos días futuros
     var sum=asistDaySummary(dayISO);
+    var presentToday={};
     sum.rows.forEach(function(r){
       if(!r.empId) return; // fichadas sin match no entran al control
+      presentToday[r.empId]=true;
       var s=slot(r.empId);
       if(r.works===false){
         // Día franco: sólo cuenta como "trabajó franco" (no aplican tarde/extra/salida anticipada).
@@ -3998,10 +4002,20 @@ function asistMonthControl(mk){
       }
     });
     sum.absent.forEach(function(e){ slot(e.id).absent.push({ date:dayISO }); });
+    // Francos según el legajo: días de descanso programados (no le tocaba trabajar) sin fichaje.
+    (function(dISO){
+      emps.forEach(function(e){
+        if((e.status||"activo")!=="activo") return;
+        if(presentToday[e.id]) return; // ese día trabajó/fichó → no es descanso
+        var eff=effectiveShift(e, dISO);
+        if(eff && eff.works===false){ slot(e.id).rest.push({ date:dISO }); }
+      });
+    })(dayISO);
   }
   // Todos los empleados activos tienen su carpeta (aunque no tengan novedades).
   emps.forEach(function(e){ if((e.status||"activo")==="activo" && !byEmp[e.id]) slot(e.id); });
   var list=Object.keys(byEmp).map(function(id){ return byEmp[id]; }).filter(function(s){ return s.emp; });
+  // "count" (novedades) NO incluye los francos programados: son días normales de descanso.
   list.forEach(function(s){ s.count=s.late.length+s.absent.length+s.extra.length+s.franco.length+s.early.length; });
   list.sort(function(a,b){ return empFullName(a.emp).localeCompare(empFullName(b.emp)); });
   return list;
@@ -4015,7 +4029,8 @@ function controlEmpCSV(mk, entry){
   entry.extra.forEach(function(x){ rows.push(["Horas extra", x.date, fmtMinDur(x.min)+(x.out?(" (salió "+x.out+")"):""), ""]); });
   entry.absent.forEach(function(x){ rows.push(["Ausencia", x.date, "No fichó (día laborable)", ""]); });
   entry.franco.forEach(function(x){ rows.push(["Trabajó franco", x.date, "Entró "+(x.hm||""), ""]); });
-  if(!entry.count) rows.push(["Sin novedades","","",""]);
+  (entry.rest||[]).forEach(function(x){ rows.push(["Franco (según legajo)", x.date, "Día de descanso", ""]); });
+  if(!entry.count && !(entry.rest||[]).length) rows.push(["Sin novedades","","",""]);
   return rows.map(function(r){ return r.map(function(c){ var v=String(c==null?"":c); return /[",\n;]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }).join(","); }).join("\r\n");
 }
 function downloadControlEmp(mk, empId){
@@ -4041,7 +4056,8 @@ function downloadControlMonth(mk){
     entry.extra.forEach(function(x){ push("Horas extra", x.date, fmtMinDur(x.min)+(x.out?(" (salió "+x.out+")"):""), ""); });
     entry.absent.forEach(function(x){ push("Ausencia", x.date, "No fichó (día laborable)", ""); });
     entry.franco.forEach(function(x){ push("Trabajó franco", x.date, "Entró "+(x.hm||""), ""); });
-    if(!entry.count) push("Sin novedades","","","");
+    (entry.rest||[]).forEach(function(x){ push("Franco (según legajo)", x.date, "Día de descanso", ""); });
+    if(!entry.count && !(entry.rest||[]).length) push("Sin novedades","","","");
   });
   try{
     var csv="﻿"+out.map(function(r){ return r.map(function(c){ var v=String(c==null?"":c); return /[",\n;]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }).join(","); }).join("\r\n");
