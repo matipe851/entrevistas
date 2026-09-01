@@ -690,6 +690,22 @@ function dbUpdatePerformance(id, patch){
 function dbDeletePerformance(id){
   return supaFetch("/rest/v1/performance?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* ----- Capacitación ----- */
+function dbListTraining(){
+  return supaFetch("/rest/v1/training?select=*&order=created_at.desc").then(function(r){ return r.json(); })
+    .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
+}
+function dbCreateTraining(row){
+  return supaFetch("/rest/v1/training", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateTraining(id, patch){
+  return supaFetch("/rest/v1/training?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeleteTraining(id){
+  return supaFetch("/rest/v1/training?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1596,6 +1612,7 @@ var state = {
   asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null, ctlMonth:null, ctlEmp:null, absNotes:[], absKey:null, absText:"" },
   lic: { loading:false, items:null, notes:null, error:null, msg:"", emp:null, form:null },
   perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null, view:"emp", ai:null, rankAI:null, aiQ:"" },
+  cap: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ai:null },
   fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
@@ -1621,7 +1638,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); } }; }catch(e){}
 
-var APP_VERSION = "v31.7-r72";
+var APP_VERSION = "v31.8-r73";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1904,7 +1921,7 @@ Screens["mod2-home"] = function(){
     { active:true, action:"go-licencias", icon:"home", tag:"Activo", title:"4 · Vacaciones y licencias", desc:"Por empleado: días disponibles, solicitudes y aprobaciones, vacaciones, enfermedad, maternidad/paternidad, estudio y otras licencias." },
     { icon:"briefcase",tag:"Próximamente", title:"5 · Liquidación de sueldos",      desc:"Cálculo de haberes, conceptos, recibos y net a pagar." },
     { active:true, action:"go-desempeno", icon:"eye", tag:"Activo", title:"6 · Evaluación de desempeño", desc:"Por empleado: objetivos, competencias, evaluaciones, feedback y planes de mejora." },
-    { icon:"users",    tag:"Próximamente", title:"7 · Capacitación",                desc:"Planes de formación, cursos y seguimiento del desarrollo." },
+    { active:true, action:"go-capacitacion", icon:"users", tag:"Activo", title:"7 · Capacitación", desc:"Por empleado: cursos, certificados, vencimientos, capacitaciones obligatorias e historial, con sugerencias de la IA según su desempeño." },
     { icon:"shield",   tag:"Próximamente", title:"8 · Salud y seguridad",           desc:"Exámenes, ART, incidentes y cumplimiento de higiene y seguridad." },
     { icon:"copy",     tag:"Próximamente", title:"9 · Documentación",               desc:"Contratos, recibos firmados y documentos de cada empleado." },
     { icon:"check",    tag:"Próximamente", title:"10 · Beneficios",                 desc:"Obra social, bonos, descuentos y beneficios asignados." },
@@ -2654,6 +2671,105 @@ Screens["mod2-desempeno"] = function(){
   html += '<div style="margin-top:20px"><p style="font-size:12.5px;font-weight:800;color:var(--ink);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Historial (por fecha) ('+hist.length+')</p>';
   if(!hist.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>'; }
   else { html += '<div style="display:grid;gap:6px">'+hist.map(function(p){ var t=PERF_TYPES[p.type]||{label:p.type,color:"var(--muted)"}; var done=(p.completed_at?(' <span style="color:var(--green);white-space:nowrap">✓ cumplido '+fdt(p.completed_at)+'</span>'):''); return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt(p.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+t.color+'">'+esc(t.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(p.title||p.detail||"—")+((p.rating&&(p.type==="competencia"||p.type==="evaluacion"))?(' <span style="color:var(--amber)">'+perfStars(p.rating)+'</span>'):'')+done+'</span></div>'; }).join('')+'</div>'; }
+  html += '</div>';
+  return html;
+};
+
+/* ---- Capacitación (reclutador) ---- */
+Screens["mod2-capacitacion"] = function(){
+  var s=state.cap;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('users',20)+'<h2 style="font-size:18px;color:var(--ink)">Capacitación</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">Elegí un empleado (según su legajo) para gestionar sus cursos, certificados, capacitaciones obligatorias y vencimientos. La IA sugiere cursos según su desempeño.</p>';
+  if(s.msg) html += Note("ok", esc(s.msg));
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
+  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  if(!s.emp){
+    if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
+    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
+      var its=capEmpItems(e.id);
+      var venc=its.filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
+      html += '<button class="tile tile-light" data-action="cap-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
+        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
+        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(its.length?(its.length+' registro'+(its.length===1?'':'s')):'Ver')+(venc?(' · <span style="color:var(--brick);font-weight:700">'+venc+' vencido'+(venc===1?'':'s')+'</span>'):'')+'</p></button>';
+    });
+    html += '</div>';
+    return html;
+  }
+  var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
+  if(!e){ html += Note("err","No encontré a este empleado."); return html; }
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="cap-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span></div>';
+  var items=capEmpItems(e.id);
+  // Formulario nueva entrada
+  if(!s.form){
+    html += '<button class="btn btn-primary btn-sm" data-action="cap-new" style="margin-bottom:14px">'+ic('plus',14)+' Nueva capacitación</button>';
+  } else {
+    var f=s.form, ty=f.type;
+    var titleLabel = ty==="certificado"?"Nombre del certificado":(ty==="obligatoria"?"Capacitación obligatoria":"Nombre del curso");
+    html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Nueva capacitación</h3>' +
+      '<div style="display:grid;gap:12px">' +
+      '<label class="field"><span class="field-label">Tipo</span><select class="bare" id="f_cap_type">'+Object.keys(TRAIN_TYPES).map(function(k){ return '<option value="'+k+'"'+(ty===k?' selected':'')+'>'+esc(TRAIN_TYPES[k].label)+'</option>'; }).join('')+'</select></label>' +
+      '<label class="field"><span class="field-label">'+esc(titleLabel)+'</span><div class="input-row"><input id="f_cap_title" value="'+esc(f.title||"")+'" placeholder="'+esc(titleLabel)+'"></div></label>' +
+      '<label class="field"><span class="field-label">Institución / entidad (opcional)</span><div class="input-row"><input id="f_cap_inst" value="'+esc(f.institution||"")+'" placeholder="Ej: Coursera, sindicato, ART…"></div></label>' +
+      ((ty==="curso"||ty==="obligatoria")?('<label class="field"><span class="field-label">Estado</span><select class="bare" id="f_cap_status">'+Object.keys(TRAIN_STATUS).map(function(k){ return '<option value="'+k+'"'+((f.status||"pendiente")===k?' selected':'')+'>'+esc(TRAIN_STATUS[k])+'</option>'; }).join('')+'</select></label>'):'') +
+      '<div class="grid2" style="gap:12px">' +
+        '<label class="field"><span class="field-label">Fecha de realización</span><div class="input-row"><input id="f_cap_done" type="date" value="'+esc(f.done_date||"")+'"></div></label>' +
+        ((ty==="certificado"||ty==="obligatoria")?('<label class="field"><span class="field-label">Vencimiento</span><div class="input-row"><input id="f_cap_exp" type="date" value="'+esc(f.expiry_date||"")+'"></div></label>'):'<div></div>') +
+      '</div>' +
+      '<label class="field"><span class="field-label">Detalle (opcional)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_cap_detail" rows="2" placeholder="Notas, temario, etc.">'+esc(f.detail||"")+'</textarea></div></label>' +
+      '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="cap-save" data-e="'+esc(e.id)+'"'+(s.saving?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="cap-cancel">Cancelar</button></div>' +
+      '</div></div>';
+  }
+  // Asistente IA: recomendación de cursos según desempeño
+  var ai=s.ai||{};
+  html += '<div class="card" style="margin-bottom:14px;background:var(--teal-tint);border-color:var(--border-soft)">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal-strong)">'+ic('mic',16)+'<h3 style="font-size:14px;color:var(--ink);margin:0">Cursos sugeridos por IA</h3></div>' +
+    '<p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">La IA analiza el desempeño de '+esc(empFullName(e))+' y recomienda cursos y capacitaciones concretas.</p>' +
+    '<button class="btn btn-teal btn-sm" data-action="cap-ai" data-e="'+esc(e.id)+'"'+(ai.asking?' disabled':'')+'>'+(ai.asking?(ic('loader',13,'spin')+' Analizando…'):(ic('eye',14)+' Recomendar cursos según su desempeño'))+'</button>' +
+    (ai.error?Note("err", esc(ai.error)):'') +
+    (ai.answer?('<div style="margin-top:10px;background:var(--surface);border-radius:10px;padding:12px 14px;white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:var(--ink)">'+esc(ai.answer)+'</div>'):'') +
+  '</div>';
+  var fD=function(ts){ if(!ts) return "—"; try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(x){ return "—"; } };
+  var rowCap=function(t){
+    var ty2=TRAIN_TYPES[t.type]||{label:t.type,color:"var(--muted)"};
+    var meta=[];
+    if(t.institution) meta.push(esc(t.institution));
+    if(t.done_date) meta.push("Realizado: "+fD(t.done_date));
+    var vencChip="";
+    if(t.expiry_date){ var du=daysUntil(t.expiry_date); var col=(du==null?"var(--muted)":(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)"))); var txt=(du==null?"":(du<0?("VENCIDO el "+fD(t.expiry_date)):("Vence "+fD(t.expiry_date)+" · "+du+" día"+(du===1?'':'s')))); vencChip='<span class="badge" style="background:var(--surface);color:'+col+'">'+ic('clock',11)+' '+txt+'</span>'; }
+    var statusChip=((t.type==="curso"||t.type==="obligatoria")?('<span class="badge" style="background:var(--surface);color:'+(t.status==="completado"?"var(--green)":(t.status==="en_curso"?"var(--blue)":"var(--amber)"))+'">'+esc(TRAIN_STATUS[t.status||"pendiente"])+'</span>'):'');
+    var actions='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">';
+    if(t.type==="curso"||t.type==="obligatoria"){ actions += Object.keys(TRAIN_STATUS).map(function(k){ var on=(t.status||"pendiente")===k; return '<button class="btn btn-sm '+(on?'btn-teal':'btn-ghost')+'" data-action="cap-status" data-id="'+esc(t.id)+'" data-st="'+k+'" style="font-size:11px;padding:5px 9px">'+esc(TRAIN_STATUS[k])+'</button>'; }).join(''); }
+    actions += '<button class="dl-audio" data-action="cap-del" data-id="'+esc(t.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;margin-left:auto">'+ic('trash',12)+' eliminar</button></div>';
+    return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px;border-left:3px solid '+ty2.color+'">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><b style="font-size:13px;color:var(--ink)">'+esc(t.title||"—")+'</b>'+(meta.length?(' <span style="font-size:12px;color:var(--muted)">· '+meta.join(" · ")+'</span>'):'')+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+statusChip+vencChip+'</div></div>' +
+      (t.detail?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(t.detail)+'</p>'):'') +
+      actions +
+    '</div>';
+  };
+  var capSection=function(title, type){
+    var arr=items.filter(function(t){ return t.type===type; }).sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+    var body=arr.length?('<div style="display:grid;gap:8px">'+arr.map(rowCap).join('')+'</div>'):'<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>';
+    return '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:'+(TRAIN_TYPES[type].color)+';margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">'+esc(title)+' ('+arr.length+')</p>'+body+'</div>';
+  };
+  html += capSection("Cursos realizados", "curso");
+  html += capSection("Certificados", "certificado");
+  html += capSection("Capacitaciones obligatorias", "obligatoria");
+  // Vencimientos (todos los ítems con fecha de vencimiento)
+  var venc=items.filter(function(t){ return t.expiry_date; }).sort(function(a,b){ return new Date(a.expiry_date)-new Date(b.expiry_date); });
+  html += '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:var(--brick);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Vencimientos ('+venc.length+')</p>';
+  if(!venc.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin vencimientos cargados</div>'; }
+  else { html += '<div style="display:grid;gap:6px">'+venc.map(function(t){ var du=daysUntil(t.expiry_date); var col=(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)")); return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:var(--surface-2);border-radius:9px;font-size:13px"><span style="flex:1;min-width:120px;color:var(--ink)"><b>'+esc(t.title||"—")+'</b> <span style="color:var(--muted);font-size:12px">· '+esc((TRAIN_TYPES[t.type]||{}).label||t.type)+'</span></span><span style="color:'+col+';font-weight:700;white-space:nowrap">'+(du<0?("Vencido "+fD(t.expiry_date)):("Vence "+fD(t.expiry_date)+" · "+du+"d"))+'</span></div>'; }).join('')+'</div>'; }
+  html += '</div>';
+  // Historial (por fecha)
+  var hist=items.slice().sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+  var fdt2=function(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }catch(x){ return ""; } };
+  html += '<div style="margin-top:20px"><p style="font-size:12.5px;font-weight:800;color:var(--ink);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Historial (por fecha) ('+hist.length+')</p>';
+  if(!hist.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>'; }
+  else { html += '<div style="display:grid;gap:6px">'+hist.map(function(t){ var ty2=TRAIN_TYPES[t.type]||{label:t.type,color:"var(--muted)"}; return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt2(t.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+ty2.color+'">'+esc(ty2.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(t.title||"—")+(t.status&&(t.type==="curso"||t.type==="obligatoria")?(' <span style="color:var(--muted)">· '+esc(TRAIN_STATUS[t.status]||t.status)+'</span>'):'')+'</span></div>'; }).join('')+'</div>'; }
   html += '</div>';
   return html;
 };
@@ -4376,6 +4492,48 @@ function perfRankAI(){
     .then(function(j){ state.perf.rankAI.asking=false; if(j&&j.ok&&j.answer){ state.perf.rankAI.answer=j.answer; state.perf.rankAI.error=""; } else { state.perf.rankAI.error=(j&&j.error==="no_key")?"Falta configurar la clave de IA (GEMINI_API_KEY) en Vercel.":"No pude generar el análisis."; } render(); })
     .catch(function(){ state.perf.rankAI.asking=false; state.perf.rankAI.error="No pude conectar con la IA."; render(); });
 }
+
+/* ---- Módulo 2 · Capacitación ---- */
+var TRAIN_TYPES = {
+  curso:{       label:"Curso",                     color:"var(--teal)"   },
+  certificado:{ label:"Certificado",               color:"var(--purple)" },
+  obligatoria:{ label:"Capacitación obligatoria",  color:"var(--amber)"  }
+};
+var TRAIN_STATUS = { pendiente:"Pendiente", en_curso:"En curso", completado:"Completado" };
+function capEmpItems(empId){ return (state.cap.items||[]).filter(function(t){ return t.employee_id===empId; }); }
+function daysUntil(dateStr){ var d=parseYMD(String(dateStr||"").slice(0,10)); if(!d) return null; var t=new Date(); t.setHours(0,0,0,0); return Math.round((d-t)/(864e5)); }
+function goCapacitacion(){ state.error=null; state.cap.msg=""; state.cap.error=null; state.cap.emp=null; state.cap.form=null; state.screen="mod2-capacitacion"; render(); loadCapacitacion(); }
+function loadCapacitacion(){
+  if(!(supaConfigured() && isLoggedIn())){ state.cap.items=[]; if(state.emp.items===null) state.emp.items=[]; if(state.perf.items===null) state.perf.items=[]; render(); return; }
+  state.cap.loading=true; state.cap.error=null; render();
+  Promise.all([ (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()), dbListTraining(), (state.perf.items!==null?Promise.resolve(state.perf.items):dbListPerformance()) ])
+    .then(function(res){ state.emp.items=res[0]||[]; state.cap.items=res[1]||[]; state.perf.items=res[2]||[]; state.cap.loading=false; render(); })
+    .catch(function(){ state.cap.loading=false; state.cap.error="No pude cargar la capacitación."; render(); });
+}
+function capNewForm(){ state.cap.form={ type:"curso", title:"", institution:"", status:"pendiente", done_date:"", expiry_date:"", detail:"" }; render(); }
+function capSave(empId){
+  var f=state.cap.form; if(!f) return;
+  if(!(f.title||"").trim()){ state.cap.msg="Cargá el nombre del curso/certificado."; render(); return; }
+  var row={ employee_id:empId, type:f.type, title:(f.title||"").trim(), institution:(f.institution||"").trim(), detail:(f.detail||"").trim() };
+  if(f.type==="curso"||f.type==="obligatoria"){ row.status=f.status||"pendiente"; }
+  if(f.done_date) row.done_date=f.done_date;
+  if((f.type==="certificado"||f.type==="obligatoria") && f.expiry_date) row.expiry_date=f.expiry_date;
+  state.cap.saving=true; render();
+  dbCreateTraining(row).then(function(){ state.cap.form=null; state.cap.saving=false; state.cap.msg="Guardado."; return dbListTraining().then(function(l){ state.cap.items=l||[]; render(); }); })
+    .catch(function(){ state.cap.saving=false; state.cap.msg="No pude guardar (¿corriste el SQL de capacitación?)."; render(); });
+}
+function capSetStatus(id, status){ dbUpdateTraining(id, { status:status }).then(function(){ return dbListTraining(); }).then(function(l){ state.cap.items=l||[]; render(); }).catch(function(){ state.cap.msg="No pude actualizar."; render(); }); }
+function capDelete(id){ if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return; dbDeleteTraining(id).then(function(){ return dbListTraining(); }).then(function(l){ state.cap.items=l||[]; state.cap.msg="Registro eliminado."; render(); }); }
+/* IA: recomienda cursos según el desempeño del empleado. */
+function capRecommendAI(e){
+  state.cap.ai=state.cap.ai||{}; state.cap.ai.asking=true; state.cap.ai.error=""; render();
+  var trained=capEmpItems(e.id).map(function(t){ return "- "+(TRAIN_TYPES[t.type]?TRAIN_TYPES[t.type].label:t.type)+": "+(t.title||"")+(t.status?(" ("+(TRAIN_STATUS[t.status]||t.status)+")"):""); }).join("\n") || "(Sin capacitaciones cargadas todavía.)";
+  var prompt="Sos especialista en desarrollo y capacitación de RRHH. En base al DESEMPEÑO del empleado y a lo que YA capacitó, recomendá cursos/capacitaciones CONCRETOS y realistas para su puesto (nombre del curso o tema, y para qué le sirve). Priorizá lo que ataque sus puntos débiles y potencie sus fortalezas. No repitas cursos ya hechos. Sé breve, en español rioplatense, con viñetas '- '. No devuelvas JSON.\n\n=== DESEMPEÑO Y LEGAJO ===\n"+perfEmpContext(e)+"\n\n=== CAPACITACIONES YA REGISTRADAS ===\n"+trained;
+  fetch("/api/analyze", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ task:"assistant", prompt:prompt }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ state.cap.ai.asking=false; if(j&&j.ok&&j.answer){ state.cap.ai.answer=j.answer; state.cap.ai.error=""; } else { state.cap.ai.error=(j&&j.error==="no_key")?"Falta configurar la clave de IA (GEMINI_API_KEY) en Vercel.":(j&&j.error==="rate_limited")?"Demasiadas consultas seguidas, esperá unos minutos.":"No pude generar la recomendación."; } render(); })
+    .catch(function(){ state.cap.ai.asking=false; state.cap.ai.error="No pude conectar con la IA."; render(); });
+}
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -5543,6 +5701,15 @@ function bind(){
       else if (act === "perf-ai-quick"){ state.perf.aiQ=el.getAttribute("data-q")||""; render(); }
       else if (act === "perf-ai-ask"){ var pe=(state.emp.items||[]).filter(function(x){return x.id===el.getAttribute("data-e");})[0]; var q=(state.perf.aiQ||"").trim(); if(pe && q) perfAskAI(pe, q); else { state.perf.ai={ error:"Escribí una pregunta primero." }; render(); } }
       else if (act === "perf-rank-ai"){ perfRankAI(); }
+      else if (act === "go-capacitacion") goCapacitacion();
+      else if (act === "cap-emp"){ state.cap.emp=el.getAttribute("data-e")||null; state.cap.form=null; state.cap.msg=""; state.cap.ai=null; render(); }
+      else if (act === "cap-emp-back"){ state.cap.emp=null; state.cap.form=null; state.cap.ai=null; render(); }
+      else if (act === "cap-new"){ capNewForm(); }
+      else if (act === "cap-cancel"){ state.cap.form=null; render(); }
+      else if (act === "cap-save"){ capSave(el.getAttribute("data-e")); }
+      else if (act === "cap-status"){ capSetStatus(el.getAttribute("data-id"), el.getAttribute("data-st")); }
+      else if (act === "cap-del"){ capDelete(el.getAttribute("data-id")); }
+      else if (act === "cap-ai"){ var ce=(state.emp.items||[]).filter(function(x){return x.id===el.getAttribute("data-e");})[0]; if(ce) capRecommendAI(ce); }
       else if (act === "perf-new"){ perfNewForm(); }
       else if (act === "perf-cancel"){ state.perf.form=null; render(); }
       else if (act === "perf-save"){ perfSave(el.getAttribute("data-e")); }
@@ -5830,6 +5997,14 @@ function bind(){
   if ((f=document.getElementById("f_perf_status"))) f.addEventListener("change", function(e){ if(state.perf.form) state.perf.form.status=e.target.value; });
   if ((f=document.getElementById("f_perf_detail"))) f.addEventListener("input", function(e){ if(state.perf.form) state.perf.form.detail=e.target.value; });
   if ((f=document.getElementById("f_perf_ai"))) f.addEventListener("input", function(e){ state.perf.aiQ=e.target.value; });
+  // ---- Capacitación ----
+  if ((f=document.getElementById("f_cap_type"))) f.addEventListener("change", function(e){ if(state.cap.form){ state.cap.form.type=e.target.value; render(); } });
+  if ((f=document.getElementById("f_cap_title"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.title=e.target.value; });
+  if ((f=document.getElementById("f_cap_inst"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.institution=e.target.value; });
+  if ((f=document.getElementById("f_cap_status"))) f.addEventListener("change", function(e){ if(state.cap.form) state.cap.form.status=e.target.value; });
+  if ((f=document.getElementById("f_cap_done"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.done_date=e.target.value; });
+  if ((f=document.getElementById("f_cap_exp"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.expiry_date=e.target.value; });
+  if ((f=document.getElementById("f_cap_detail"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.detail=e.target.value; });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
