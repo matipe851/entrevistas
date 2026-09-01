@@ -722,6 +722,22 @@ function dbUpdateHealth(id, patch){
 function dbDeleteHealth(id){
   return supaFetch("/rest/v1/health_safety?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* ----- Documentación ----- */
+function dbListDocs(){
+  return supaFetch("/rest/v1/hr_documents?select=*&order=created_at.desc").then(function(r){ return r.json(); })
+    .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
+}
+function dbCreateDoc(row){
+  return supaFetch("/rest/v1/hr_documents", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateDoc(id, patch){
+  return supaFetch("/rest/v1/hr_documents?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeleteDoc(id){
+  return supaFetch("/rest/v1/hr_documents?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1630,6 +1646,7 @@ var state = {
   perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null, view:"emp", ai:null, rankAI:null, aiQ:"" },
   cap: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ai:null },
   hs: { loading:false, items:null, error:null, msg:"", emp:null, form:null },
+  doc: { loading:false, items:null, error:null, msg:"", emp:null, form:null },
   fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
@@ -1655,7 +1672,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v32.1-r76";
+var APP_VERSION = "v32.2-r77";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1940,7 +1957,7 @@ Screens["mod2-home"] = function(){
     { active:true, action:"go-desempeno", icon:"eye", tag:"Activo", title:"6 · Evaluación de desempeño", desc:"Por empleado: objetivos, competencias, evaluaciones, feedback y planes de mejora." },
     { active:true, action:"go-capacitacion", icon:"users", tag:"Activo", title:"7 · Capacitación", desc:"Por empleado: cursos, certificados, vencimientos, capacitaciones obligatorias e historial, con sugerencias de la IA según su desempeño." },
     { active:true, action:"go-salud", icon:"shield", tag:"Activo", title:"8 · Salud y seguridad", desc:"Por empleado: exámenes preocupacionales, periódicos, ART, accidentes, entrega de EPP y aptos médicos, con adjuntos y vencimientos." },
-    { icon:"copy",     tag:"Próximamente", title:"9 · Documentación",               desc:"Contratos, recibos firmados y documentos de cada empleado." },
+    { active:true, action:"go-documentacion", icon:"copy", tag:"Activo", title:"9 · Documentación", desc:"Por empleado: contratos, recibos, certificados, constancias, firmas digitales y vencimientos, con lectura de PDF por IA." },
     { icon:"check",    tag:"Próximamente", title:"10 · Beneficios",                 desc:"Obra social, bonos, descuentos y beneficios asignados." },
     { icon:"list",     tag:"Próximamente", title:"11 · Reportes",                   desc:"Indicadores de headcount, rotación, ausentismo y costos." },
     { icon:"back",     tag:"Próximamente", title:"12 · Off boarding",               desc:"Proceso de egreso: liquidación final, entrega y documentación." }
@@ -2904,6 +2921,110 @@ Screens["mod2-salud"] = function(){
   html += '<div style="margin-top:20px"><p style="font-size:12.5px;font-weight:800;color:var(--ink);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Historial (por fecha) ('+hist.length+')</p>';
   if(!hist.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>'; }
   else { html += '<div style="display:grid;gap:6px">'+hist.map(function(t){ var ty2=HS_TYPES[t.type]||{label:t.type,color:"var(--muted)"}; return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt2(t.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+ty2.color+'">'+esc(ty2.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(t.title||"—")+'</span></div>'; }).join('')+'</div>'; }
+  html += '</div>';
+  return html;
+};
+
+/* ---- Documentación (reclutador) ---- */
+Screens["mod2-documentacion"] = function(){
+  var s=state.doc;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('copy',20)+'<h2 style="font-size:18px;color:var(--ink)">Documentación</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">Elegí un empleado (según su legajo) para gestionar contratos, recibos, certificados, constancias y firmas digitales, con sus vencimientos. Arrastrá un PDF y la IA completa los datos.</p>';
+  if(s.msg) html += Note("ok", esc(s.msg));
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
+  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  if(!s.emp){
+    if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
+    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
+      var its=docEmpItems(e.id);
+      var venc=its.filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
+      html += '<button class="tile tile-light" data-action="doc-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
+        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
+        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(its.length?(its.length+' doc'+(its.length===1?'':'s')):'Ver')+(venc?(' · <span style="color:var(--brick);font-weight:700">'+venc+' vencido'+(venc===1?'':'s')+'</span>'):'')+'</p></button>';
+    });
+    html += '</div>';
+    return html;
+  }
+  var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
+  if(!e){ html += Note("err","No encontré a este empleado."); return html; }
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="doc-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span></div>';
+  var items=docEmpItems(e.id);
+  if(!s.form){
+    html += '<button class="btn btn-primary btn-sm" data-action="doc-new" style="margin-bottom:14px">'+ic('plus',14)+' Nuevo documento</button>';
+  } else {
+    var f=s.form;
+    html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Nuevo documento</h3>' +
+      '<div style="display:grid;gap:12px">' +
+      '<div class="field"><span class="field-label">Documento — PDF (opcional)</span>' +
+        '<div id="f_doc_drop" style="border:2px dashed var(--border);border-radius:12px;padding:14px;text-align:center;background:var(--surface);transition:border-color .15s,background .15s">' +
+          '<p style="margin:0 0 8px;font-size:12.5px;color:var(--muted)">'+ic('file',15)+' Arrastrá el PDF acá (o elegí archivo). La IA lo lee y completa los casilleros automáticamente.</p>' +
+          '<input id="f_doc_file" type="file" accept=".pdf,application/pdf,image/*" style="font-size:13px;color:var(--muted)">' +
+          (f.reading?('<p style="margin:8px 0 0;font-size:12px;color:var(--teal)">'+ic('loader',12,'spin')+' Leyendo el PDF con IA…</p>'):'') +
+          (f.uploading?('<p style="margin:6px 0 0;font-size:12px;color:var(--teal)">'+ic('loader',12,'spin')+' Subiendo…</p>'):(f.file_url?('<p style="margin:6px 0 0;font-size:12px;color:var(--green)">'+ic('check',12)+' Adjunto: '+esc(f.file_name||"archivo")+'</p>'):(!audioUploadConfigured()?'<p style="margin:6px 0 0;font-size:12px;color:var(--muted)">Para adjuntar falta configurar Cloudinary.</p>':''))) +
+        '</div>' +
+      '</div>' +
+      '<label class="field"><span class="field-label">Tipo</span><select class="bare" id="f_doc_type">'+Object.keys(DOC_TYPES).map(function(k){ return '<option value="'+k+'"'+(f.type===k?' selected':'')+'>'+esc(DOC_TYPES[k].label)+'</option>'; }).join('')+'</select></label>' +
+      '<label class="field"><span class="field-label">Descripción / título</span><div class="input-row"><input id="f_doc_title" value="'+esc(f.title||"")+'" placeholder="Ej: Contrato a plazo fijo, Recibo marzo 2026…"></div></label>' +
+      '<div class="grid2" style="gap:12px">' +
+        '<label class="field"><span class="field-label">Fecha del documento</span><div class="input-row"><input id="f_doc_date" type="date" value="'+esc(f.doc_date||"")+'"></div></label>' +
+        '<label class="field"><span class="field-label">Vencimiento (opcional)</span><div class="input-row"><input id="f_doc_exp" type="date" value="'+esc(f.expiry_date||"")+'"></div></label>' +
+      '</div>' +
+      '<label class="check-row" style="border-color:'+(f.signed?'var(--teal)':'var(--border)')+'"><input type="checkbox" id="f_doc_signed"'+(f.signed?' checked':'')+'><span><span class="check-title">Firmado digitalmente</span><span class="check-sub">Marcá si el documento tiene firma digital / está firmado.</span></span></label>' +
+      '<label class="field"><span class="field-label">Detalle (opcional)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_doc_detail" rows="2" placeholder="Notas del documento">'+esc(f.detail||"")+'</textarea></div></label>' +
+      '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="doc-save" data-e="'+esc(e.id)+'"'+((s.saving||f.uploading)?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="doc-cancel">Cancelar</button></div>' +
+      '</div></div>';
+  }
+  var fD=function(ts){ if(!ts) return "—"; try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(x){ return "—"; } };
+  var rowDoc=function(t){
+    var ty2=DOC_TYPES[t.type]||{label:t.type,color:"var(--muted)"};
+    var meta=[];
+    if(t.doc_date) meta.push("Fecha: "+fD(t.doc_date));
+    var chips="";
+    if(t.signed){ chips+='<span class="badge" style="background:var(--surface);color:var(--green)">'+ic('check',11)+' Firmado</span>'; }
+    if(t.expiry_date){ var du=daysUntil(t.expiry_date); var col=(du==null?"var(--muted)":(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)"))); var txt=(du<0?("VENCIDO "+fD(t.expiry_date)):("Vence "+fD(t.expiry_date)+" · "+du+"d")); chips+='<span class="badge" style="background:var(--surface);color:'+col+'">'+ic('clock',11)+' '+txt+'</span>'; }
+    var certRow = t.file_url ? ('<div style="margin-top:8px"><a href="'+esc(t.file_url)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--teal);text-decoration:none;background:var(--surface);border-radius:8px;padding:6px 10px">'+ic('file',13)+' Ver documento'+(t.file_name?(' ('+esc(t.file_name)+')'):'')+'</a></div>') : '';
+    var actions='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">' +
+      '<button class="btn btn-sm '+(t.signed?'btn-teal':'btn-ghost')+'" data-action="doc-sign" data-id="'+esc(t.id)+'" data-v="'+(t.signed?'0':'1')+'" style="font-size:11px;padding:5px 9px">'+(t.signed?'Firmado ✓':'Marcar firmado')+'</button>' +
+      '<label class="dl-audio" style="display:inline-flex;align-items:center;gap:5px;color:var(--teal);cursor:pointer;font-size:11px">'+ic('file',12)+' '+(t.file_url?"Reemplazar":"Adjuntar")+'<input type="file" accept=".pdf,application/pdf,image/*" data-docfile="'+esc(t.id)+'" style="display:none"></label>' +
+      '<button class="dl-audio" data-action="doc-del" data-id="'+esc(t.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;margin-left:auto">'+ic('trash',12)+' eliminar</button></div>';
+    return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px;border-left:3px solid '+ty2.color+'">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><b style="font-size:13px;color:var(--ink)">'+esc(t.title||ty2.label)+'</b>'+(meta.length?(' <span style="font-size:12px;color:var(--muted)">· '+meta.join(" · ")+'</span>'):'')+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+chips+'</div></div>' +
+      (t.detail?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(t.detail)+'</p>'):'') +
+      certRow + actions +
+    '</div>';
+  };
+  var docSection=function(title, type){
+    var arr=items.filter(function(t){ return t.type===type; }).sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+    var body=arr.length?('<div style="display:grid;gap:8px">'+arr.map(rowDoc).join('')+'</div>'):'<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>';
+    return '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:'+(DOC_TYPES[type].color)+';margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">'+esc(title)+' ('+arr.length+')</p>'+body+'</div>';
+  };
+  html += docSection("Contratos", "contrato");
+  html += docSection("Recibos", "recibo");
+  html += docSection("Certificados", "certificado");
+  html += docSection("Constancias", "constancia");
+  html += docSection("Otros documentos", "otro");
+  // Firmas digitales (todos los firmados)
+  var firmados=items.filter(function(t){ return t.signed; }).sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+  html += '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:var(--green);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Firmas digitales ('+firmados.length+')</p>';
+  if(!firmados.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin documentos firmados</div>'; }
+  else { html += '<div style="display:grid;gap:8px">'+firmados.map(rowDoc).join('')+'</div>'; }
+  html += '</div>';
+  // Vencimientos
+  var venc=items.filter(function(t){ return t.expiry_date; }).sort(function(a,b){ return new Date(a.expiry_date)-new Date(b.expiry_date); });
+  html += '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:var(--brick);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Vencimientos ('+venc.length+')</p>';
+  if(!venc.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin vencimientos cargados</div>'; }
+  else { html += '<div style="display:grid;gap:6px">'+venc.map(function(t){ var du=daysUntil(t.expiry_date); var col=(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)")); return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:var(--surface-2);border-radius:9px;font-size:13px"><span style="flex:1;min-width:120px;color:var(--ink)"><b>'+esc(t.title||(DOC_TYPES[t.type]||{}).label||t.type)+'</b> <span style="color:var(--muted);font-size:12px">· '+esc((DOC_TYPES[t.type]||{}).label||t.type)+'</span></span><span style="color:'+col+';font-weight:700;white-space:nowrap">'+(du<0?("Vencido "+fD(t.expiry_date)):("Vence "+fD(t.expiry_date)+" · "+du+"d"))+'</span></div>'; }).join('')+'</div>'; }
+  html += '</div>';
+  // Historial
+  var hist=items.slice().sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+  var fdt2=function(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }catch(x){ return ""; } };
+  html += '<div style="margin-top:20px"><p style="font-size:12.5px;font-weight:800;color:var(--ink);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Historial (por fecha) ('+hist.length+')</p>';
+  if(!hist.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>'; }
+  else { html += '<div style="display:grid;gap:6px">'+hist.map(function(t){ var ty2=DOC_TYPES[t.type]||{label:t.type,color:"var(--muted)"}; return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt2(t.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+ty2.color+'">'+esc(ty2.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(t.title||"—")+(t.signed?(' <span style="color:var(--green)">✓ firmado</span>'):'')+'</span></div>'; }).join('')+'</div>'; }
   html += '</div>';
   return html;
 };
@@ -4749,9 +4870,10 @@ function hsAttachExisting(id, file){
 }
 
 /* ---- Lectura de PDF con IA para autocompletar el formulario ---- */
+function autofillStateFor(domain){ return domain==="salud"?state.hs:(domain==="documentacion"?state.doc:state.cap); }
 function autofillFromFile(file, domain, applyFn){
   var isPdf = /pdf/i.test(file.type||"") || /\.pdf$/i.test(file.name||"");
-  var form = (domain==="salud")?state.hs.form:state.cap.form;
+  var st = autofillStateFor(domain); var form = st.form;
   if(!form) return;
   if(!isPdf){ return; } // solo PDFs se leen automáticamente
   form.reading=true; render();
@@ -4759,7 +4881,7 @@ function autofillFromFile(file, domain, applyFn){
     if(!text || text.replace(/\s/g,"").length<20){ form.reading=false; render(); return; } // PDF escaneado / sin texto
     fetch("/api/analyze", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ task:"form_extract", domain:domain, text:text }) })
       .then(function(r){ return r.json(); })
-      .then(function(j){ form.reading=false; if(j&&j.ok&&j.fields){ applyFn(j.fields); (domain==="salud"?state.hs:state.cap).msg="Datos leídos del PDF. Revisá y guardá."; } render(); })
+      .then(function(j){ form.reading=false; if(j&&j.ok&&j.fields){ applyFn(j.fields); st.msg="Datos leídos del PDF. Revisá y guardá."; } render(); })
       .catch(function(){ form.reading=false; render(); });
   }).catch(function(){ form.reading=false; render(); });
 }
@@ -4792,6 +4914,66 @@ function wireDropzone(zoneId, onFile){
   ["dragleave","dragend"].forEach(function(ev){ z.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); lo(); }); });
   z.addEventListener("drop", function(e){ e.preventDefault(); e.stopPropagation(); lo(); var file=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if(file) onFile(file); });
 }
+
+/* ---- Módulo 2 · Documentación ---- */
+var DOC_TYPES = {
+  contrato:{    label:"Contrato",    color:"var(--teal)"   },
+  recibo:{      label:"Recibo",      color:"var(--blue)"   },
+  certificado:{ label:"Certificado", color:"var(--purple)" },
+  constancia:{  label:"Constancia",  color:"var(--amber)"  },
+  otro:{        label:"Otro documento", color:"var(--muted)" }
+};
+function docEmpItems(empId){ return (state.doc.items||[]).filter(function(t){ return t.employee_id===empId; }); }
+function goDocumentacion(){ state.error=null; state.doc.msg=""; state.doc.error=null; state.doc.emp=null; state.doc.form=null; state.screen="mod2-documentacion"; render(); loadDocumentacion(); }
+function loadDocumentacion(){
+  if(!(supaConfigured() && isLoggedIn())){ state.doc.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
+  state.doc.loading=true; state.doc.error=null; render();
+  Promise.all([ (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()), dbListDocs() ])
+    .then(function(res){ state.emp.items=res[0]||[]; state.doc.items=res[1]||[]; state.doc.loading=false; render(); })
+    .catch(function(){ state.doc.loading=false; state.doc.error="No pude cargar la documentación."; render(); });
+}
+function docNewForm(){ state.doc.form={ type:"contrato", title:"", detail:"", doc_date:"", expiry_date:"", signed:false, file_url:"", file_name:"" }; render(); }
+function docSave(empId){
+  var f=state.doc.form; if(!f) return;
+  if(!(f.title||"").trim() && !(f.detail||"").trim() && !f.file_url){ state.doc.msg="Cargá una descripción o adjuntá el archivo."; render(); return; }
+  var row={ employee_id:empId, type:f.type, title:(f.title||"").trim(), detail:(f.detail||"").trim(), signed:!!f.signed };
+  if(f.doc_date) row.doc_date=f.doc_date;
+  if(f.expiry_date) row.expiry_date=f.expiry_date;
+  if(f.file_url){ row.file_url=f.file_url; row.file_name=f.file_name||""; }
+  state.doc.saving=true; render();
+  dbCreateDoc(row).then(function(){ state.doc.form=null; state.doc.saving=false; state.doc.msg="Guardado."; return dbListDocs().then(function(l){ state.doc.items=l||[]; render(); }); })
+    .catch(function(){ state.doc.saving=false; state.doc.msg="No pude guardar (¿corriste el SQL de documentación?)."; render(); });
+}
+function docSetSigned(id, signed){ dbUpdateDoc(id, { signed:!!signed }).then(function(){ return dbListDocs(); }).then(function(l){ state.doc.items=l||[]; render(); }).catch(function(){ state.doc.msg="No pude actualizar."; render(); }); }
+function docDelete(id){ if(!confirm("¿Eliminar este documento? No se puede deshacer.")) return; dbDeleteDoc(id).then(function(){ return dbListDocs(); }).then(function(l){ state.doc.items=l||[]; state.doc.msg="Documento eliminado."; render(); }); }
+function docFormUpload(file){
+  var f=state.doc.form; if(!f||!file) return;
+  if(file.size>10*1024*1024){ state.doc.msg="El archivo supera los 10 MB."; render(); return; }
+  if(!audioUploadConfigured()){ state.doc.msg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
+  f.uploading=true; state.doc.msg=""; render();
+  var uid="doc_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  uploadAudioToCloudinary(file, "documentos/"+uid).then(function(url){ f.file_url=url; f.file_name=file.name; f.uploading=false; render(); })
+    .catch(function(){ f.uploading=false; state.doc.msg="No pude subir el archivo."; render(); });
+}
+function docAttachExisting(id, file){
+  if(!file) return;
+  if(file.size>10*1024*1024){ state.doc.msg="El archivo supera los 10 MB."; render(); return; }
+  if(!audioUploadConfigured()){ state.doc.msg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
+  state.doc.msg="Subiendo "+file.name+"…"; render();
+  var uid="doc_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  uploadAudioToCloudinary(file, "documentos/"+uid).then(function(url){ return dbUpdateDoc(id, { file_url:url, file_name:file.name }); })
+    .then(function(){ return dbListDocs(); }).then(function(l){ state.doc.items=l||[]; state.doc.msg="Archivo adjuntado."; render(); })
+    .catch(function(){ state.doc.msg="No pude adjuntar el archivo."; render(); });
+}
+function docApplyFields(fx){
+  var f=state.doc.form; if(!f||!fx) return;
+  if(fx.type && DOC_TYPES[fx.type]) f.type=fx.type;
+  ["title","detail"].forEach(function(k){ if(fx[k] && !(f[k]||"").trim()) f[k]=String(fx[k]); });
+  if(fx.doc_date && /^\d{4}-\d{2}-\d{2}$/.test(fx.doc_date) && !f.doc_date) f.doc_date=fx.doc_date;
+  if(fx.expiry_date && /^\d{4}-\d{2}-\d{2}$/.test(fx.expiry_date) && !f.expiry_date) f.expiry_date=fx.expiry_date;
+  if(fx.signed===true) f.signed=true;
+}
+function docFormFile(file){ if(!file) return; docFormUpload(file); autofillFromFile(file, "documentacion", docApplyFields); }
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -5975,6 +6157,14 @@ function bind(){
       else if (act === "hs-cancel"){ state.hs.form=null; render(); }
       else if (act === "hs-save"){ hsSave(el.getAttribute("data-e")); }
       else if (act === "hs-del"){ hsDelete(el.getAttribute("data-id")); }
+      else if (act === "go-documentacion") goDocumentacion();
+      else if (act === "doc-emp"){ state.doc.emp=el.getAttribute("data-e")||null; state.doc.form=null; state.doc.msg=""; render(); }
+      else if (act === "doc-emp-back"){ state.doc.emp=null; state.doc.form=null; render(); }
+      else if (act === "doc-new"){ docNewForm(); }
+      else if (act === "doc-cancel"){ state.doc.form=null; render(); }
+      else if (act === "doc-save"){ docSave(el.getAttribute("data-e")); }
+      else if (act === "doc-sign"){ docSetSigned(el.getAttribute("data-id"), el.getAttribute("data-v")==="1"); }
+      else if (act === "doc-del"){ docDelete(el.getAttribute("data-id")); }
       else if (act === "perf-new"){ perfNewForm(); }
       else if (act === "perf-cancel"){ state.perf.form=null; render(); }
       else if (act === "perf-save"){ perfSave(el.getAttribute("data-e")); }
@@ -6285,6 +6475,16 @@ function bind(){
   if ((f=document.getElementById("f_hs_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) hsFormFile(file); });
   wireDropzone("f_hs_drop", hsFormFile);
   document.querySelectorAll("input[data-hsfile]").forEach(function(el){ el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) hsAttachExisting(el.getAttribute("data-hsfile"), file); }); });
+  // ---- Documentación ----
+  if ((f=document.getElementById("f_doc_type"))) f.addEventListener("change", function(e){ if(state.doc.form) state.doc.form.type=e.target.value; });
+  if ((f=document.getElementById("f_doc_title"))) f.addEventListener("input", function(e){ if(state.doc.form) state.doc.form.title=e.target.value; });
+  if ((f=document.getElementById("f_doc_date"))) f.addEventListener("input", function(e){ if(state.doc.form) state.doc.form.doc_date=e.target.value; });
+  if ((f=document.getElementById("f_doc_exp"))) f.addEventListener("input", function(e){ if(state.doc.form) state.doc.form.expiry_date=e.target.value; });
+  if ((f=document.getElementById("f_doc_signed"))) f.addEventListener("change", function(e){ if(state.doc.form){ state.doc.form.signed=e.target.checked; render(); } });
+  if ((f=document.getElementById("f_doc_detail"))) f.addEventListener("input", function(e){ if(state.doc.form) state.doc.form.detail=e.target.value; });
+  if ((f=document.getElementById("f_doc_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) docFormFile(file); });
+  wireDropzone("f_doc_drop", docFormFile);
+  document.querySelectorAll("input[data-docfile]").forEach(function(el){ el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) docAttachExisting(el.getAttribute("data-docfile"), file); }); });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
