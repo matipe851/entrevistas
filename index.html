@@ -706,6 +706,22 @@ function dbUpdateTraining(id, patch){
 function dbDeleteTraining(id){
   return supaFetch("/rest/v1/training?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* ----- Salud y seguridad ----- */
+function dbListHealth(){
+  return supaFetch("/rest/v1/health_safety?select=*&order=created_at.desc").then(function(r){ return r.json(); })
+    .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
+}
+function dbCreateHealth(row){
+  return supaFetch("/rest/v1/health_safety", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateHealth(id, patch){
+  return supaFetch("/rest/v1/health_safety?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeleteHealth(id){
+  return supaFetch("/rest/v1/health_safety?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1613,6 +1629,7 @@ var state = {
   lic: { loading:false, items:null, notes:null, error:null, msg:"", emp:null, form:null },
   perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null, view:"emp", ai:null, rankAI:null, aiQ:"" },
   cap: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ai:null },
+  hs: { loading:false, items:null, error:null, msg:"", emp:null, form:null },
   fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
@@ -1638,7 +1655,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); } }; }catch(e){}
 
-var APP_VERSION = "v31.9-r74";
+var APP_VERSION = "v32.0-r75";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1922,7 +1939,7 @@ Screens["mod2-home"] = function(){
     { icon:"briefcase",tag:"Próximamente", title:"5 · Liquidación de sueldos",      desc:"Cálculo de haberes, conceptos, recibos y net a pagar." },
     { active:true, action:"go-desempeno", icon:"eye", tag:"Activo", title:"6 · Evaluación de desempeño", desc:"Por empleado: objetivos, competencias, evaluaciones, feedback y planes de mejora." },
     { active:true, action:"go-capacitacion", icon:"users", tag:"Activo", title:"7 · Capacitación", desc:"Por empleado: cursos, certificados, vencimientos, capacitaciones obligatorias e historial, con sugerencias de la IA según su desempeño." },
-    { icon:"shield",   tag:"Próximamente", title:"8 · Salud y seguridad",           desc:"Exámenes, ART, incidentes y cumplimiento de higiene y seguridad." },
+    { active:true, action:"go-salud", icon:"shield", tag:"Activo", title:"8 · Salud y seguridad", desc:"Por empleado: exámenes preocupacionales, periódicos, ART, accidentes, entrega de EPP y aptos médicos, con adjuntos y vencimientos." },
     { icon:"copy",     tag:"Próximamente", title:"9 · Documentación",               desc:"Contratos, recibos firmados y documentos de cada empleado." },
     { icon:"check",    tag:"Próximamente", title:"10 · Beneficios",                 desc:"Obra social, bonos, descuentos y beneficios asignados." },
     { icon:"list",     tag:"Próximamente", title:"11 · Reportes",                   desc:"Indicadores de headcount, rotación, ausentismo y costos." },
@@ -2776,6 +2793,107 @@ Screens["mod2-capacitacion"] = function(){
   html += '<div style="margin-top:20px"><p style="font-size:12.5px;font-weight:800;color:var(--ink);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Historial (por fecha) ('+hist.length+')</p>';
   if(!hist.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>'; }
   else { html += '<div style="display:grid;gap:6px">'+hist.map(function(t){ var ty2=TRAIN_TYPES[t.type]||{label:t.type,color:"var(--muted)"}; return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt2(t.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+ty2.color+'">'+esc(ty2.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(t.title||"—")+(t.status&&(t.type==="curso"||t.type==="obligatoria")?(' <span style="color:var(--muted)">· '+esc(TRAIN_STATUS[t.status]||t.status)+'</span>'):'')+'</span></div>'; }).join('')+'</div>'; }
+  html += '</div>';
+  return html;
+};
+
+/* ---- Salud y seguridad (reclutador) ---- */
+Screens["mod2-salud"] = function(){
+  var s=state.hs;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('shield',20)+'<h2 style="font-size:18px;color:var(--ink)">Salud y seguridad</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">Elegí un empleado (según su legajo) para gestionar exámenes, ART, accidentes, EPP y aptos médicos, con sus adjuntos y vencimientos.</p>';
+  if(s.msg) html += Note("ok", esc(s.msg));
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
+  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  if(!s.emp){
+    if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
+    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
+      var its=hsEmpItems(e.id);
+      var venc=its.filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
+      html += '<button class="tile tile-light" data-action="hs-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
+        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
+        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(its.length?(its.length+' registro'+(its.length===1?'':'s')):'Ver')+(venc?(' · <span style="color:var(--brick);font-weight:700">'+venc+' vencido'+(venc===1?'':'s')+'</span>'):'')+'</p></button>';
+    });
+    html += '</div>';
+    return html;
+  }
+  var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
+  if(!e){ html += Note("err","No encontré a este empleado."); return html; }
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="hs-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span></div>';
+  var items=hsEmpItems(e.id);
+  if(!s.form){
+    html += '<button class="btn btn-primary btn-sm" data-action="hs-new" style="margin-bottom:14px">'+ic('plus',14)+' Nuevo registro</button>';
+  } else {
+    var f=s.form, ty=f.type, sub=hsSubOptions(ty);
+    var titleLabel = ty==="epp"?"Elemento entregado":(ty==="art"?"Aseguradora / Nº de póliza":(ty==="accidente"?"Descripción del accidente":(ty==="apto"?"Apto médico (descripción)":"Descripción del examen")));
+    var showResult = (ty==="preocupacional"||ty==="periodico"||ty==="apto");
+    var showExpiry = (ty==="apto"||ty==="periodico"||ty==="art");
+    html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Nuevo registro</h3>' +
+      '<div style="display:grid;gap:12px">' +
+      '<label class="field"><span class="field-label">Tipo</span><select class="bare" id="f_hs_type">'+Object.keys(HS_TYPES).map(function(k){ return '<option value="'+k+'"'+(ty===k?' selected':'')+'>'+esc(HS_TYPES[k].label)+'</option>'; }).join('')+'</select></label>' +
+      (sub?('<label class="field"><span class="field-label">'+(ty==="accidente"?"Tipo de accidente":"Tipo de examen")+'</span><select class="bare" id="f_hs_sub">'+Object.keys(sub).map(function(k){ return '<option value="'+k+'"'+((f.subtype||Object.keys(sub)[0])===k?' selected':'')+'>'+esc(sub[k])+'</option>'; }).join('')+'</select></label>'):'') +
+      '<label class="field"><span class="field-label">'+esc(titleLabel)+'</span><div class="input-row"><input id="f_hs_title" value="'+esc(f.title||"")+'" placeholder="'+esc(titleLabel)+'"></div></label>' +
+      '<label class="field"><span class="field-label">Prestador / clínica / ART (opcional)</span><div class="input-row"><input id="f_hs_entity" value="'+esc(f.entity||"")+'" placeholder="Ej: clínica, ART, médico laboral…"></div></label>' +
+      (showResult?('<label class="field"><span class="field-label">Resultado</span><select class="bare" id="f_hs_result"><option value=""'+(!f.result?" selected":"")+'>— sin especificar —</option>'+Object.keys(HS_RESULT).map(function(k){ return '<option value="'+k+'"'+(f.result===k?' selected':'')+'>'+esc(HS_RESULT[k])+'</option>'; }).join('')+'</select></label>'):'') +
+      '<div class="grid2" style="gap:12px">' +
+        '<label class="field"><span class="field-label">'+(ty==="accidente"?"Fecha del accidente":(ty==="epp"?"Fecha de entrega":"Fecha"))+'</span><div class="input-row"><input id="f_hs_date" type="date" value="'+esc(f.date||"")+'"></div></label>' +
+        (showExpiry?('<label class="field"><span class="field-label">Vencimiento</span><div class="input-row"><input id="f_hs_exp" type="date" value="'+esc(f.expiry_date||"")+'"></div></label>'):'<div></div>') +
+      '</div>' +
+      '<label class="field"><span class="field-label">Detalle (opcional)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_hs_detail" rows="2" placeholder="Observaciones, restricciones, elementos entregados, etc.">'+esc(f.detail||"")+'</textarea></div></label>' +
+      '<label class="field"><span class="field-label">Adjunto — PDF o imagen (opcional)</span><input id="f_hs_file" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)">' +
+        (f.uploading?('<span class="field-hint" style="color:var(--teal)">'+ic('loader',12,'spin')+' Subiendo…</span>'):(f.file_url?('<span class="field-hint" style="color:var(--green)">'+ic('check',12)+' Adjunto: '+esc(f.file_name||"archivo")+'</span>'):(!audioUploadConfigured()?'<span class="field-hint">Para adjuntar falta configurar Cloudinary.</span>':''))) +
+      '</label>' +
+      '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="hs-save" data-e="'+esc(e.id)+'"'+((s.saving||f.uploading)?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="hs-cancel">Cancelar</button></div>' +
+      '</div></div>';
+  }
+  var fD=function(ts){ if(!ts) return "—"; try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(x){ return "—"; } };
+  var rowHS=function(t){
+    var ty2=HS_TYPES[t.type]||{label:t.type,color:"var(--muted)"};
+    var subMap=hsSubOptions(t.type); var subLbl=(subMap&&t.subtype)?(subMap[t.subtype]||t.subtype):"";
+    var meta=[];
+    if(subLbl) meta.push(subLbl);
+    if(t.entity) meta.push(esc(t.entity));
+    if(t.date) meta.push("Fecha: "+fD(t.date));
+    var chips="";
+    if(t.result){ var rc=(t.result==="apto"?"var(--green)":(t.result==="no_apto"?"var(--brick)":"var(--amber)")); chips+='<span class="badge" style="background:var(--surface);color:'+rc+'">'+esc(HS_RESULT[t.result]||t.result)+'</span>'; }
+    if(t.expiry_date){ var du=daysUntil(t.expiry_date); var col=(du==null?"var(--muted)":(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)"))); var txt=(du<0?("VENCIDO "+fD(t.expiry_date)):("Vence "+fD(t.expiry_date)+" · "+du+"d")); chips+='<span class="badge" style="background:var(--surface);color:'+col+'">'+ic('clock',11)+' '+txt+'</span>'; }
+    var certRow = t.file_url ? ('<div style="margin-top:8px"><a href="'+esc(t.file_url)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--teal);text-decoration:none;background:var(--surface);border-radius:8px;padding:6px 10px">'+ic('file',13)+' Ver adjunto'+(t.file_name?(' ('+esc(t.file_name)+')'):'')+'</a></div>') : '';
+    var actions='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">' +
+      '<label class="dl-audio" style="display:inline-flex;align-items:center;gap:5px;color:var(--teal);cursor:pointer;font-size:11px">'+ic('file',12)+' '+(t.file_url?"Reemplazar":"Adjuntar")+'<input type="file" accept=".pdf,application/pdf,image/*" data-hsfile="'+esc(t.id)+'" style="display:none"></label>' +
+      '<button class="dl-audio" data-action="hs-del" data-id="'+esc(t.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;margin-left:auto">'+ic('trash',12)+' eliminar</button></div>';
+    return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px;border-left:3px solid '+ty2.color+'">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><b style="font-size:13px;color:var(--ink)">'+esc(t.title||ty2.label)+'</b>'+(meta.length?(' <span style="font-size:12px;color:var(--muted)">· '+meta.join(" · ")+'</span>'):'')+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+chips+'</div></div>' +
+      (t.detail?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(t.detail)+'</p>'):'') +
+      certRow + actions +
+    '</div>';
+  };
+  var hsSection=function(title, type){
+    var arr=items.filter(function(t){ return t.type===type; }).sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+    var body=arr.length?('<div style="display:grid;gap:8px">'+arr.map(rowHS).join('')+'</div>'):'<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>';
+    return '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:'+(HS_TYPES[type].color)+';margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">'+esc(title)+' ('+arr.length+')</p>'+body+'</div>';
+  };
+  html += hsSection("Exámenes preocupacionales (físico / psicológico / ambiental)", "preocupacional");
+  html += hsSection("Exámenes periódicos", "periodico");
+  html += hsSection("ART", "art");
+  html += hsSection("Accidentes laborales (laboral / in itínere)", "accidente");
+  html += hsSection("Entrega de elementos de protección (EPP)", "epp");
+  html += hsSection("Aptos médicos", "apto");
+  // Vencimientos
+  var venc=items.filter(function(t){ return t.expiry_date; }).sort(function(a,b){ return new Date(a.expiry_date)-new Date(b.expiry_date); });
+  html += '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:var(--brick);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Vencimientos ('+venc.length+')</p>';
+  if(!venc.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin vencimientos cargados</div>'; }
+  else { html += '<div style="display:grid;gap:6px">'+venc.map(function(t){ var du=daysUntil(t.expiry_date); var col=(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)")); return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:var(--surface-2);border-radius:9px;font-size:13px"><span style="flex:1;min-width:120px;color:var(--ink)"><b>'+esc(t.title||(HS_TYPES[t.type]||{}).label||t.type)+'</b> <span style="color:var(--muted);font-size:12px">· '+esc((HS_TYPES[t.type]||{}).label||t.type)+'</span></span><span style="color:'+col+';font-weight:700;white-space:nowrap">'+(du<0?("Vencido "+fD(t.expiry_date)):("Vence "+fD(t.expiry_date)+" · "+du+"d"))+'</span></div>'; }).join('')+'</div>'; }
+  html += '</div>';
+  // Historial
+  var hist=items.slice().sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+  var fdt2=function(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }catch(x){ return ""; } };
+  html += '<div style="margin-top:20px"><p style="font-size:12.5px;font-weight:800;color:var(--ink);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Historial (por fecha) ('+hist.length+')</p>';
+  if(!hist.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>'; }
+  else { html += '<div style="display:grid;gap:6px">'+hist.map(function(t){ var ty2=HS_TYPES[t.type]||{label:t.type,color:"var(--muted)"}; return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt2(t.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+ty2.color+'">'+esc(ty2.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(t.title||"—")+'</span></div>'; }).join('')+'</div>'; }
   html += '</div>';
   return html;
 };
@@ -4562,6 +4680,63 @@ function capAttachExisting(id, file){
     .then(function(){ return dbListTraining(); }).then(function(l){ state.cap.items=l||[]; state.cap.msg="Certificado adjuntado."; render(); })
     .catch(function(){ state.cap.msg="No pude adjuntar el archivo."; render(); });
 }
+
+/* ---- Módulo 2 · Salud y seguridad ---- */
+var HS_TYPES = {
+  preocupacional:{ label:"Examen preocupacional", color:"var(--teal)"   },
+  periodico:{      label:"Examen periódico",       color:"var(--blue)"   },
+  art:{            label:"ART",                     color:"var(--purple)" },
+  accidente:{      label:"Accidente laboral",       color:"var(--brick)"  },
+  epp:{            label:"Entrega de EPP",          color:"var(--amber)"  },
+  apto:{           label:"Apto médico",             color:"var(--green)"  }
+};
+var HS_SUB_PRE = { fisico:"Físico", psicologico:"Psicológico", ambiental:"Ambiental" };
+var HS_SUB_ACC = { laboral:"Laboral", in_itinere:"In itínere" };
+var HS_RESULT = { apto:"Apto", apto_restricciones:"Apto con restricciones", no_apto:"No apto" };
+function hsSubOptions(type){ return type==="preocupacional"?HS_SUB_PRE:(type==="accidente"?HS_SUB_ACC:null); }
+function hsEmpItems(empId){ return (state.hs.items||[]).filter(function(t){ return t.employee_id===empId; }); }
+function goSalud(){ state.error=null; state.hs.msg=""; state.hs.error=null; state.hs.emp=null; state.hs.form=null; state.screen="mod2-salud"; render(); loadSalud(); }
+function loadSalud(){
+  if(!(supaConfigured() && isLoggedIn())){ state.hs.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
+  state.hs.loading=true; state.hs.error=null; render();
+  Promise.all([ (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()), dbListHealth() ])
+    .then(function(res){ state.emp.items=res[0]||[]; state.hs.items=res[1]||[]; state.hs.loading=false; render(); })
+    .catch(function(){ state.hs.loading=false; state.hs.error="No pude cargar salud y seguridad."; render(); });
+}
+function hsNewForm(){ state.hs.form={ type:"preocupacional", subtype:"fisico", title:"", entity:"", result:"", date:"", expiry_date:"", detail:"", file_url:"", file_name:"" }; render(); }
+function hsSave(empId){
+  var f=state.hs.form; if(!f) return;
+  if(!(f.title||"").trim() && !(f.detail||"").trim()){ state.hs.msg="Cargá una descripción o detalle."; render(); return; }
+  var row={ employee_id:empId, type:f.type, title:(f.title||"").trim(), entity:(f.entity||"").trim(), detail:(f.detail||"").trim() };
+  var sub=hsSubOptions(f.type); if(sub) row.subtype=f.subtype||Object.keys(sub)[0];
+  if(f.type==="preocupacional"||f.type==="periodico"||f.type==="apto"){ if(f.result) row.result=f.result; }
+  if(f.date) row.date=f.date;
+  if(f.type==="apto"||f.type==="periodico"||f.type==="art"){ if(f.expiry_date) row.expiry_date=f.expiry_date; }
+  if(f.file_url){ row.file_url=f.file_url; row.file_name=f.file_name||""; }
+  state.hs.saving=true; render();
+  dbCreateHealth(row).then(function(){ state.hs.form=null; state.hs.saving=false; state.hs.msg="Guardado."; return dbListHealth().then(function(l){ state.hs.items=l||[]; render(); }); })
+    .catch(function(){ state.hs.saving=false; state.hs.msg="No pude guardar (¿corriste el SQL de salud y seguridad?)."; render(); });
+}
+function hsDelete(id){ if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return; dbDeleteHealth(id).then(function(){ return dbListHealth(); }).then(function(l){ state.hs.items=l||[]; state.hs.msg="Registro eliminado."; render(); }); }
+function hsFormUpload(file){
+  var f=state.hs.form; if(!f||!file) return;
+  if(file.size>10*1024*1024){ state.hs.msg="El archivo supera los 10 MB."; render(); return; }
+  if(!audioUploadConfigured()){ state.hs.msg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
+  f.uploading=true; state.hs.msg=""; render();
+  var uid="salud_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  uploadAudioToCloudinary(file, "salud/"+uid).then(function(url){ f.file_url=url; f.file_name=file.name; f.uploading=false; render(); })
+    .catch(function(){ f.uploading=false; state.hs.msg="No pude subir el archivo."; render(); });
+}
+function hsAttachExisting(id, file){
+  if(!file) return;
+  if(file.size>10*1024*1024){ state.hs.msg="El archivo supera los 10 MB."; render(); return; }
+  if(!audioUploadConfigured()){ state.hs.msg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
+  state.hs.msg="Subiendo "+file.name+"…"; render();
+  var uid="salud_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  uploadAudioToCloudinary(file, "salud/"+uid).then(function(url){ return dbUpdateHealth(id, { file_url:url, file_name:file.name }); })
+    .then(function(){ return dbListHealth(); }).then(function(l){ state.hs.items=l||[]; state.hs.msg="Archivo adjuntado."; render(); })
+    .catch(function(){ state.hs.msg="No pude adjuntar el archivo."; render(); });
+}
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -5738,6 +5913,13 @@ function bind(){
       else if (act === "cap-status"){ capSetStatus(el.getAttribute("data-id"), el.getAttribute("data-st")); }
       else if (act === "cap-del"){ capDelete(el.getAttribute("data-id")); }
       else if (act === "cap-ai"){ var ce=(state.emp.items||[]).filter(function(x){return x.id===el.getAttribute("data-e");})[0]; if(ce) capRecommendAI(ce); }
+      else if (act === "go-salud") goSalud();
+      else if (act === "hs-emp"){ state.hs.emp=el.getAttribute("data-e")||null; state.hs.form=null; state.hs.msg=""; render(); }
+      else if (act === "hs-emp-back"){ state.hs.emp=null; state.hs.form=null; render(); }
+      else if (act === "hs-new"){ hsNewForm(); }
+      else if (act === "hs-cancel"){ state.hs.form=null; render(); }
+      else if (act === "hs-save"){ hsSave(el.getAttribute("data-e")); }
+      else if (act === "hs-del"){ hsDelete(el.getAttribute("data-id")); }
       else if (act === "perf-new"){ perfNewForm(); }
       else if (act === "perf-cancel"){ state.perf.form=null; render(); }
       else if (act === "perf-save"){ perfSave(el.getAttribute("data-e")); }
@@ -6035,6 +6217,17 @@ function bind(){
   if ((f=document.getElementById("f_cap_detail"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.detail=e.target.value; });
   if ((f=document.getElementById("f_cap_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) capFormUpload(file); });
   document.querySelectorAll("input[data-capfile]").forEach(function(el){ el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) capAttachExisting(el.getAttribute("data-capfile"), file); }); });
+  // ---- Salud y seguridad ----
+  if ((f=document.getElementById("f_hs_type"))) f.addEventListener("change", function(e){ if(state.hs.form){ state.hs.form.type=e.target.value; var sub=hsSubOptions(e.target.value); state.hs.form.subtype=sub?Object.keys(sub)[0]:""; render(); } });
+  if ((f=document.getElementById("f_hs_sub"))) f.addEventListener("change", function(e){ if(state.hs.form) state.hs.form.subtype=e.target.value; });
+  if ((f=document.getElementById("f_hs_title"))) f.addEventListener("input", function(e){ if(state.hs.form) state.hs.form.title=e.target.value; });
+  if ((f=document.getElementById("f_hs_entity"))) f.addEventListener("input", function(e){ if(state.hs.form) state.hs.form.entity=e.target.value; });
+  if ((f=document.getElementById("f_hs_result"))) f.addEventListener("change", function(e){ if(state.hs.form) state.hs.form.result=e.target.value; });
+  if ((f=document.getElementById("f_hs_date"))) f.addEventListener("input", function(e){ if(state.hs.form) state.hs.form.date=e.target.value; });
+  if ((f=document.getElementById("f_hs_exp"))) f.addEventListener("input", function(e){ if(state.hs.form) state.hs.form.expiry_date=e.target.value; });
+  if ((f=document.getElementById("f_hs_detail"))) f.addEventListener("input", function(e){ if(state.hs.form) state.hs.form.detail=e.target.value; });
+  if ((f=document.getElementById("f_hs_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) hsFormUpload(file); });
+  document.querySelectorAll("input[data-hsfile]").forEach(function(el){ el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) hsAttachExisting(el.getAttribute("data-hsfile"), file); }); });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
