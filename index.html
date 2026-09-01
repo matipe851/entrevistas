@@ -674,6 +674,22 @@ function dbUpdateAbsenceNote(id, patch){
 function dbDeleteAbsenceNote(id){
   return supaFetch("/rest/v1/absence_notes?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* ----- Evaluación de desempeño ----- */
+function dbListPerformance(){
+  return supaFetch("/rest/v1/performance?select=*&order=created_at.desc").then(function(r){ return r.json(); })
+    .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
+}
+function dbCreatePerformance(row){
+  return supaFetch("/rest/v1/performance", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdatePerformance(id, patch){
+  return supaFetch("/rest/v1/performance?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeletePerformance(id){
+  return supaFetch("/rest/v1/performance?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1579,6 +1595,7 @@ var state = {
   abm: null,
   asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null, ctlMonth:null, ctlEmp:null, absNotes:[], absKey:null, absText:"" },
   lic: { loading:false, items:null, notes:null, error:null, msg:"", emp:null, form:null },
+  perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null },
   fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
@@ -1604,7 +1621,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); } }; }catch(e){}
 
-var APP_VERSION = "v31.3-r68";
+var APP_VERSION = "v31.4-r69";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1886,7 +1903,7 @@ Screens["mod2-home"] = function(){
     { active:true, action:"go-asistencia", icon:"clock", tag:"Activo", title:"3 · Asistencia y horarios", desc:"Fichador con cámara y ubicación, control horario, tardanzas, ausencias y horas extra." },
     { active:true, action:"go-licencias", icon:"home", tag:"Activo", title:"4 · Vacaciones y licencias", desc:"Por empleado: días disponibles, solicitudes y aprobaciones, vacaciones, enfermedad, maternidad/paternidad, estudio y otras licencias." },
     { icon:"briefcase",tag:"Próximamente", title:"5 · Liquidación de sueldos",      desc:"Cálculo de haberes, conceptos, recibos y net a pagar." },
-    { icon:"eye",      tag:"Próximamente", title:"6 · Evaluación de desempeño",     desc:"Objetivos, feedback y revisiones periódicas del personal." },
+    { active:true, action:"go-desempeno", icon:"eye", tag:"Activo", title:"6 · Evaluación de desempeño", desc:"Por empleado: objetivos, competencias, evaluaciones, feedback y planes de mejora." },
     { icon:"users",    tag:"Próximamente", title:"7 · Capacitación",                desc:"Planes de formación, cursos y seguimiento del desarrollo." },
     { icon:"shield",   tag:"Próximamente", title:"8 · Salud y seguridad",           desc:"Exámenes, ART, incidentes y cumplimiento de higiene y seguridad." },
     { icon:"copy",     tag:"Próximamente", title:"9 · Documentación",               desc:"Contratos, recibos firmados y documentos de cada empleado." },
@@ -2508,6 +2525,80 @@ Screens["mod2-licencias"] = function(){
   html += typeSection("Licencias por maternidad/paternidad", ["maternidad","paternidad"]);
   html += typeSection("Días de estudio", ["estudio"]);
   html += typeSection("Otras licencias", ["otras"]);
+  return html;
+};
+
+/* ---- Evaluación de desempeño (reclutador) ---- */
+Screens["mod2-desempeno"] = function(){
+  var s=state.perf;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('eye',20)+'<h2 style="font-size:18px;color:var(--ink)">Evaluación de desempeño</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">Elegí un empleado (según su legajo) para gestionar sus objetivos, competencias, evaluaciones, feedback y planes de mejora.</p>';
+  if(s.msg) html += Note("ok", esc(s.msg));
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
+  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  if(!s.emp){
+    if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
+    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
+      var n=perfEmpItems(e.id).length;
+      html += '<button class="tile tile-light" data-action="perf-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
+        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
+        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(n?(n+' registro'+(n===1?'':'s')):'Ver')+'</p></button>';
+    });
+    html += '</div>';
+    return html;
+  }
+  var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
+  if(!e){ html += Note("err","No encontré a este empleado."); return html; }
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="perf-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span></div>';
+  var items=perfEmpItems(e.id);
+  // Formulario nueva entrada
+  if(!s.form){
+    html += '<button class="btn btn-primary btn-sm" data-action="perf-new" style="margin-bottom:14px">'+ic('plus',14)+' Nueva entrada</button>';
+  } else {
+    var f=s.form, ty=f.type;
+    var titleLabel = ty==="evaluacion"?"Título de la evaluación":(ty==="competencia"?"Competencia":(ty==="mejora"?"Acción de mejora":(ty==="feedback"?"Título (opcional)":"Objetivo")));
+    html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Nueva entrada</h3>' +
+      '<div style="display:grid;gap:12px">' +
+      '<label class="field"><span class="field-label">Tipo</span><select class="bare" id="f_perf_type">'+Object.keys(PERF_TYPES).map(function(k){ return '<option value="'+k+'"'+(ty===k?' selected':'')+'>'+esc(PERF_TYPES[k].label)+'</option>'; }).join('')+'</select></label>' +
+      '<label class="field"><span class="field-label">'+esc(titleLabel)+'</span><div class="input-row"><input id="f_perf_title" value="'+esc(f.title||"")+'" placeholder="'+esc(titleLabel)+'"></div></label>' +
+      (ty==="evaluacion"?('<label class="field"><span class="field-label">Período</span><div class="input-row"><input id="f_perf_period" value="'+esc(f.period||"")+'" placeholder="Ej: 2026 · 1er semestre"></div></label>'):'') +
+      ((ty==="competencia"||ty==="evaluacion")?('<label class="field"><span class="field-label">Puntaje (1 a 5)</span><div class="input-row" style="max-width:120px"><input id="f_perf_rating" type="number" min="0" max="5" value="'+esc(String(f.rating||0))+'"></div></label>'):'') +
+      ((ty==="objetivo"||ty==="mejora")?('<label class="field"><span class="field-label">Estado</span><select class="bare" id="f_perf_status">'+Object.keys(PERF_STATUS).map(function(k){ return '<option value="'+k+'"'+((f.status||"pendiente")===k?' selected':'')+'>'+esc(PERF_STATUS[k])+'</option>'; }).join('')+'</select></label>'):'') +
+      '<label class="field"><span class="field-label">'+(ty==="feedback"?"Feedback":"Detalle / comentario")+'</span><div class="input-row" style="align-items:flex-start"><textarea id="f_perf_detail" rows="3" placeholder="'+(ty==="feedback"?"Escribí el feedback para el empleado":"Detalle (opcional)")+'">'+esc(f.detail||"")+'</textarea></div></label>' +
+      '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="perf-save" data-e="'+esc(e.id)+'"'+(s.saving?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="perf-cancel">Cancelar</button></div>' +
+      '</div></div>';
+  }
+  var rowPerf=function(p){
+    var t=PERF_TYPES[p.type]||{label:p.type,color:"var(--muted)"};
+    var head='<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div>'+
+      (p.title?('<b style="font-size:13px;color:var(--ink)">'+esc(p.title)+'</b>'):'')+
+      (p.period?(' <span style="font-size:12px;color:var(--muted)">· '+esc(p.period)+'</span>'):'')+
+      '</div>'+
+      ((p.type==="competencia"||p.type==="evaluacion")&&p.rating?('<span style="color:var(--amber);font-size:14px;letter-spacing:1px" title="'+p.rating+'/5">'+perfStars(p.rating)+'</span>'):'')+
+      ((p.type==="objetivo"||p.type==="mejora")?('<span class="badge" style="background:var(--surface);color:'+(p.status==="cumplido"?"var(--green)":(p.status==="en_curso"?"var(--blue)":"var(--amber)"))+'">'+esc(PERF_STATUS[p.status||"pendiente"])+'</span>'):'')+
+    '</div>';
+    var body=p.detail?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(p.detail)+'</p>'):'';
+    var actions='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">';
+    if(p.type==="objetivo"||p.type==="mejora"){
+      actions += Object.keys(PERF_STATUS).map(function(k){ var on=(p.status||"pendiente")===k; return '<button class="btn btn-sm '+(on?'btn-teal':'btn-ghost')+'" data-action="perf-status" data-id="'+esc(p.id)+'" data-st="'+k+'" style="font-size:11px;padding:5px 9px">'+esc(PERF_STATUS[k])+'</button>'; }).join('');
+    }
+    actions += '<button class="dl-audio" data-action="perf-del" data-id="'+esc(p.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;margin-left:auto">'+ic('trash',12)+' eliminar</button></div>';
+    return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px;border-left:3px solid '+t.color+'">'+head+body+actions+'</div>';
+  };
+  var section=function(title, type){
+    var arr=items.filter(function(p){ return p.type===type; }).sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+    var body=arr.length?('<div style="display:grid;gap:8px">'+arr.map(rowPerf).join('')+'</div>'):'<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>';
+    return '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:'+(PERF_TYPES[type].color)+';margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">'+esc(title)+' ('+arr.length+')</p>'+body+'</div>';
+  };
+  html += section("Objetivos", "objetivo");
+  html += section("Competencias", "competencia");
+  html += section("Evaluaciones", "evaluacion");
+  html += section("Feedback", "feedback");
+  html += section("Planes de mejora", "mejora");
   return html;
 };
 
@@ -4122,6 +4213,42 @@ function licSetOverride(empId, val){
     render();
   }).catch(function(){ state.lic.msg="No pude guardar (¿corriste el SQL de licencias actualizado?)."; render(); });
 }
+
+/* ---- Módulo 2 · Evaluación de desempeño ---- */
+var PERF_TYPES = {
+  objetivo:{    label:"Objetivo",       color:"var(--teal)"   },
+  competencia:{ label:"Competencia",    color:"var(--purple)" },
+  evaluacion:{  label:"Evaluación",     color:"var(--blue)"   },
+  feedback:{    label:"Feedback",       color:"var(--amber)"  },
+  mejora:{      label:"Plan de mejora", color:"var(--green)"  }
+};
+var PERF_STATUS = { pendiente:"Pendiente", en_curso:"En curso", cumplido:"Cumplido" };
+function perfStars(n){ n=parseInt(n,10)||0; var out=""; for(var i=1;i<=5;i++){ out+= (i<=n?"★":"☆"); } return out; }
+function perfEmpItems(empId){ return (state.perf.items||[]).filter(function(p){ return p.employee_id===empId; }); }
+function goDesempeno(){ state.error=null; state.perf.msg=""; state.perf.error=null; state.perf.emp=null; state.perf.form=null; state.screen="mod2-desempeno"; render(); loadDesempeno(); }
+function loadDesempeno(){
+  if(!(supaConfigured() && isLoggedIn())){ state.perf.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
+  state.perf.loading=true; state.perf.error=null; render();
+  Promise.all([ (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()), dbListPerformance() ])
+    .then(function(res){ state.emp.items=res[0]||[]; state.perf.items=res[1]||[]; state.perf.loading=false; render(); })
+    .catch(function(){ state.perf.loading=false; state.perf.error="No pude cargar las evaluaciones."; render(); });
+}
+function perfNewForm(type){ state.perf.form={ type:type||"objetivo", title:"", detail:"", rating:0, status:"pendiente", period:"" }; render(); }
+function perfSave(empId){
+  var f=state.perf.form; if(!f) return;
+  var needsTitle=(f.type!=="feedback");
+  if(needsTitle && !(f.title||"").trim() && !(f.detail||"").trim()){ state.perf.msg="Cargá al menos el título o el detalle."; render(); return; }
+  if(f.type==="feedback" && !(f.detail||"").trim()){ state.perf.msg="Escribí el feedback."; render(); return; }
+  var row={ employee_id:empId, type:f.type, title:(f.title||"").trim(), detail:(f.detail||"").trim() };
+  if(f.type==="competencia"||f.type==="evaluacion"){ row.rating=parseInt(f.rating,10)||null; }
+  if(f.type==="objetivo"||f.type==="mejora"){ row.status=f.status||"pendiente"; }
+  if(f.type==="evaluacion"){ row.period=(f.period||"").trim(); }
+  state.perf.saving=true; render();
+  dbCreatePerformance(row).then(function(){ state.perf.form=null; state.perf.saving=false; state.perf.msg="Guardado."; return dbListPerformance().then(function(l){ state.perf.items=l||[]; render(); }); })
+    .catch(function(){ state.perf.saving=false; state.perf.msg="No pude guardar (¿corriste el SQL de desempeño?)."; render(); });
+}
+function perfSetStatus(id, status){ dbUpdatePerformance(id, { status:status }).then(function(){ return dbListPerformance(); }).then(function(l){ state.perf.items=l||[]; render(); }).catch(function(){ state.perf.msg="No pude actualizar."; render(); }); }
+function perfDelete(id){ if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return; dbDeletePerformance(id).then(function(){ return dbListPerformance(); }).then(function(l){ state.perf.items=l||[]; state.perf.msg="Registro eliminado."; render(); }); }
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -5282,6 +5409,14 @@ function bind(){
       else if (act === "lic-reject"){ licSetStatus(el.getAttribute("data-id"), "rechazada"); }
       else if (act === "lic-del"){ licDelete(el.getAttribute("data-id")); }
       else if (act === "lic-vac-auto"){ licSetOverride(el.getAttribute("data-e"), ""); }
+      else if (act === "go-desempeno") goDesempeno();
+      else if (act === "perf-emp"){ state.perf.emp=el.getAttribute("data-e")||null; state.perf.form=null; state.perf.msg=""; render(); }
+      else if (act === "perf-emp-back"){ state.perf.emp=null; state.perf.form=null; render(); }
+      else if (act === "perf-new"){ perfNewForm(); }
+      else if (act === "perf-cancel"){ state.perf.form=null; render(); }
+      else if (act === "perf-save"){ perfSave(el.getAttribute("data-e")); }
+      else if (act === "perf-status"){ perfSetStatus(el.getAttribute("data-id"), el.getAttribute("data-st")); }
+      else if (act === "perf-del"){ perfDelete(el.getAttribute("data-id")); }
       else if (act === "asist-view"){ state.asist.view=el.getAttribute("data-v")||"resumen"; if(state.asist.view==="log") state.asist.folder=null; if(state.asist.view!=="control"){ state.asist.ctlMonth=null; state.asist.ctlEmp=null; } render(); }
       else if (act === "asist-folder"){ state.asist.folder=el.getAttribute("data-m")||null; render(); }
       else if (act === "asist-folder-back"){ state.asist.folder=null; render(); }
@@ -5556,6 +5691,13 @@ function bind(){
   if ((f=document.getElementById("f_lic_from"))) f.addEventListener("input", function(e){ if(state.lic.form){ state.lic.form.start_date=e.target.value; render(); } });
   if ((f=document.getElementById("f_lic_to"))) f.addEventListener("input", function(e){ if(state.lic.form){ state.lic.form.end_date=e.target.value; render(); } });
   if ((f=document.getElementById("f_lic_note"))) f.addEventListener("input", function(e){ if(state.lic.form) state.lic.form.note=e.target.value; });
+  // ---- Evaluación de desempeño ----
+  if ((f=document.getElementById("f_perf_type"))) f.addEventListener("change", function(e){ if(state.perf.form){ state.perf.form.type=e.target.value; render(); } });
+  if ((f=document.getElementById("f_perf_title"))) f.addEventListener("input", function(e){ if(state.perf.form) state.perf.form.title=e.target.value; });
+  if ((f=document.getElementById("f_perf_period"))) f.addEventListener("input", function(e){ if(state.perf.form) state.perf.form.period=e.target.value; });
+  if ((f=document.getElementById("f_perf_rating"))) f.addEventListener("input", function(e){ if(state.perf.form) state.perf.form.rating=e.target.value; });
+  if ((f=document.getElementById("f_perf_status"))) f.addEventListener("change", function(e){ if(state.perf.form) state.perf.form.status=e.target.value; });
+  if ((f=document.getElementById("f_perf_detail"))) f.addEventListener("input", function(e){ if(state.perf.form) state.perf.form.detail=e.target.value; });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
