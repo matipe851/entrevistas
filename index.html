@@ -1653,9 +1653,9 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
-try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); } }; }catch(e){}
+try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v32.0-r75";
+var APP_VERSION = "v32.1-r76";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2737,9 +2737,14 @@ Screens["mod2-capacitacion"] = function(){
         ((ty==="certificado"||ty==="obligatoria")?('<label class="field"><span class="field-label">Vencimiento</span><div class="input-row"><input id="f_cap_exp" type="date" value="'+esc(f.expiry_date||"")+'"></div></label>'):'<div></div>') +
       '</div>' +
       '<label class="field"><span class="field-label">Detalle (opcional)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_cap_detail" rows="2" placeholder="Notas, temario, etc.">'+esc(f.detail||"")+'</textarea></div></label>' +
-      '<label class="field"><span class="field-label">Certificado — PDF o imagen (opcional)</span><input id="f_cap_file" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)">' +
-        (f.uploading?('<span class="field-hint" style="color:var(--teal)">'+ic('loader',12,'spin')+' Subiendo…</span>'):(f.file_url?('<span class="field-hint" style="color:var(--green)">'+ic('check',12)+' Adjunto: '+esc(f.file_name||"archivo")+'</span>'):(!audioUploadConfigured()?'<span class="field-hint">Para adjuntar falta configurar Cloudinary.</span>':''))) +
-      '</label>' +
+      '<div class="field"><span class="field-label">Certificado — PDF (opcional)</span>' +
+        '<div id="f_cap_drop" style="border:2px dashed var(--border);border-radius:12px;padding:14px;text-align:center;background:var(--surface);transition:border-color .15s,background .15s">' +
+          '<p style="margin:0 0 8px;font-size:12.5px;color:var(--muted)">'+ic('file',15)+' Arrastrá el PDF acá (o elegí archivo). La IA lo lee y completa los casilleros automáticamente.</p>' +
+          '<input id="f_cap_file" type="file" accept=".pdf,application/pdf,image/*" style="font-size:13px;color:var(--muted)">' +
+          (f.reading?('<p style="margin:8px 0 0;font-size:12px;color:var(--teal)">'+ic('loader',12,'spin')+' Leyendo el PDF con IA…</p>'):'') +
+          (f.uploading?('<p style="margin:6px 0 0;font-size:12px;color:var(--teal)">'+ic('loader',12,'spin')+' Subiendo…</p>'):(f.file_url?('<p style="margin:6px 0 0;font-size:12px;color:var(--green)">'+ic('check',12)+' Adjunto: '+esc(f.file_name||"archivo")+'</p>'):(!audioUploadConfigured()?'<p style="margin:6px 0 0;font-size:12px;color:var(--muted)">Para adjuntar falta configurar Cloudinary.</p>':''))) +
+        '</div>' +
+      '</div>' +
       '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="cap-save" data-e="'+esc(e.id)+'"'+((s.saving||f.uploading)?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="cap-cancel">Cancelar</button></div>' +
       '</div></div>';
   }
@@ -2844,9 +2849,14 @@ Screens["mod2-salud"] = function(){
         (showExpiry?('<label class="field"><span class="field-label">Vencimiento</span><div class="input-row"><input id="f_hs_exp" type="date" value="'+esc(f.expiry_date||"")+'"></div></label>'):'<div></div>') +
       '</div>' +
       '<label class="field"><span class="field-label">Detalle (opcional)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_hs_detail" rows="2" placeholder="Observaciones, restricciones, elementos entregados, etc.">'+esc(f.detail||"")+'</textarea></div></label>' +
-      '<label class="field"><span class="field-label">Adjunto — PDF o imagen (opcional)</span><input id="f_hs_file" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)">' +
-        (f.uploading?('<span class="field-hint" style="color:var(--teal)">'+ic('loader',12,'spin')+' Subiendo…</span>'):(f.file_url?('<span class="field-hint" style="color:var(--green)">'+ic('check',12)+' Adjunto: '+esc(f.file_name||"archivo")+'</span>'):(!audioUploadConfigured()?'<span class="field-hint">Para adjuntar falta configurar Cloudinary.</span>':''))) +
-      '</label>' +
+      '<div class="field"><span class="field-label">Adjunto — PDF (opcional)</span>' +
+        '<div id="f_hs_drop" style="border:2px dashed var(--border);border-radius:12px;padding:14px;text-align:center;background:var(--surface);transition:border-color .15s,background .15s">' +
+          '<p style="margin:0 0 8px;font-size:12.5px;color:var(--muted)">'+ic('file',15)+' Arrastrá el PDF acá (o elegí archivo). La IA lo lee y completa los casilleros automáticamente.</p>' +
+          '<input id="f_hs_file" type="file" accept=".pdf,application/pdf,image/*" style="font-size:13px;color:var(--muted)">' +
+          (f.reading?('<p style="margin:8px 0 0;font-size:12px;color:var(--teal)">'+ic('loader',12,'spin')+' Leyendo el PDF con IA…</p>'):'') +
+          (f.uploading?('<p style="margin:6px 0 0;font-size:12px;color:var(--teal)">'+ic('loader',12,'spin')+' Subiendo…</p>'):(f.file_url?('<p style="margin:6px 0 0;font-size:12px;color:var(--green)">'+ic('check',12)+' Adjunto: '+esc(f.file_name||"archivo")+'</p>'):(!audioUploadConfigured()?'<p style="margin:6px 0 0;font-size:12px;color:var(--muted)">Para adjuntar falta configurar Cloudinary.</p>':''))) +
+        '</div>' +
+      '</div>' +
       '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="hs-save" data-e="'+esc(e.id)+'"'+((s.saving||f.uploading)?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="hs-cancel">Cancelar</button></div>' +
       '</div></div>';
   }
@@ -4737,6 +4747,51 @@ function hsAttachExisting(id, file){
     .then(function(){ return dbListHealth(); }).then(function(l){ state.hs.items=l||[]; state.hs.msg="Archivo adjuntado."; render(); })
     .catch(function(){ state.hs.msg="No pude adjuntar el archivo."; render(); });
 }
+
+/* ---- Lectura de PDF con IA para autocompletar el formulario ---- */
+function autofillFromFile(file, domain, applyFn){
+  var isPdf = /pdf/i.test(file.type||"") || /\.pdf$/i.test(file.name||"");
+  var form = (domain==="salud")?state.hs.form:state.cap.form;
+  if(!form) return;
+  if(!isPdf){ return; } // solo PDFs se leen automáticamente
+  form.reading=true; render();
+  extractPdfText(file).then(function(text){
+    if(!text || text.replace(/\s/g,"").length<20){ form.reading=false; render(); return; } // PDF escaneado / sin texto
+    fetch("/api/analyze", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ task:"form_extract", domain:domain, text:text }) })
+      .then(function(r){ return r.json(); })
+      .then(function(j){ form.reading=false; if(j&&j.ok&&j.fields){ applyFn(j.fields); (domain==="salud"?state.hs:state.cap).msg="Datos leídos del PDF. Revisá y guardá."; } render(); })
+      .catch(function(){ form.reading=false; render(); });
+  }).catch(function(){ form.reading=false; render(); });
+}
+function capApplyFields(fx){
+  var f=state.cap.form; if(!f||!fx) return;
+  if(fx.type && TRAIN_TYPES[fx.type]) f.type=fx.type;
+  ["title","institution","detail"].forEach(function(k){ if(fx[k] && !(f[k]||"").trim()) f[k]=String(fx[k]); });
+  if(fx.status && TRAIN_STATUS[fx.status]) f.status=fx.status;
+  if(fx.done_date && /^\d{4}-\d{2}-\d{2}$/.test(fx.done_date) && !f.done_date) f.done_date=fx.done_date;
+  if(fx.expiry_date && /^\d{4}-\d{2}-\d{2}$/.test(fx.expiry_date) && !f.expiry_date) f.expiry_date=fx.expiry_date;
+}
+function hsApplyFields(fx){
+  var f=state.hs.form; if(!f||!fx) return;
+  if(fx.type && HS_TYPES[fx.type]) f.type=fx.type;
+  var sub=hsSubOptions(f.type); if(sub && fx.subtype && sub[fx.subtype]) f.subtype=fx.subtype;
+  ["title","entity","detail"].forEach(function(k){ if(fx[k] && !(f[k]||"").trim()) f[k]=String(fx[k]); });
+  if(fx.result && HS_RESULT[fx.result]) f.result=fx.result;
+  if(fx.date && /^\d{4}-\d{2}-\d{2}$/.test(fx.date) && !f.date) f.date=fx.date;
+  if(fx.expiry_date && /^\d{4}-\d{2}-\d{2}$/.test(fx.expiry_date) && !f.expiry_date) f.expiry_date=fx.expiry_date;
+}
+/* Combina subida + lectura automática (mismo comportamiento en capacitación y salud). */
+function capFormFile(file){ if(!file) return; capFormUpload(file); autofillFromFile(file, "capacitacion", capApplyFields); }
+function hsFormFile(file){ if(!file) return; hsFormUpload(file); autofillFromFile(file, "salud", hsApplyFields); }
+/* Habilita arrastrar-y-soltar un archivo en una zona; onFile recibe el File. */
+function wireDropzone(zoneId, onFile){
+  var z=document.getElementById(zoneId); if(!z) return;
+  var hi=function(){ z.style.borderColor="var(--teal)"; z.style.background="var(--teal-tint)"; };
+  var lo=function(){ z.style.borderColor="var(--border)"; z.style.background="var(--surface)"; };
+  ["dragenter","dragover"].forEach(function(ev){ z.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); hi(); }); });
+  ["dragleave","dragend"].forEach(function(ev){ z.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); lo(); }); });
+  z.addEventListener("drop", function(e){ e.preventDefault(); e.stopPropagation(); lo(); var file=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if(file) onFile(file); });
+}
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -6215,7 +6270,8 @@ function bind(){
   if ((f=document.getElementById("f_cap_done"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.done_date=e.target.value; });
   if ((f=document.getElementById("f_cap_exp"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.expiry_date=e.target.value; });
   if ((f=document.getElementById("f_cap_detail"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.detail=e.target.value; });
-  if ((f=document.getElementById("f_cap_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) capFormUpload(file); });
+  if ((f=document.getElementById("f_cap_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) capFormFile(file); });
+  wireDropzone("f_cap_drop", capFormFile);
   document.querySelectorAll("input[data-capfile]").forEach(function(el){ el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) capAttachExisting(el.getAttribute("data-capfile"), file); }); });
   // ---- Salud y seguridad ----
   if ((f=document.getElementById("f_hs_type"))) f.addEventListener("change", function(e){ if(state.hs.form){ state.hs.form.type=e.target.value; var sub=hsSubOptions(e.target.value); state.hs.form.subtype=sub?Object.keys(sub)[0]:""; render(); } });
@@ -6226,7 +6282,8 @@ function bind(){
   if ((f=document.getElementById("f_hs_date"))) f.addEventListener("input", function(e){ if(state.hs.form) state.hs.form.date=e.target.value; });
   if ((f=document.getElementById("f_hs_exp"))) f.addEventListener("input", function(e){ if(state.hs.form) state.hs.form.expiry_date=e.target.value; });
   if ((f=document.getElementById("f_hs_detail"))) f.addEventListener("input", function(e){ if(state.hs.form) state.hs.form.detail=e.target.value; });
-  if ((f=document.getElementById("f_hs_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) hsFormUpload(file); });
+  if ((f=document.getElementById("f_hs_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) hsFormFile(file); });
+  wireDropzone("f_hs_drop", hsFormFile);
   document.querySelectorAll("input[data-hsfile]").forEach(function(el){ el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) hsAttachExisting(el.getAttribute("data-hsfile"), file); }); });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
