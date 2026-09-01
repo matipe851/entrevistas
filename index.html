@@ -642,6 +642,38 @@ function dbUpdateAttendance(id, patch){
 function dbDeleteAttendance(id){
   return supaFetch("/rest/v1/attendance?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* ----- Vacaciones y licencias ----- */
+function dbListLeaves(){
+  return supaFetch("/rest/v1/leaves?select=*&order=created_at.desc").then(function(r){ return r.json(); })
+    .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
+}
+function dbCreateLeave(row){
+  return supaFetch("/rest/v1/leaves", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateLeave(id, patch){
+  return supaFetch("/rest/v1/leaves?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeleteLeave(id){
+  return supaFetch("/rest/v1/leaves?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+/* ----- Justificación de ausencias ----- */
+function dbListAbsenceNotes(){
+  return supaFetch("/rest/v1/absence_notes?select=*&order=date.desc").then(function(r){ return r.json(); })
+    .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
+}
+function dbCreateAbsenceNote(row){
+  return supaFetch("/rest/v1/absence_notes", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateAbsenceNote(id, patch){
+  return supaFetch("/rest/v1/absence_notes?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+function dbDeleteAbsenceNote(id){
+  return supaFetch("/rest/v1/absence_notes?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1545,7 +1577,8 @@ var state = {
   emp: { loading:false, items:null, error:null, search:"", msg:"" },
   empform: null,
   abm: null,
-  asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null, ctlMonth:null, ctlEmp:null },
+  asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null, ctlMonth:null, ctlEmp:null, absNotes:[], absKey:null, absText:"" },
+  lic: { loading:false, items:null, notes:null, error:null, msg:"", emp:null, form:null },
   fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
@@ -1571,7 +1604,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); } }; }catch(e){}
 
-var APP_VERSION = "v31.1-r66";
+var APP_VERSION = "v31.2-r67";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1851,7 +1884,7 @@ Screens["mod2-home"] = function(){
     { active:true, action:"go-legajo", icon:"file", tag:"Activo", title:"1 · Legajo del empleado", desc:"Ficha completa de cada persona: datos personales, laborales, contacto y documentación." },
     { active:true, action:"go-abm", icon:"plus", tag:"Activo", title:"2 · Altas, bajas y modificaciones", desc:"Alta, cambios de puesto, ascensos, cambios salariales y baja con su motivo." },
     { active:true, action:"go-asistencia", icon:"clock", tag:"Activo", title:"3 · Asistencia y horarios", desc:"Fichador con cámara y ubicación, control horario, tardanzas, ausencias y horas extra." },
-    { icon:"home",     tag:"Próximamente", title:"4 · Vacaciones y licencias",      desc:"Solicitudes, saldos de días y aprobación de licencias." },
+    { active:true, action:"go-licencias", icon:"home", tag:"Activo", title:"4 · Vacaciones y licencias", desc:"Por empleado: días disponibles, solicitudes y aprobaciones, vacaciones, enfermedad, maternidad/paternidad, estudio y otras licencias." },
     { icon:"briefcase",tag:"Próximamente", title:"5 · Liquidación de sueldos",      desc:"Cálculo de haberes, conceptos, recibos y net a pagar." },
     { icon:"eye",      tag:"Próximamente", title:"6 · Evaluación de desempeño",     desc:"Objetivos, feedback y revisiones periódicas del personal." },
     { icon:"users",    tag:"Próximamente", title:"7 · Capacitación",                desc:"Planes de formación, cursos y seguimiento del desarrollo." },
@@ -2358,7 +2391,23 @@ Screens["mod2-asistencia"] = function(){
         html += secRows("Llegadas tarde","var(--amber)", en.late, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+" tarde", "var(--amber-tint)", x.just); });
         html += secRows("Salidas anticipadas (se fue antes)","var(--brick)", en.early, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+" antes"+(x.out?(' · salió '+esc(x.out)):''), "var(--brick-tint)", x.just); });
         html += secRows("Horas extra","var(--teal-strong)", en.extra, function(x){ return chip(x.date, esc(fmtMinDur(x.min))+(x.out?(' · salió '+esc(x.out)):''), "var(--teal-tint)"); });
-        html += secRows("Ausencias","var(--brick)", en.absent, function(x){ return chip(x.date, "No fichó", "var(--brick-tint)"); });
+        (function(){
+          var arr=en.absent||[], eid=en.emp.id;
+          var body = arr.length ? arr.map(function(x){
+            var key=eid+"|"+x.date, editing=(state.asist.absKey===key);
+            var inner='<div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><span style="font-weight:600">'+esc(dayLabel(x.date))+'</span><span style="color:var(--muted)">No fichó</span></div>';
+            if(x.note && !editing){
+              inner += '<div style="margin-top:5px;font-size:12px;color:var(--teal-strong);background:var(--surface);border-radius:7px;padding:5px 8px">'+ic('check',11)+' Justificación: '+esc(x.note)+' <button class="dl-audio" data-action="abs-justify" data-emp="'+esc(eid)+'" data-date="'+esc(x.date)+'" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:11px;margin-left:6px">editar</button></div>';
+            } else if(editing){
+              inner += '<div style="margin-top:6px"><div class="input-row" style="align-items:flex-start;background:var(--surface)"><textarea id="f_absjust" rows="2" placeholder="Motivo de la ausencia (ej: enfermedad, permiso, etc.)">'+esc(state.asist.absText||"")+'</textarea></div>' +
+                '<div style="display:flex;gap:8px;margin-top:6px"><button class="btn btn-primary btn-sm" data-action="abs-justify-save" data-emp="'+esc(eid)+'" data-date="'+esc(x.date)+'">Guardar</button><button class="btn btn-ghost btn-sm" data-action="abs-justify-cancel">Cancelar</button></div></div>';
+            } else {
+              inner += '<div style="margin-top:6px"><button class="btn btn-primary btn-sm" data-action="abs-justify" data-emp="'+esc(eid)+'" data-date="'+esc(x.date)+'">Justificar</button></div>';
+            }
+            return '<div style="padding:8px 11px;background:var(--brick-tint);border-radius:9px;font-size:13px;color:var(--ink)">'+inner+'</div>';
+          }).join('') : '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>';
+          html += '<div style="margin-bottom:14px"><p style="font-size:12.5px;font-weight:800;color:var(--brick);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Ausencias ('+arr.length+')</p><div style="display:grid;gap:6px">'+body+'</div></div>';
+        })();
         html += secRows("Francos trabajados","var(--purple)", en.franco, function(x){ return chip(x.date, "Entró "+esc(x.hm||""), "var(--purple-tint)"); });
         html += secRows("Francos según legajo (día de descanso)","var(--green)", (en.rest||[]), function(x){ return chip(x.date, "Franco", "var(--green-tint)"); });
         if(!en.count){ html += '<p style="font-size:13px;color:var(--green);margin:0">Sin novedades este mes.</p>'; }
@@ -2366,6 +2415,93 @@ Screens["mod2-asistencia"] = function(){
       }
     }
   }
+  return html;
+};
+
+/* ---- Vacaciones y licencias (reclutador) ---- */
+Screens["mod2-licencias"] = function(){
+  var s=state.lic;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('home',20)+'<h2 style="font-size:18px;color:var(--ink)">Vacaciones y licencias</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">Elegí un empleado (según su legajo) para ver su saldo de días, cargar solicitudes y aprobarlas, y sus licencias por tipo.</p>';
+  if(s.msg) html += Note("ok", esc(s.msg));
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
+  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  if(!s.emp){
+    if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
+    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
+      var pend=licEmpLeaves(e.id).filter(function(l){ return l.status==="pendiente"; }).length;
+      html += '<button class="tile tile-light" data-action="lic-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
+        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
+        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(pend?('<span style="color:var(--amber);font-weight:700">'+pend+' pendiente'+(pend===1?'':'s')+'</span>'):'Ver')+'</p></button>';
+    });
+    html += '</div>';
+    return html;
+  }
+  var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
+  if(!e){ html += Note("err","No encontré a este empleado."); return html; }
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="lic-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span></div>';
+  var leaves=licEmpLeaves(e.id);
+  var entitlement=(e.vacation_days_year!=null?parseInt(e.vacation_days_year,10):14); if(isNaN(entitlement)) entitlement=14;
+  var used=licVacUsed(e.id); var avail=entitlement-used;
+  // Días disponibles
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Días disponibles · vacaciones '+new Date().getFullYear()+'</h3>' +
+    '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">' +
+      '<div style="text-align:center;min-width:80px"><div style="font-size:34px;font-weight:800;color:'+(avail<0?'var(--brick)':'var(--green)')+';font-family:\'Fraunces\',serif;line-height:1">'+avail+'</div><div style="font-size:11px;color:var(--muted)">disponibles</div></div>' +
+      '<div style="font-size:13px;color:var(--muted)">Asignados por año: <b style="color:var(--ink)">'+entitlement+'</b><br>Gozados este año: <b style="color:var(--ink)">'+used+'</b></div>' +
+      '<label class="field" style="margin-left:auto"><span class="field-label">Días asignados por año</span><div class="input-row" style="max-width:120px"><input id="f_lic_vac" type="number" min="0" value="'+esc(String(entitlement))+'"></div><span class="field-hint">Se guarda en el legajo.</span></label>' +
+    '</div></div>';
+  // Nueva solicitud
+  if(!s.form){
+    html += '<button class="btn btn-primary btn-sm" data-action="lic-new" style="margin-bottom:14px">'+ic('plus',14)+' Nueva solicitud / licencia</button>';
+  } else {
+    var f=s.form;
+    html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Nueva solicitud / licencia</h3>' +
+      '<div style="display:grid;gap:12px">' +
+      '<label class="field"><span class="field-label">Tipo</span><select class="bare" id="f_lic_type">'+Object.keys(LEAVE_TYPES).map(function(k){ return '<option value="'+k+'"'+(f.type===k?' selected':'')+'>'+esc(LEAVE_TYPES[k].label)+'</option>'; }).join('')+'</select></label>' +
+      '<div class="grid2" style="gap:12px">' +
+        '<label class="field"><span class="field-label">Desde</span><div class="input-row"><input id="f_lic_from" type="date" value="'+esc(f.start_date||"")+'"></div></label>' +
+        '<label class="field"><span class="field-label">Hasta</span><div class="input-row"><input id="f_lic_to" type="date" value="'+esc(f.end_date||"")+'"></div></label>' +
+      '</div>' +
+      ((f.start_date&&f.end_date)?('<p style="font-size:12.5px;color:var(--muted);margin:0">'+leaveDays(f.start_date,f.end_date)+' día(s).</p>'):'') +
+      '<label class="field"><span class="field-label">Motivo / nota (opcional)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_lic_note" rows="2" placeholder="Detalle de la solicitud (opcional)">'+esc(f.note||"")+'</textarea></div></label>' +
+      '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="lic-save" data-e="'+esc(e.id)+'"'+(s.saving?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Cargar solicitud')+'</button><button class="btn btn-ghost btn-sm" data-action="lic-cancel">Cancelar</button></div>' +
+      '</div></div>';
+  }
+  var rowLeave=function(l, withActions){
+    var t=LEAVE_TYPES[l.type]||{label:l.type,color:"var(--muted)"};
+    var stColor=l.status==="aprobada"?"var(--green)":(l.status==="rechazada"?"var(--brick)":"var(--amber)");
+    var stLabel=l.status==="aprobada"?"Aprobada":(l.status==="rechazada"?"Rechazada":"Pendiente");
+    return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px;border-left:3px solid '+t.color+'">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">' +
+        '<div><b style="font-size:13px;color:var(--ink)">'+esc(t.label)+'</b> <span style="font-size:12px;color:var(--muted)">· '+esc(leaveRangeLabel(l))+' · '+(l.days||leaveDays(l.start_date,l.end_date))+' día(s)</span></div>' +
+        '<span class="badge" style="background:var(--surface);color:'+stColor+'">'+stLabel+'</span>' +
+      '</div>' +
+      (l.note?'<p style="margin:6px 0 0;font-size:12px;color:var(--muted)">'+esc(l.note)+'</p>':'') +
+      (withActions?('<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">' +
+         (l.status!=="aprobada"?('<button class="btn btn-teal btn-sm" data-action="lic-approve" data-id="'+esc(l.id)+'">'+ic('check',13)+' Aprobar</button>'):'') +
+         (l.status!=="rechazada"?('<button class="btn btn-ghost btn-sm" data-action="lic-reject" data-id="'+esc(l.id)+'">Rechazar</button>'):'') +
+         '<button class="dl-audio" data-action="lic-del" data-id="'+esc(l.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;margin-left:auto">'+ic('trash',12)+' eliminar</button>' +
+       '</div>'):'') +
+    '</div>';
+  };
+  html += '<h3 style="font-size:14px;color:var(--ink);margin:16px 0 8px">Solicitudes y aprobaciones</h3>';
+  if(!leaves.length){ html += '<p style="font-size:13px;color:var(--muted)">Todavía no hay solicitudes cargadas.</p>'; }
+  else { html += '<div style="display:grid;gap:8px">'+leaves.slice().sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); }).map(function(l){ return rowLeave(l,true); }).join('')+'</div>'; }
+  var typeSection=function(title, types){
+    var arr=leaves.filter(function(l){ return types.indexOf(l.type)>=0 && l.status==="aprobada"; }).sort(function(a,b){ return new Date(b.start_date||0)-new Date(a.start_date||0); });
+    var total=arr.reduce(function(a,l){ return a+(parseInt(l.days,10)||leaveDays(l.start_date,l.end_date)); },0);
+    var body=arr.length?('<div style="display:grid;gap:8px">'+arr.map(function(l){ return rowLeave(l,false); }).join('')+'</div>'):'<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>';
+    return '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:var(--teal);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">'+esc(title)+' ('+arr.length+(total?(' · '+total+' día'+(total===1?'':'s')):'')+')</p>'+body+'</div>';
+  };
+  html += typeSection("Vacaciones gozadas", ["vacaciones"]);
+  html += typeSection("Licencias por enfermedad", ["enfermedad"]);
+  html += typeSection("Licencias por maternidad/paternidad", ["maternidad","paternidad"]);
+  html += typeSection("Días de estudio", ["estudio"]);
+  html += typeSection("Otras licencias", ["otras"]);
   return html;
 };
 
@@ -3880,14 +4016,70 @@ function loadAsistencia(){
     if(cfg) return cfg;
     return dbCreateFichadorConfig(makeCode()).then(function(c){ return c || dbGetFichadorConfig(); });
   });
-  Promise.all([ cfgP, dbListAttendance(), (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()) ])
+  Promise.all([ cfgP, dbListAttendance(), (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()), dbListAbsenceNotes() ])
     .then(function(res){
       state.asist.config=res[0]||null;
       state.asist.items=res[1]||[];
       state.emp.items=res[2]||[];
+      state.asist.absNotes=res[3]||[];
       state.asist.loading=false; render();
     }).catch(function(){ state.asist.loading=false; state.asist.error="No pude cargar la asistencia."; render(); });
 }
+/* Busca la justificación de ausencia de un empleado en una fecha. */
+function absNoteFor(empId, date){
+  var arr=state.asist.absNotes||[];
+  for(var i=0;i<arr.length;i++){ if(arr[i].employee_id===empId && String(arr[i].date).slice(0,10)===date) return arr[i]; }
+  return null;
+}
+/* Guarda (crea o actualiza) la justificación de una ausencia. */
+function saveAbsenceNote(empId, date, txt){
+  txt=(txt||"").trim();
+  var existing=absNoteFor(empId, date);
+  var after=function(){ state.asist.absKey=null; state.asist.absText=""; state.asist.msg="Justificación de ausencia guardada."; dbListAbsenceNotes().then(function(list){ state.asist.absNotes=list||[]; render(); }); };
+  if(existing){
+    if(!txt){ dbDeleteAbsenceNote(existing.id).then(after); return; }
+    dbUpdateAbsenceNote(existing.id, { note:txt }).then(after);
+  } else {
+    if(!txt){ state.asist.absKey=null; render(); return; }
+    dbCreateAbsenceNote({ employee_id:empId, date:date, note:txt }).then(after).catch(function(){ state.asist.msg="No pude guardar (¿corriste el SQL de licencias?)."; render(); });
+  }
+}
+
+/* ---- Módulo 2 · Vacaciones y licencias ---- */
+var LEAVE_TYPES = {
+  vacaciones:{ label:"Vacaciones",       color:"var(--teal)"   },
+  enfermedad:{ label:"Licencia por enfermedad", color:"var(--brick)" },
+  maternidad:{ label:"Licencia por maternidad", color:"var(--purple)" },
+  paternidad:{ label:"Licencia por paternidad", color:"var(--purple)" },
+  estudio:{    label:"Días de estudio",   color:"var(--amber)"  },
+  otras:{      label:"Otras licencias",   color:"var(--muted)"  }
+};
+function leaveDays(s, e){ var a=parseYMD(String(s||"").slice(0,10)), b=parseYMD(String(e||"").slice(0,10)); if(!a||!b) return 0; var d=Math.floor((b.getTime()-a.getTime())/(24*3600*1000))+1; return d>0?d:0; }
+function leaveRangeLabel(l){ function f(d){ if(!d) return "—"; var p=String(d).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+p[0]; } return f(l.start_date)+" → "+f(l.end_date); }
+function licEmpLeaves(empId){ return (state.lic.items||[]).filter(function(l){ return l.employee_id===empId; }); }
+function licVacUsed(empId){ var y=new Date().getFullYear(); return licEmpLeaves(empId).filter(function(l){ var sd=parseYMD(String(l.start_date||"").slice(0,10)); return l.type==="vacaciones" && l.status==="aprobada" && sd && sd.getFullYear()===y; }).reduce(function(a,l){ return a+(parseInt(l.days,10)||leaveDays(l.start_date,l.end_date)); },0); }
+function goLicencias(){ state.error=null; state.lic.msg=""; state.lic.error=null; state.lic.emp=null; state.lic.form=null; state.screen="mod2-licencias"; render(); loadLicencias(); }
+function loadLicencias(){
+  if(!(supaConfigured() && isLoggedIn())){ state.lic.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
+  state.lic.loading=true; state.lic.error=null; render();
+  Promise.all([ (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()), dbListLeaves() ])
+    .then(function(res){ state.emp.items=res[0]||[]; state.lic.items=res[1]||[]; state.lic.loading=false; render(); })
+    .catch(function(){ state.lic.loading=false; state.lic.error="No pude cargar las licencias."; render(); });
+}
+function licNewForm(){ state.lic.form={ type:"vacaciones", start_date:"", end_date:"", note:"" }; render(); }
+function licSave(empId){
+  var f=state.lic.form; if(!f) return;
+  if(!f.start_date || !f.end_date){ state.lic.msg="Cargá las fechas desde y hasta."; render(); return; }
+  var days=leaveDays(f.start_date, f.end_date);
+  if(days<=0){ state.lic.msg="El rango de fechas no es válido (revisá desde/hasta)."; render(); return; }
+  var row={ employee_id:empId, type:f.type, start_date:f.start_date, end_date:f.end_date, days:days, status:"pendiente", note:(f.note||"").trim() };
+  state.lic.saving=true; render();
+  dbCreateLeave(row).then(function(){ state.lic.form=null; state.lic.saving=false; state.lic.msg="Solicitud cargada."; return dbListLeaves().then(function(l){ state.lic.items=l||[]; render(); }); })
+    .catch(function(){ state.lic.saving=false; state.lic.msg="No pude guardar la solicitud (¿corriste el SQL de licencias?)."; render(); });
+}
+function licSetStatus(id, status){ dbUpdateLeave(id, { status:status }).then(function(){ return dbListLeaves(); }).then(function(l){ state.lic.items=l||[]; state.lic.msg=(status==="aprobada"?"Solicitud aprobada.":(status==="rechazada"?"Solicitud rechazada.":"")); render(); }).catch(function(){ state.lic.msg="No pude actualizar el estado."; render(); }); }
+function licDelete(id){ if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return; dbDeleteLeave(id).then(function(){ return dbListLeaves(); }).then(function(l){ state.lic.items=l||[]; state.lic.msg="Registro eliminado."; render(); }); }
+function licSetVac(empId, val){ var n=parseInt(val,10); if(isNaN(n)||n<0) n=0; dbUpdateEmployee(empId, { vacation_days_year:n }).then(function(){ (state.emp.items||[]).forEach(function(e){ if(e.id===empId) e.vacation_days_year=n; }); state.lic.msg="Días de vacaciones asignados: "+n+"."; render(); }).catch(function(){ state.lic.msg="No pude guardar los días (¿corriste el SQL de licencias?)."; render(); }); }
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -4001,7 +4193,7 @@ function asistMonthControl(mk){
         if(r.early) s.early.push({ date:dayISO, min:r.early.min, just:(r.early.justification||""), out:(r.salida?tsHM(r.salida.punched_at):"") });
       }
     });
-    sum.absent.forEach(function(e){ slot(e.id).absent.push({ date:dayISO }); });
+    sum.absent.forEach(function(e){ var an=absNoteFor(e.id, dayISO); slot(e.id).absent.push({ date:dayISO, note:(an&&an.note)||"" }); });
     // Francos según el legajo: días de descanso programados (no le tocaba trabajar) sin fichaje.
     (function(dISO){
       emps.forEach(function(e){
@@ -5038,6 +5230,15 @@ function bind(){
       else if (act === "go-abm") goABM();
       else if (act === "mov-open"){ openMovements(el.getAttribute("data-id")); }
       else if (act === "go-asistencia") goAsistencia();
+      else if (act === "go-licencias") goLicencias();
+      else if (act === "lic-emp"){ state.lic.emp=el.getAttribute("data-e")||null; state.lic.form=null; state.lic.msg=""; render(); }
+      else if (act === "lic-emp-back"){ state.lic.emp=null; state.lic.form=null; render(); }
+      else if (act === "lic-new"){ licNewForm(); }
+      else if (act === "lic-cancel"){ state.lic.form=null; render(); }
+      else if (act === "lic-save"){ licSave(el.getAttribute("data-e")); }
+      else if (act === "lic-approve"){ licSetStatus(el.getAttribute("data-id"), "aprobada"); }
+      else if (act === "lic-reject"){ licSetStatus(el.getAttribute("data-id"), "rechazada"); }
+      else if (act === "lic-del"){ licDelete(el.getAttribute("data-id")); }
       else if (act === "asist-view"){ state.asist.view=el.getAttribute("data-v")||"resumen"; if(state.asist.view==="log") state.asist.folder=null; if(state.asist.view!=="control"){ state.asist.ctlMonth=null; state.asist.ctlEmp=null; } render(); }
       else if (act === "asist-folder"){ state.asist.folder=el.getAttribute("data-m")||null; render(); }
       else if (act === "asist-folder-back"){ state.asist.folder=null; render(); }
@@ -5052,6 +5253,9 @@ function bind(){
       else if (act === "asist-justify"){ var jid=el.getAttribute("data-id"); var cur=(state.asist.items||[]).filter(function(p){return p.id===jid;})[0]; state.asist.justifyId=jid; state.asist.justifyText=(cur&&cur.justification)||""; render(); }
       else if (act === "asist-justify-cancel"){ state.asist.justifyId=null; state.asist.justifyText=""; render(); }
       else if (act === "asist-justify-save"){ var sid=el.getAttribute("data-id"); saveJustification(sid); }
+      else if (act === "abs-justify"){ var ae=el.getAttribute("data-emp"), ad=el.getAttribute("data-date"); state.asist.absKey=ae+"|"+ad; var an=absNoteFor(ae, ad); state.asist.absText=(an&&an.note)||""; render(); }
+      else if (act === "abs-justify-cancel"){ state.asist.absKey=null; state.asist.absText=""; render(); }
+      else if (act === "abs-justify-save"){ var be=el.getAttribute("data-emp"), bd=el.getAttribute("data-date"); saveAbsenceNote(be, bd, state.asist.absText); }
       else if (act === "copy-fichlink"){ var fl=el.getAttribute("data-link")||""; try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(fl).then(function(){ el.innerHTML=ic('check',13)+' Copiado'; setTimeout(function(){ if(state.screen==="mod2-asistencia") render(); },1200); }, function(){ alert("Copiá el link: "+fl); }); } else alert("Copiá el link: "+fl); }catch(e){ alert("Copiá el link: "+fl); } }
       else if (act === "open-fichlink"){ var fc=el.getAttribute("data-code")||""; if(fc){ try{ window.open((pageBaseUrl()||PROD_BASE).replace(/[?#].*$/,"")+"?fichar="+encodeURIComponent(fc), "_blank"); }catch(e){} } }
       else if (act === "fichar-again"){ fichadorAgain(); }
@@ -5302,6 +5506,13 @@ function bind(){
   // ---- Asistencia (reclutador) ----
   if ((f=document.getElementById("f_asist_day"))) f.addEventListener("change", function(e){ state.asist.day=e.target.value; render(); });
   if ((f=document.getElementById("f_justif"))) f.addEventListener("input", function(e){ state.asist.justifyText=e.target.value; });
+  if ((f=document.getElementById("f_absjust"))) f.addEventListener("input", function(e){ state.asist.absText=e.target.value; });
+  // ---- Vacaciones y licencias ----
+  if ((f=document.getElementById("f_lic_vac"))) f.addEventListener("change", function(e){ if(state.lic.emp) licSetVac(state.lic.emp, e.target.value); });
+  if ((f=document.getElementById("f_lic_type"))) f.addEventListener("change", function(e){ if(state.lic.form) state.lic.form.type=e.target.value; });
+  if ((f=document.getElementById("f_lic_from"))) f.addEventListener("input", function(e){ if(state.lic.form){ state.lic.form.start_date=e.target.value; render(); } });
+  if ((f=document.getElementById("f_lic_to"))) f.addEventListener("input", function(e){ if(state.lic.form){ state.lic.form.end_date=e.target.value; render(); } });
+  if ((f=document.getElementById("f_lic_note"))) f.addEventListener("input", function(e){ if(state.lic.form) state.lic.form.note=e.target.value; });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
