@@ -1621,7 +1621,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); } }; }catch(e){}
 
-var APP_VERSION = "v31.4-r69";
+var APP_VERSION = "v31.5-r70";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2599,6 +2599,13 @@ Screens["mod2-desempeno"] = function(){
   html += section("Evaluaciones", "evaluacion");
   html += section("Feedback", "feedback");
   html += section("Planes de mejora", "mejora");
+  // Historial cronológico de TODAS las evaluaciones/entradas de este empleado.
+  var hist=items.slice().sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+  var fdt=function(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }catch(e){ return ""; } };
+  html += '<div style="margin-top:20px"><p style="font-size:12.5px;font-weight:800;color:var(--ink);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Historial (por fecha) ('+hist.length+')</p>';
+  if(!hist.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>'; }
+  else { html += '<div style="display:grid;gap:6px">'+hist.map(function(p){ var t=PERF_TYPES[p.type]||{label:p.type,color:"var(--muted)"}; return '<div style="display:flex;gap:10px;align-items:center;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt(p.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+t.color+'">'+esc(t.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(p.title||p.detail||"—")+((p.rating&&(p.type==="competencia"||p.type==="evaluacion"))?(' <span style="color:var(--amber)">'+perfStars(p.rating)+'</span>'):'')+'</span></div>'; }).join('')+'</div>'; }
+  html += '</div>';
   return html;
 };
 
