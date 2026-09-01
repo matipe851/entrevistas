@@ -1595,7 +1595,7 @@ var state = {
   abm: null,
   asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null, ctlMonth:null, ctlEmp:null, absNotes:[], absKey:null, absText:"" },
   lic: { loading:false, items:null, notes:null, error:null, msg:"", emp:null, form:null },
-  perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null },
+  perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null, view:"emp", ai:null, rankAI:null, aiQ:"" },
   fichador: null,
   brand: { name:"", logo:"" },
   myApproved: null,
@@ -1621,7 +1621,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); } }; }catch(e){}
 
-var APP_VERSION = "v31.6-r71";
+var APP_VERSION = "v31.7-r72";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2540,6 +2540,34 @@ Screens["mod2-desempeno"] = function(){
   var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
   if(!s.emp){
     if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
+    // Toggle: empleados / ranking por demora
+    html += '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">' +
+      '<button class="pill-time" data-action="perf-view" data-v="emp" style="cursor:pointer;border:none;background:'+((s.view||"emp")==="emp"?'var(--teal)':'var(--surface-2)')+';color:'+((s.view||"emp")==="emp"?'#fff':'var(--ink)')+'">Empleados</button>' +
+      '<button class="pill-time" data-action="perf-view" data-v="ranking" style="cursor:pointer;border:none;background:'+(s.view==="ranking"?'var(--teal)':'var(--surface-2)')+';color:'+(s.view==="ranking"?'#fff':'var(--ink)')+'">'+ic('list',13)+' Ranking por demora</button>' +
+    '</div>';
+    if(s.view==="ranking"){
+      var rk=perfRanking();
+      html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Ranking por tiempo de demora del proceso: promedio de días que tarda cada empleado en cumplir sus objetivos y planes de mejora (del más rápido al más lento).</p>';
+      if(!rk.length){ html += Note("info","Todavía no hay objetivos o planes de mejora cumplidos para armar el ranking."); }
+      else {
+        html += '<div style="display:grid;gap:8px">';
+        rk.forEach(function(r,i){
+          var medal=i===0?"🥇":(i===1?"🥈":(i===2?"🥉":(i+1)+"º"));
+          var avgTxt=r.avgDays!=null?(r.avgDays.toFixed(1)+" días prom."):"sin cumplidos";
+          html += '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--surface-2);border-radius:10px">' +
+            '<span style="font-weight:800;min-width:34px;text-align:center;font-size:15px">'+medal+'</span>' +
+            '<div style="flex:1;min-width:120px"><b style="font-size:14px;color:var(--ink)">'+esc(empFullName(r.emp))+'</b>'+(r.emp.legajo_number?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(r.emp.legajo_number)+'</span>'):'')+'<br><span style="font-size:12px;color:var(--muted)">'+r.done+' cumplidos de '+r.total+' · '+r.pending+' pendientes</span></div>' +
+            '<span style="text-align:right"><span style="font-size:16px;font-weight:800;color:'+(r.avgDays==null?'var(--muted)':(r.avgDays<=7?'var(--green)':(r.avgDays<=21?'var(--amber)':'var(--brick)')))+'">'+esc(avgTxt)+'</span></span>' +
+          '</div>';
+        });
+        html += '</div>';
+        var ra=s.rankAI||{};
+        html += '<div style="margin-top:14px"><button class="btn btn-teal btn-sm" data-action="perf-rank-ai"'+(ra.asking?' disabled':'')+'>'+(ra.asking?(ic('loader',13,'spin')+' Analizando…'):(ic('eye',14)+' Analizar ranking con IA'))+'</button></div>';
+        if(ra.error) html += Note("err", esc(ra.error));
+        if(ra.answer) html += '<div class="card" style="margin-top:10px;white-space:pre-wrap;font-size:13.5px;line-height:1.55">'+esc(ra.answer)+'</div>';
+      }
+      return html;
+    }
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
     emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
       var n=perfEmpItems(e.id).length;
@@ -2572,6 +2600,21 @@ Screens["mod2-desempeno"] = function(){
       '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="perf-save" data-e="'+esc(e.id)+'"'+(s.saving?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="perf-cancel">Cancelar</button></div>' +
       '</div></div>';
   }
+  // Asistente IA: preguntas sobre el empleado + análisis del legajo y desempeño
+  var ai=s.ai||{};
+  html += '<div class="card" style="margin-bottom:14px;background:var(--teal-tint);border-color:var(--border-soft)">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;color:var(--teal-strong)">'+ic('mic',16)+'<h3 style="font-size:14px;color:var(--ink);margin:0">Asistente IA</h3></div>' +
+    '<p style="font-size:12.5px;color:var(--muted);margin:0 0 10px">Preguntale a la IA sobre las evaluaciones de '+esc(empFullName(e))+'. Analiza su legajo y su desempeño para sugerir mejoras.</p>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">' +
+      '<button class="btn btn-ghost btn-sm" data-action="perf-ai-quick" data-q="Analizá el desempeño de este empleado y sugerí mejoras concretas y accionables.">Sugerir mejoras</button>' +
+      '<button class="btn btn-ghost btn-sm" data-action="perf-ai-quick" data-q="Hacé un resumen del desempeño de este empleado con sus puntos fuertes y débiles.">Resumen y fortalezas/debilidades</button>' +
+      '<button class="btn btn-ghost btn-sm" data-action="perf-ai-quick" data-q="¿Qué objetivos o plan de capacitación le propondrías para los próximos meses?">Proponer objetivos</button>' +
+    '</div>' +
+    '<div class="input-row" style="align-items:flex-start;background:var(--surface)"><textarea id="f_perf_ai" rows="2" placeholder="Escribí tu pregunta sobre este empleado…">'+esc(s.aiQ||"")+'</textarea></div>' +
+    '<div style="display:flex;gap:8px;margin-top:8px;align-items:center"><button class="btn btn-teal btn-sm" data-action="perf-ai-ask" data-e="'+esc(e.id)+'"'+(ai.asking?' disabled':'')+'>'+(ai.asking?(ic('loader',13,'spin')+' Consultando…'):(ic('check',14)+' Preguntar'))+'</button></div>' +
+    (ai.error?Note("err", esc(ai.error)):'') +
+    (ai.answer?('<div style="margin-top:10px;background:var(--surface);border-radius:10px;padding:12px 14px;white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:var(--ink)">'+esc(ai.answer)+'</div>'):'') +
+  '</div>';
   var rowPerf=function(p){
     var t=PERF_TYPES[p.type]||{label:p.type,color:"var(--muted)"};
     var head='<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div>'+
@@ -4269,6 +4312,70 @@ function perfSetStatus(id, status){
   });
 }
 function perfDelete(id){ if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return; dbDeletePerformance(id).then(function(){ return dbListPerformance(); }).then(function(l){ state.perf.items=l||[]; state.perf.msg="Registro eliminado."; render(); }); }
+/* Arma el contexto de texto de un empleado (legajo + desempeño) para el asistente IA. */
+function perfEmpContext(e){
+  var L=[];
+  L.push("EMPLEADO: "+empFullName(e)+(e.legajo_number?(" (legajo "+e.legajo_number+")"):""));
+  var leg=[];
+  if(e.position) leg.push("Puesto: "+e.position);
+  if(e.category) leg.push("Categoría: "+e.category);
+  if(e.hire_date) leg.push("Ingreso: "+String(e.hire_date).slice(0,10));
+  if(e.collective_agreement) leg.push("Convenio: "+e.collective_agreement);
+  if(e.contract_type) leg.push("Contrato: "+e.contract_type);
+  if(leg.length) L.push("LEGAJO: "+leg.join(" · "));
+  var items=perfEmpItems(e.id);
+  function fD(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(x){ return ""; } }
+  ["objetivo","competencia","evaluacion","feedback","mejora"].forEach(function(ty){
+    var arr=items.filter(function(p){ return p.type===ty; });
+    if(!arr.length) return;
+    L.push("");
+    L.push((PERF_TYPES[ty]?PERF_TYPES[ty].label.toUpperCase():ty)+":");
+    arr.forEach(function(p){
+      var parts=[];
+      if(p.title) parts.push(p.title);
+      if(p.period) parts.push("período "+p.period);
+      if(p.rating&&(ty==="competencia"||ty==="evaluacion")) parts.push("puntaje "+p.rating+"/5");
+      if((ty==="objetivo"||ty==="mejora")){ parts.push("estado "+(PERF_STATUS[p.status||"pendiente"])); if(p.created_at) parts.push("cargado "+fD(p.created_at)); if(p.completed_at){ var dd=Math.max(0,Math.round((new Date(p.completed_at)-new Date(p.created_at))/(864e5))); parts.push("cumplido "+fD(p.completed_at)+" ("+dd+" días)"); } }
+      if(p.detail) parts.push("detalle: "+p.detail);
+      L.push("- "+parts.join(" · "));
+    });
+  });
+  if(items.length===0) L.push("(Sin registros de desempeño todavía.)");
+  return L.join("\n");
+}
+function perfAskAI(e, question){
+  state.perf.ai=state.perf.ai||{}; state.perf.ai.asking=true; state.perf.ai.error=""; render();
+  var prompt="Sos un especialista senior en Recursos Humanos y desarrollo de talento. A partir de la información de desempeño y el legajo de un empleado, respondé la consulta del jefe/RRHH de forma clara, concreta y accionable, en español rioplatense. Si te piden mejoras, dá recomendaciones específicas y realistas. No inventes datos que no estén; si falta información, decilo.\n\n=== DATOS DEL EMPLEADO ===\n"+perfEmpContext(e)+"\n\n=== CONSULTA ===\n"+question+"\n\nRespondé en texto claro (podés usar viñetas con '- '). No devuelvas JSON.";
+  fetch("/api/analyze", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ task:"assistant", prompt:prompt }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ state.perf.ai.asking=false; if(j&&j.ok&&j.answer){ state.perf.ai.answer=j.answer; state.perf.ai.error=""; } else { state.perf.ai.error=(j&&j.error==="no_key")?"Falta configurar la clave de IA (GEMINI_API_KEY) en Vercel.":(j&&j.error==="rate_limited")?"Demasiadas consultas seguidas, esperá unos minutos.":"No pude generar la respuesta. Probá de nuevo."; } render(); })
+    .catch(function(){ state.perf.ai.asking=false; state.perf.ai.error="No pude conectar con la IA."; render(); });
+}
+/* Ranking de empleados por tiempo de demora del proceso (objetivos/planes cumplidos). */
+function perfRanking(){
+  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  var rows=emps.map(function(e){
+    var items=perfEmpItems(e.id).filter(function(p){ return p.type==="objetivo"||p.type==="mejora"; });
+    var done=items.filter(function(p){ return p.status==="cumplido" && p.completed_at; });
+    var pend=items.filter(function(p){ return p.status!=="cumplido"; });
+    var avg=null;
+    if(done.length){ var sum=done.reduce(function(a,p){ return a+Math.max(0,(new Date(p.completed_at)-new Date(p.created_at))/(864e5)); },0); avg=sum/done.length; }
+    return { emp:e, total:items.length, done:done.length, pending:pend.length, avgDays:avg };
+  }).filter(function(r){ return r.total>0; });
+  rows.sort(function(a,b){ if(a.avgDays==null && b.avgDays==null) return b.done-a.done; if(a.avgDays==null) return 1; if(b.avgDays==null) return -1; return a.avgDays-b.avgDays; });
+  return rows;
+}
+function perfRankAI(){
+  var rows=perfRanking();
+  if(!rows.length){ state.perf.rankAI={ error:"No hay objetivos/planes con datos suficientes todavía." }; render(); return; }
+  state.perf.rankAI=state.perf.rankAI||{}; state.perf.rankAI.asking=true; state.perf.rankAI.error=""; render();
+  var lines=rows.map(function(r,i){ return (i+1)+") "+empFullName(r.emp)+(r.emp.legajo_number?(" (leg. "+r.emp.legajo_number+")"):"")+": "+(r.avgDays!=null?(r.avgDays.toFixed(1)+" días promedio de cumplimiento"):"sin objetivos cumplidos")+", "+r.done+" cumplidos de "+r.total+" ("+r.pending+" pendientes)"; });
+  var prompt="Sos analista de RRHH. Te paso un ranking de empleados por TIEMPO DE DEMORA en cumplir sus objetivos y planes de mejora (menos días = más rápido). Analizalo en español rioplatense: quién resuelve más rápido, quién se demora o tiene muchos pendientes, y 2-3 recomendaciones accionables. Sé breve y concreto. No devuelvas JSON.\n\nRANKING (ordenado del más rápido al más lento):\n"+lines.join("\n");
+  fetch("/api/analyze", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ task:"assistant", prompt:prompt }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ state.perf.rankAI.asking=false; if(j&&j.ok&&j.answer){ state.perf.rankAI.answer=j.answer; state.perf.rankAI.error=""; } else { state.perf.rankAI.error=(j&&j.error==="no_key")?"Falta configurar la clave de IA (GEMINI_API_KEY) en Vercel.":"No pude generar el análisis."; } render(); })
+    .catch(function(){ state.perf.rankAI.asking=false; state.perf.rankAI.error="No pude conectar con la IA."; render(); });
+}
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -5430,8 +5537,12 @@ function bind(){
       else if (act === "lic-del"){ licDelete(el.getAttribute("data-id")); }
       else if (act === "lic-vac-auto"){ licSetOverride(el.getAttribute("data-e"), ""); }
       else if (act === "go-desempeno") goDesempeno();
-      else if (act === "perf-emp"){ state.perf.emp=el.getAttribute("data-e")||null; state.perf.form=null; state.perf.msg=""; render(); }
-      else if (act === "perf-emp-back"){ state.perf.emp=null; state.perf.form=null; render(); }
+      else if (act === "perf-view"){ state.perf.view=el.getAttribute("data-v")||"emp"; render(); }
+      else if (act === "perf-emp"){ state.perf.emp=el.getAttribute("data-e")||null; state.perf.form=null; state.perf.msg=""; state.perf.ai=null; state.perf.aiQ=""; render(); }
+      else if (act === "perf-emp-back"){ state.perf.emp=null; state.perf.form=null; state.perf.ai=null; render(); }
+      else if (act === "perf-ai-quick"){ state.perf.aiQ=el.getAttribute("data-q")||""; render(); }
+      else if (act === "perf-ai-ask"){ var pe=(state.emp.items||[]).filter(function(x){return x.id===el.getAttribute("data-e");})[0]; var q=(state.perf.aiQ||"").trim(); if(pe && q) perfAskAI(pe, q); else { state.perf.ai={ error:"Escribí una pregunta primero." }; render(); } }
+      else if (act === "perf-rank-ai"){ perfRankAI(); }
       else if (act === "perf-new"){ perfNewForm(); }
       else if (act === "perf-cancel"){ state.perf.form=null; render(); }
       else if (act === "perf-save"){ perfSave(el.getAttribute("data-e")); }
@@ -5718,6 +5829,7 @@ function bind(){
   if ((f=document.getElementById("f_perf_rating"))) f.addEventListener("input", function(e){ if(state.perf.form) state.perf.form.rating=e.target.value; });
   if ((f=document.getElementById("f_perf_status"))) f.addEventListener("change", function(e){ if(state.perf.form) state.perf.form.status=e.target.value; });
   if ((f=document.getElementById("f_perf_detail"))) f.addEventListener("input", function(e){ if(state.perf.form) state.perf.form.detail=e.target.value; });
+  if ((f=document.getElementById("f_perf_ai"))) f.addEventListener("input", function(e){ state.perf.aiQ=e.target.value; });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
