@@ -352,6 +352,16 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    if (body.task === "assistant") {
+      var apr = String(body.prompt || "").slice(0, 24000);
+      if (!apr) { res.status(200).json({ ok: false, error: "no_prompt" }); return; }
+      var gap = await callGemini(key, [{ text: apr }], 4096, 0.5);
+      if (!gap.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gap.data && gap.data.error && gap.data.error.message) || ("HTTP " + gap.status) }); return; }
+      var ans = extractText(gap.data) || "";
+      res.status(200).json({ ok: true, answer: String(ans).slice(0, 12000) });
+      return;
+    }
+
     var ga = await callGemini(key, [{ text: analysisPrompt(body) }], 8192, 0.4);
     if (!ga.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (ga.data && ga.data.error && ga.data.error.message) || ("HTTP " + ga.status) }); return; }
     var parsed = parseJson(extractText(ga.data));
