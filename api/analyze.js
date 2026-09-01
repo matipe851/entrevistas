@@ -352,6 +352,29 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    if (body.task === "form_extract") {
+      var dom = String(body.domain || "").slice(0, 40);
+      var dtext = String(body.text || "").slice(0, 15000);
+      if (!dtext) { res.status(200).json({ ok: false, error: "no_text" }); return; }
+      var schema, guide;
+      if (dom === "salud") {
+        schema = '{ "type":"preocupacional|periodico|art|accidente|epp|apto", "subtype":"fisico|psicologico|ambiental|laboral|in_itinere|", "title":"", "entity":"", "result":"apto|apto_restricciones|no_apto|", "date":"YYYY-MM-DD", "expiry_date":"YYYY-MM-DD", "detail":"" }';
+        guide = "Es un documento de salud ocupacional (apto médico, examen preocupacional o periódico, póliza/constancia de ART, entrega de EPP o denuncia de accidente). 'entity' es el prestador, clínica o ART. 'subtype' aplica solo a preocupacional (fisico/psicologico/ambiental) o accidente (laboral/in_itinere).";
+      } else {
+        schema = '{ "type":"curso|certificado|obligatoria", "title":"", "institution":"", "done_date":"YYYY-MM-DD", "expiry_date":"YYYY-MM-DD", "status":"pendiente|en_curso|completado", "detail":"" }';
+        guide = "Es un certificado o constancia de un curso/capacitación. 'title' es el nombre del curso, 'institution' la entidad que lo emitió. Si es un certificado de finalización, status='completado'.";
+      }
+      var fprompt = "Sos un asistente que LEE un documento y extrae sus datos para completar un formulario. " + guide + "\n" +
+        "Devolvé EXCLUSIVAMENTE un JSON válido con esta forma (dejá \"\" si un dato no aparece; las fechas SIEMPRE en formato YYYY-MM-DD):\n" + schema + "\n" +
+        "No agregues explicaciones ni texto fuera del JSON.\n\nTEXTO DEL DOCUMENTO:\n\"\"\"\n" + dtext + "\n\"\"\"";
+      var gfe = await callGemini(key, [{ text: fprompt }], 1024, 0.1);
+      if (!gfe.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gfe.data && gfe.data.error && gfe.data.error.message) || ("HTTP " + gfe.status) }); return; }
+      var pfe = parseJson(extractText(gfe.data));
+      if (!pfe || typeof pfe !== "object") { res.status(200).json({ ok: false, error: "parse_error" }); return; }
+      res.status(200).json({ ok: true, fields: pfe });
+      return;
+    }
+
     if (body.task === "assistant") {
       var apr = String(body.prompt || "").slice(0, 24000);
       if (!apr) { res.status(200).json({ ok: false, error: "no_prompt" }); return; }
