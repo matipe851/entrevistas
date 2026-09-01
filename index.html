@@ -1602,9 +1602,9 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
-try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); } }; }catch(e){}
+try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); } }; }catch(e){}
 
-var APP_VERSION = "v31.2-r67";
+var APP_VERSION = "v31.3-r68";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2445,15 +2445,21 @@ Screens["mod2-licencias"] = function(){
   if(!e){ html += Note("err","No encontré a este empleado."); return html; }
   html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="lic-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span></div>';
   var leaves=licEmpLeaves(e.id);
-  var entitlement=(e.vacation_days_year!=null?parseInt(e.vacation_days_year,10):14); if(isNaN(entitlement)) entitlement=14;
+  var curYear=new Date().getFullYear();
+  var vac=vacationEntitlement(e, curYear);
+  var override=(e.vacation_override!=null && e.vacation_override!=="")?parseInt(e.vacation_override,10):null; if(override!=null && isNaN(override)) override=null;
+  var entitlement=(override!=null)?override:vac.auto;
   var used=licVacUsed(e.id); var avail=entitlement-used;
-  // Días disponibles
-  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Días disponibles · vacaciones '+new Date().getFullYear()+'</h3>' +
+  // Días disponibles (proporcional automático por antigüedad, con ajuste manual opcional)
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Días disponibles · vacaciones '+curYear+'</h3>' +
     '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">' +
       '<div style="text-align:center;min-width:80px"><div style="font-size:34px;font-weight:800;color:'+(avail<0?'var(--brick)':'var(--green)')+';font-family:\'Fraunces\',serif;line-height:1">'+avail+'</div><div style="font-size:11px;color:var(--muted)">disponibles</div></div>' +
-      '<div style="font-size:13px;color:var(--muted)">Asignados por año: <b style="color:var(--ink)">'+entitlement+'</b><br>Gozados este año: <b style="color:var(--ink)">'+used+'</b></div>' +
-      '<label class="field" style="margin-left:auto"><span class="field-label">Días asignados por año</span><div class="input-row" style="max-width:120px"><input id="f_lic_vac" type="number" min="0" value="'+esc(String(entitlement))+'"></div><span class="field-hint">Se guarda en el legajo.</span></label>' +
-    '</div></div>';
+      '<div style="font-size:13px;color:var(--muted)">Asignados '+curYear+': <b style="color:var(--ink)">'+entitlement+'</b> '+(override!=null?'<span style="color:var(--amber);font-weight:700">(manual)</span>':'<span style="color:var(--green);font-weight:700">(automático)</span>')+'<br>Gozados este año: <b style="color:var(--ink)">'+used+'</b></div>' +
+      '<label class="field" style="margin-left:auto"><span class="field-label">Ajustar a mano (opcional)</span><div class="input-row" style="max-width:130px"><input id="f_lic_vac" type="number" min="0" placeholder="auto: '+esc(String(vac.auto))+'" value="'+esc(override!=null?String(override):"")+'"></div><span class="field-hint">Vacío = automático.</span></label>' +
+    '</div>' +
+    '<p style="font-size:12px;color:var(--muted);margin:10px 0 0">'+ic('info',12)+' '+esc(vac.note)+'</p>' +
+    (override!=null?('<button class="btn btn-ghost btn-sm" data-action="lic-vac-auto" data-e="'+esc(e.id)+'" style="margin-top:8px">'+ic('rotate',13)+' Volver al cálculo automático</button>'):'') +
+  '</div>';
   // Nueva solicitud
   if(!s.form){
     html += '<button class="btn btn-primary btn-sm" data-action="lic-new" style="margin-bottom:14px">'+ic('plus',14)+' Nueva solicitud / licencia</button>';
@@ -4055,6 +4061,32 @@ var LEAVE_TYPES = {
   otras:{      label:"Otras licencias",   color:"var(--muted)"  }
 };
 function leaveDays(s, e){ var a=parseYMD(String(s||"").slice(0,10)), b=parseYMD(String(e||"").slice(0,10)); if(!a||!b) return 0; var d=Math.floor((b.getTime()-a.getTime())/(24*3600*1000))+1; return d>0?d:0; }
+/* Vacaciones por antigüedad (Ley de Contrato de Trabajo, art. 150 y 153). */
+function vacScaleDays(y){ if(y>20) return 35; if(y>10) return 28; if(y>5) return 21; return 14; }
+function vacRegimeText(y){ return y>20?"más de 20 años":(y>10?"más de 10 y hasta 20 años":(y>5?"más de 5 y hasta 10 años":"hasta 5 años")); }
+function countBusinessDays(a, b){ var d=new Date(a.getFullYear(),a.getMonth(),a.getDate()), n=0; while(d<=b){ var w=d.getDay(); if(w>=1&&w<=5) n++; d.setDate(d.getDate()+1); } return n; }
+function antigText(hire, ref){ var months=(ref.getFullYear()-hire.getFullYear())*12+(ref.getMonth()-hire.getMonth()); if(ref.getDate()<hire.getDate()) months--; if(months<0) months=0; var y=Math.floor(months/12), m=months%12; if(y===0&&m===0) return "menos de 1 mes"; return (y>0?(y+" año"+(y===1?"":"s")):"")+((y>0&&m>0)?" y ":"")+(m>0?(m+" mes"+(m===1?"":"es")):""); }
+function fmtDMY(d){ return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }
+/* Devuelve el proporcional automático de vacaciones para el año dado, según el legajo. */
+function vacationEntitlement(emp, year){
+  year=year||new Date().getFullYear();
+  var jan1=new Date(year,0,1), dec31=new Date(year,11,31);
+  var hire=emp.hire_date?parseYMD(String(emp.hire_date).slice(0,10)):null;
+  if(!hire || isNaN(hire.getTime())) return { auto:14, hasHire:false, note:"Sin fecha de ingreso en el legajo: se usa el mínimo legal (14 días). Cargá la fecha de ingreso para el cálculo automático por antigüedad." };
+  if(hire>dec31) return { auto:0, hasHire:true, note:"La fecha de ingreso es posterior a este año." };
+  var seniority=(dec31-hire)/(365.25*24*3600*1000);
+  var startInYear=hire>jan1?hire:jan1;
+  var bWorked=countBusinessDays(startInYear, dec31), bYear=countBusinessDays(jan1, dec31);
+  var reachedMin=bWorked>=(bYear/2);
+  if(hire<=jan1 || reachedMin){
+    var days=vacScaleDays(seniority);
+    return { auto:days, hasHire:true, proportional:false, note:"Antigüedad al 31/12/"+year+": "+antigText(hire,dec31)+" → "+days+" días ("+vacRegimeText(seniority)+"), según antigüedad." };
+  }
+  // Proporcional del primer año (no completó medio año): 1 día cada 20 días corridos trabajados.
+  var corridos=Math.floor((dec31-startInYear)/(24*3600*1000))+1;
+  var prop=Math.floor(corridos/20);
+  return { auto:prop, hasHire:true, proportional:true, note:"Ingreso "+fmtDMY(hire)+": no completó medio año laboral → proporcional de 1 día cada 20 días trabajados = "+prop+" días ("+corridos+" días corridos en "+year+")." };
+}
 function leaveRangeLabel(l){ function f(d){ if(!d) return "—"; var p=String(d).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+p[0]; } return f(l.start_date)+" → "+f(l.end_date); }
 function licEmpLeaves(empId){ return (state.lic.items||[]).filter(function(l){ return l.employee_id===empId; }); }
 function licVacUsed(empId){ var y=new Date().getFullYear(); return licEmpLeaves(empId).filter(function(l){ var sd=parseYMD(String(l.start_date||"").slice(0,10)); return l.type==="vacaciones" && l.status==="aprobada" && sd && sd.getFullYear()===y; }).reduce(function(a,l){ return a+(parseInt(l.days,10)||leaveDays(l.start_date,l.end_date)); },0); }
@@ -4079,7 +4111,17 @@ function licSave(empId){
 }
 function licSetStatus(id, status){ dbUpdateLeave(id, { status:status }).then(function(){ return dbListLeaves(); }).then(function(l){ state.lic.items=l||[]; state.lic.msg=(status==="aprobada"?"Solicitud aprobada.":(status==="rechazada"?"Solicitud rechazada.":"")); render(); }).catch(function(){ state.lic.msg="No pude actualizar el estado."; render(); }); }
 function licDelete(id){ if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return; dbDeleteLeave(id).then(function(){ return dbListLeaves(); }).then(function(l){ state.lic.items=l||[]; state.lic.msg="Registro eliminado."; render(); }); }
-function licSetVac(empId, val){ var n=parseInt(val,10); if(isNaN(n)||n<0) n=0; dbUpdateEmployee(empId, { vacation_days_year:n }).then(function(){ (state.emp.items||[]).forEach(function(e){ if(e.id===empId) e.vacation_days_year=n; }); state.lic.msg="Días de vacaciones asignados: "+n+"."; render(); }).catch(function(){ state.lic.msg="No pude guardar los días (¿corriste el SQL de licencias?)."; render(); }); }
+/* Fija (o limpia) el ajuste manual de días de vacaciones. val vacío/null = automático. */
+function licSetOverride(empId, val){
+  var patch;
+  if(val===""||val==null){ patch={ vacation_override:null }; }
+  else { var n=parseInt(val,10); if(isNaN(n)||n<0) n=0; patch={ vacation_override:n }; }
+  dbUpdateEmployee(empId, patch).then(function(){
+    (state.emp.items||[]).forEach(function(e){ if(e.id===empId) e.vacation_override=patch.vacation_override; });
+    state.lic.msg=(patch.vacation_override==null?"Días de vacaciones: cálculo automático por antigüedad.":"Días de vacaciones fijados manualmente: "+patch.vacation_override+".");
+    render();
+  }).catch(function(){ state.lic.msg="No pude guardar (¿corriste el SQL de licencias actualizado?)."; render(); });
+}
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -5239,6 +5281,7 @@ function bind(){
       else if (act === "lic-approve"){ licSetStatus(el.getAttribute("data-id"), "aprobada"); }
       else if (act === "lic-reject"){ licSetStatus(el.getAttribute("data-id"), "rechazada"); }
       else if (act === "lic-del"){ licDelete(el.getAttribute("data-id")); }
+      else if (act === "lic-vac-auto"){ licSetOverride(el.getAttribute("data-e"), ""); }
       else if (act === "asist-view"){ state.asist.view=el.getAttribute("data-v")||"resumen"; if(state.asist.view==="log") state.asist.folder=null; if(state.asist.view!=="control"){ state.asist.ctlMonth=null; state.asist.ctlEmp=null; } render(); }
       else if (act === "asist-folder"){ state.asist.folder=el.getAttribute("data-m")||null; render(); }
       else if (act === "asist-folder-back"){ state.asist.folder=null; render(); }
@@ -5508,7 +5551,7 @@ function bind(){
   if ((f=document.getElementById("f_justif"))) f.addEventListener("input", function(e){ state.asist.justifyText=e.target.value; });
   if ((f=document.getElementById("f_absjust"))) f.addEventListener("input", function(e){ state.asist.absText=e.target.value; });
   // ---- Vacaciones y licencias ----
-  if ((f=document.getElementById("f_lic_vac"))) f.addEventListener("change", function(e){ if(state.lic.emp) licSetVac(state.lic.emp, e.target.value); });
+  if ((f=document.getElementById("f_lic_vac"))) f.addEventListener("change", function(e){ if(state.lic.emp) licSetOverride(state.lic.emp, e.target.value); });
   if ((f=document.getElementById("f_lic_type"))) f.addEventListener("change", function(e){ if(state.lic.form) state.lic.form.type=e.target.value; });
   if ((f=document.getElementById("f_lic_from"))) f.addEventListener("input", function(e){ if(state.lic.form){ state.lic.form.start_date=e.target.value; render(); } });
   if ((f=document.getElementById("f_lic_to"))) f.addEventListener("input", function(e){ if(state.lic.form){ state.lic.form.end_date=e.target.value; render(); } });
