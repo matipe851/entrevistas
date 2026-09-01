@@ -1638,7 +1638,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); } }; }catch(e){}
 
-var APP_VERSION = "v31.8-r73";
+var APP_VERSION = "v31.9-r74";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2720,7 +2720,10 @@ Screens["mod2-capacitacion"] = function(){
         ((ty==="certificado"||ty==="obligatoria")?('<label class="field"><span class="field-label">Vencimiento</span><div class="input-row"><input id="f_cap_exp" type="date" value="'+esc(f.expiry_date||"")+'"></div></label>'):'<div></div>') +
       '</div>' +
       '<label class="field"><span class="field-label">Detalle (opcional)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_cap_detail" rows="2" placeholder="Notas, temario, etc.">'+esc(f.detail||"")+'</textarea></div></label>' +
-      '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="cap-save" data-e="'+esc(e.id)+'"'+(s.saving?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="cap-cancel">Cancelar</button></div>' +
+      '<label class="field"><span class="field-label">Certificado — PDF o imagen (opcional)</span><input id="f_cap_file" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)">' +
+        (f.uploading?('<span class="field-hint" style="color:var(--teal)">'+ic('loader',12,'spin')+' Subiendo…</span>'):(f.file_url?('<span class="field-hint" style="color:var(--green)">'+ic('check',12)+' Adjunto: '+esc(f.file_name||"archivo")+'</span>'):(!audioUploadConfigured()?'<span class="field-hint">Para adjuntar falta configurar Cloudinary.</span>':''))) +
+      '</label>' +
+      '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="cap-save" data-e="'+esc(e.id)+'"'+((s.saving||f.uploading)?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="cap-cancel">Cancelar</button></div>' +
       '</div></div>';
   }
   // Asistente IA: recomendación de cursos según desempeño
@@ -2741,12 +2744,15 @@ Screens["mod2-capacitacion"] = function(){
     var vencChip="";
     if(t.expiry_date){ var du=daysUntil(t.expiry_date); var col=(du==null?"var(--muted)":(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)"))); var txt=(du==null?"":(du<0?("VENCIDO el "+fD(t.expiry_date)):("Vence "+fD(t.expiry_date)+" · "+du+" día"+(du===1?'':'s')))); vencChip='<span class="badge" style="background:var(--surface);color:'+col+'">'+ic('clock',11)+' '+txt+'</span>'; }
     var statusChip=((t.type==="curso"||t.type==="obligatoria")?('<span class="badge" style="background:var(--surface);color:'+(t.status==="completado"?"var(--green)":(t.status==="en_curso"?"var(--blue)":"var(--amber)"))+'">'+esc(TRAIN_STATUS[t.status||"pendiente"])+'</span>'):'');
+    var certRow = t.file_url ? ('<div style="margin-top:8px"><a href="'+esc(t.file_url)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--teal);text-decoration:none;background:var(--surface);border-radius:8px;padding:6px 10px">'+ic('file',13)+' Ver certificado'+(t.file_name?(' ('+esc(t.file_name)+')'):'')+'</a></div>') : '';
     var actions='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">';
     if(t.type==="curso"||t.type==="obligatoria"){ actions += Object.keys(TRAIN_STATUS).map(function(k){ var on=(t.status||"pendiente")===k; return '<button class="btn btn-sm '+(on?'btn-teal':'btn-ghost')+'" data-action="cap-status" data-id="'+esc(t.id)+'" data-st="'+k+'" style="font-size:11px;padding:5px 9px">'+esc(TRAIN_STATUS[k])+'</button>'; }).join(''); }
+    actions += '<label class="dl-audio" style="display:inline-flex;align-items:center;gap:5px;color:var(--teal);cursor:pointer;font-size:11px">'+ic('file',12)+' '+(t.file_url?"Reemplazar PDF":"Adjuntar PDF")+'<input type="file" accept=".pdf,application/pdf,image/*" data-capfile="'+esc(t.id)+'" style="display:none"></label>';
     actions += '<button class="dl-audio" data-action="cap-del" data-id="'+esc(t.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;margin-left:auto">'+ic('trash',12)+' eliminar</button></div>';
     return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px;border-left:3px solid '+ty2.color+'">' +
       '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><b style="font-size:13px;color:var(--ink)">'+esc(t.title||"—")+'</b>'+(meta.length?(' <span style="font-size:12px;color:var(--muted)">· '+meta.join(" · ")+'</span>'):'')+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+statusChip+vencChip+'</div></div>' +
       (t.detail?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(t.detail)+'</p>'):'') +
+      certRow +
       actions +
     '</div>';
   };
@@ -4518,6 +4524,7 @@ function capSave(empId){
   if(f.type==="curso"||f.type==="obligatoria"){ row.status=f.status||"pendiente"; }
   if(f.done_date) row.done_date=f.done_date;
   if((f.type==="certificado"||f.type==="obligatoria") && f.expiry_date) row.expiry_date=f.expiry_date;
+  if(f.file_url){ row.file_url=f.file_url; row.file_name=f.file_name||""; }
   state.cap.saving=true; render();
   dbCreateTraining(row).then(function(){ state.cap.form=null; state.cap.saving=false; state.cap.msg="Guardado."; return dbListTraining().then(function(l){ state.cap.items=l||[]; render(); }); })
     .catch(function(){ state.cap.saving=false; state.cap.msg="No pude guardar (¿corriste el SQL de capacitación?)."; render(); });
@@ -4533,6 +4540,27 @@ function capRecommendAI(e){
     .then(function(r){ return r.json(); })
     .then(function(j){ state.cap.ai.asking=false; if(j&&j.ok&&j.answer){ state.cap.ai.answer=j.answer; state.cap.ai.error=""; } else { state.cap.ai.error=(j&&j.error==="no_key")?"Falta configurar la clave de IA (GEMINI_API_KEY) en Vercel.":(j&&j.error==="rate_limited")?"Demasiadas consultas seguidas, esperá unos minutos.":"No pude generar la recomendación."; } render(); })
     .catch(function(){ state.cap.ai.asking=false; state.cap.ai.error="No pude conectar con la IA."; render(); });
+}
+/* Sube el PDF/imagen del certificado y lo deja en el formulario nuevo. */
+function capFormUpload(file){
+  var f=state.cap.form; if(!f||!file) return;
+  if(file.size>10*1024*1024){ state.cap.msg="El archivo supera los 10 MB."; render(); return; }
+  if(!audioUploadConfigured()){ state.cap.msg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
+  f.uploading=true; state.cap.msg=""; render();
+  var uid="cert_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  uploadAudioToCloudinary(file, "certificados/"+uid).then(function(url){ f.file_url=url; f.file_name=file.name; f.uploading=false; render(); })
+    .catch(function(){ f.uploading=false; state.cap.msg="No pude subir el archivo. Probá de nuevo."; render(); });
+}
+/* Adjunta (o reemplaza) el certificado de un registro ya guardado. */
+function capAttachExisting(id, file){
+  if(!file) return;
+  if(file.size>10*1024*1024){ state.cap.msg="El archivo supera los 10 MB."; render(); return; }
+  if(!audioUploadConfigured()){ state.cap.msg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
+  state.cap.msg="Subiendo "+file.name+"…"; render();
+  var uid="cert_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  uploadAudioToCloudinary(file, "certificados/"+uid).then(function(url){ return dbUpdateTraining(id, { file_url:url, file_name:file.name }); })
+    .then(function(){ return dbListTraining(); }).then(function(l){ state.cap.items=l||[]; state.cap.msg="Certificado adjuntado."; render(); })
+    .catch(function(){ state.cap.msg="No pude adjuntar el archivo."; render(); });
 }
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
@@ -6005,6 +6033,8 @@ function bind(){
   if ((f=document.getElementById("f_cap_done"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.done_date=e.target.value; });
   if ((f=document.getElementById("f_cap_exp"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.expiry_date=e.target.value; });
   if ((f=document.getElementById("f_cap_detail"))) f.addEventListener("input", function(e){ if(state.cap.form) state.cap.form.detail=e.target.value; });
+  if ((f=document.getElementById("f_cap_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) capFormUpload(file); });
+  document.querySelectorAll("input[data-capfile]").forEach(function(el){ el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) capAttachExisting(el.getAttribute("data-capfile"), file); }); });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
