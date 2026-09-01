@@ -1621,7 +1621,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); } }; }catch(e){}
 
-var APP_VERSION = "v31.5-r70";
+var APP_VERSION = "v31.6-r71";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2582,6 +2582,12 @@ Screens["mod2-desempeno"] = function(){
       ((p.type==="objetivo"||p.type==="mejora")?('<span class="badge" style="background:var(--surface);color:'+(p.status==="cumplido"?"var(--green)":(p.status==="en_curso"?"var(--blue)":"var(--amber)"))+'">'+esc(PERF_STATUS[p.status||"pendiente"])+'</span>'):'')+
     '</div>';
     var body=p.detail?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(p.detail)+'</p>'):'';
+    if(p.type==="objetivo"||p.type==="mejora"){
+      var fD=function(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(e){ return "—"; } };
+      var meta='Cargado: '+fD(p.created_at);
+      if(p.status==="cumplido" && p.completed_at){ var dd=Math.max(0,Math.round((new Date(p.completed_at)-new Date(p.created_at))/(24*3600*1000))); meta += ' · <span style="color:var(--green)">Cumplido: '+fD(p.completed_at)+'</span> · <b style="color:var(--ink)">'+dd+' día'+(dd===1?'':'s')+'</b>'; }
+      body += '<p style="margin:6px 0 0;font-size:11.5px;color:var(--muted)">'+ic('clock',11)+' '+meta+'</p>';
+    }
     var actions='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">';
     if(p.type==="objetivo"||p.type==="mejora"){
       actions += Object.keys(PERF_STATUS).map(function(k){ var on=(p.status||"pendiente")===k; return '<button class="btn btn-sm '+(on?'btn-teal':'btn-ghost')+'" data-action="perf-status" data-id="'+esc(p.id)+'" data-st="'+k+'" style="font-size:11px;padding:5px 9px">'+esc(PERF_STATUS[k])+'</button>'; }).join('');
@@ -2604,7 +2610,7 @@ Screens["mod2-desempeno"] = function(){
   var fdt=function(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }catch(e){ return ""; } };
   html += '<div style="margin-top:20px"><p style="font-size:12.5px;font-weight:800;color:var(--ink);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Historial (por fecha) ('+hist.length+')</p>';
   if(!hist.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>'; }
-  else { html += '<div style="display:grid;gap:6px">'+hist.map(function(p){ var t=PERF_TYPES[p.type]||{label:p.type,color:"var(--muted)"}; return '<div style="display:flex;gap:10px;align-items:center;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt(p.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+t.color+'">'+esc(t.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(p.title||p.detail||"—")+((p.rating&&(p.type==="competencia"||p.type==="evaluacion"))?(' <span style="color:var(--amber)">'+perfStars(p.rating)+'</span>'):'')+'</span></div>'; }).join('')+'</div>'; }
+  else { html += '<div style="display:grid;gap:6px">'+hist.map(function(p){ var t=PERF_TYPES[p.type]||{label:p.type,color:"var(--muted)"}; var done=(p.completed_at?(' <span style="color:var(--green);white-space:nowrap">✓ cumplido '+fdt(p.completed_at)+'</span>'):''); return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt(p.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+t.color+'">'+esc(t.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(p.title||p.detail||"—")+((p.rating&&(p.type==="competencia"||p.type==="evaluacion"))?(' <span style="color:var(--amber)">'+perfStars(p.rating)+'</span>'):'')+done+'</span></div>'; }).join('')+'</div>'; }
   html += '</div>';
   return html;
 };
@@ -4254,7 +4260,14 @@ function perfSave(empId){
   dbCreatePerformance(row).then(function(){ state.perf.form=null; state.perf.saving=false; state.perf.msg="Guardado."; return dbListPerformance().then(function(l){ state.perf.items=l||[]; render(); }); })
     .catch(function(){ state.perf.saving=false; state.perf.msg="No pude guardar (¿corriste el SQL de desempeño?)."; render(); });
 }
-function perfSetStatus(id, status){ dbUpdatePerformance(id, { status:status }).then(function(){ return dbListPerformance(); }).then(function(l){ state.perf.items=l||[]; render(); }).catch(function(){ state.perf.msg="No pude actualizar."; render(); }); }
+function perfSetStatus(id, status){
+  var patch={ status:status, completed_at:(status==="cumplido"?new Date().toISOString():null) };
+  var reload=function(){ return dbListPerformance().then(function(l){ state.perf.items=l||[]; render(); }); };
+  dbUpdatePerformance(id, patch).then(reload).catch(function(){
+    // Si falta la columna completed_at, guardamos al menos el estado.
+    dbUpdatePerformance(id, { status:status }).then(reload).catch(function(){ state.perf.msg="No pude actualizar."; render(); });
+  });
+}
 function perfDelete(id){ if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return; dbDeletePerformance(id).then(function(){ return dbListPerformance(); }).then(function(l){ state.perf.items=l||[]; state.perf.msg="Registro eliminado."; render(); }); }
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
