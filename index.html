@@ -4,6 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Dancing+Script:wght@600&family=Pacifico&family=Sacramento&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>try{ if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(e){}</script>
 
@@ -244,13 +245,15 @@ var LEVELS = ["Junior","Semi-Senior","Senior","Gerencial"];
 var LANGS = [["es","Español"],["en","Inglés"],["pt","Português"]];
 /* Estilos de tipografía para la firma digital (1 a 4). */
 var SIGN_FONTS = [
-  { id:1, label:"Manuscrita", css:'"Segoe Script","Brush Script MT","Snell Roundhand",cursive', style:"font-style:italic" },
-  { id:2, label:"Elegante",   css:'"Fraunces",Georgia,"Times New Roman",serif',                 style:"font-style:italic" },
-  { id:3, label:"Redonda",    css:'"Snell Roundhand","Apple Chancery","Segoe Script",cursive',   style:"" },
-  { id:4, label:"Máquina",    css:'"IBM Plex Mono",ui-monospace,"Courier New",monospace',        style:"letter-spacing:1px" }
+  { id:1, label:"Elegante",  css:'"Great Vibes","Snell Roundhand",cursive',              style:"",                 scale:1.55 },
+  { id:2, label:"Manuscrita",css:'"Dancing Script","Segoe Script","Brush Script MT",cursive', style:"font-weight:600", scale:1.15 },
+  { id:3, label:"Redonda",   css:'"Pacifico","Comic Sans MS",cursive',                  style:"",                 scale:1.1  },
+  { id:4, label:"Fina",      css:'"Sacramento","Snell Roundhand",cursive',              style:"",                 scale:1.6  }
 ];
 function signFont(id){ id=parseInt(id,10)||1; return SIGN_FONTS.filter(function(x){return x.id===id;})[0]||SIGN_FONTS[0]; }
-function signatureHtml(name, fontId, size){ var sf=signFont(fontId); return '<span style="font-family:'+sf.css+';'+sf.style+';font-size:'+(size||28)+'px;color:var(--ink);line-height:1.2">'+esc(name||"")+'</span>'; }
+function signatureHtml(name, fontId, size){ var sf=signFont(fontId); var fs=Math.round((size||36)*(sf.scale||1)); return '<span style="font-family:'+sf.css+';'+sf.style+';font-size:'+fs+'px;color:var(--ink);line-height:1.15">'+esc(name||"")+'</span>'; }
+function fmtDateTimeShort(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }catch(e){ return ""; } }
+function randToken(){ var A="ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789", s=""; for(var i=0;i<20;i++) s+=A[Math.floor(Math.random()*A.length)]; return s; }
 
 function fmt(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
@@ -1657,6 +1660,7 @@ var state = {
   hs: { loading:false, items:null, error:null, msg:"", emp:null, form:null },
   doc: { loading:false, items:null, error:null, msg:"", emp:null, form:null },
   fichador: null,
+  sign: null,
   brand: { name:"", logo:"" },
   myApproved: null,
   admin: { loading:false, items:null, error:null },
@@ -1681,7 +1685,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v32.3-r78";
+var APP_VERSION = "v32.4-r79";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2123,13 +2127,24 @@ Screens["emp-form"] = function(){
     '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Escribí el nombre y elegí el estilo de tipografía de la firma. Queda guardada en el legajo.</p>' +
     '<label class="field" style="margin-bottom:12px"><span class="field-label">Nombre a firmar</span><div class="input-row"><input id="f_emp_signname" value="'+esc(signName)+'" placeholder="Nombre y apellido"></div></label>' +
     '<span class="field-label" style="display:block;margin-bottom:8px">Estilo de firma</span>' +
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">' +
       SIGN_FONTS.map(function(sf){ var on=(signFontId===sf.id); return '<button type="button" data-action="emp-sign-font" data-f="'+sf.id+'" style="cursor:pointer;text-align:left;border:2px solid '+(on?'var(--teal)':'var(--border)')+';border-radius:12px;padding:12px 14px;background:'+(on?'var(--teal-tint)':'var(--surface)')+'">' +
-        '<div style="min-height:36px;display:flex;align-items:center;overflow:hidden">'+ (signName? ('<span style="font-family:'+sf.css+';'+sf.style+';font-size:24px;color:var(--ink);white-space:nowrap">'+esc(signName)+'</span>') : ('<span style="font-family:'+sf.css+';'+sf.style+';font-size:24px;color:var(--muted)">Firma</span>')) +'</div>' +
+        '<div style="min-height:48px;display:flex;align-items:center;overflow:hidden">'+ (signName? ('<span style="font-family:'+sf.css+';'+sf.style+';font-size:'+Math.round(30*(sf.scale||1))+'px;color:var(--ink);white-space:nowrap;line-height:1.1">'+esc(signName)+'</span>') : ('<span style="font-family:'+sf.css+';'+sf.style+';font-size:30px;color:var(--muted)">Firma</span>')) +'</div>' +
         '<div style="font-size:11px;color:'+(on?'var(--teal-strong)':'var(--muted)')+';font-weight:700;margin-top:6px">'+(on?ic('check',11)+' ':'')+esc(sf.label)+'</div>' +
       '</button>'; }).join('') +
     '</div>' +
-    (signName?('<div style="margin-top:12px;padding:14px 16px;background:var(--surface-2);border-radius:10px"><span style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Vista previa</span>'+signatureHtml(signName, signFontId, 34)+'</div>'):'') +
+    (signName?('<div style="margin-top:12px;padding:16px;background:var(--surface-2);border-radius:10px"><span style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">Vista previa</span>'+signatureHtml(signName, signFontId, 44)+'</div>'):'') +
+    // Enviar al empleado para que firme
+    '<div style="margin-top:14px;border-top:1px solid var(--border-soft);padding-top:14px">' +
+      (f.signed_at
+        ? ('<div style="background:var(--green-tint);border-radius:10px;padding:12px 14px"><p style="margin:0;font-size:12.5px;color:var(--green);font-weight:700">'+ic('check',13)+' Firmado por el empleado el '+esc(fmtDateTimeShort(f.signed_at))+'</p><div style="margin-top:8px">'+signatureHtml(f.signature_name, f.signature_font, 40)+'</div></div>')
+        : (f.id
+            ? ('<p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">Enviá el legajo al mail del empleado para que lo firme eligiendo su estilo. Cuando firme, vas a ver acá su firma registrada.</p>' +
+               '<button type="button" class="btn btn-teal btn-sm" data-action="emp-send-sign"'+(f.sendingSign?' disabled':'')+'>'+(f.sendingSign?(ic('loader',13,'spin')+' Enviando…'):(ic('mic',14)+' Enviar al empleado para firmar'))+'</button>' +
+               (f.sign_token?('<span style="font-size:12px;color:var(--amber);margin-left:10px">'+ic('clock',12)+' Enviado, pendiente de firma</span>'):'') +
+               (f.signMsg?('<p style="font-size:12px;color:'+(/No|Error|Falta/.test(f.signMsg)?'var(--brick)':'var(--green)')+';margin:8px 0 0">'+esc(f.signMsg)+'</p>'):''))
+            : '<p style="font-size:12px;color:var(--muted);margin:0">Guardá primero el legajo para poder enviarlo a firmar.</p>')) +
+    '</div>' +
   '</div>';
   // Documentación
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 6px">Documentación</h3>' +
@@ -3049,6 +3064,35 @@ Screens["mod2-documentacion"] = function(){
   html += '<div style="margin-top:20px"><p style="font-size:12.5px;font-weight:800;color:var(--ink);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Historial (por fecha) ('+hist.length+')</p>';
   if(!hist.length){ html += '<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin registros</div>'; }
   else { html += '<div style="display:grid;gap:6px">'+hist.map(function(t){ var ty2=DOC_TYPES[t.type]||{label:t.type,color:"var(--muted)"}; return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 10px;background:var(--surface-2);border-radius:9px;font-size:12.5px"><span class="mono" style="color:var(--muted);white-space:nowrap">'+fdt2(t.created_at)+'</span><span class="badge" style="background:var(--surface);color:'+ty2.color+'">'+esc(ty2.label)+'</span><span style="color:var(--ink);flex:1;min-width:100px">'+esc(t.title||"—")+(t.signed?(' <span style="color:var(--green)">✓ firmado</span>'):'')+'</span></div>'; }).join('')+'</div>'; }
+  html += '</div>';
+  return html;
+};
+
+/* ---- Firma pública del legajo (empleado) ---- */
+Screens["sign-legajo"] = function(){
+  var s=state.sign||{};
+  var head='<div style="display:flex;align-items:center;gap:10px;padding:14px 4px 18px;max-width:520px;margin:0 auto">'+ic('copy',24)+'<span style="font-weight:800;font-size:16px;color:var(--ink)">Firma de legajo</span></div>';
+  if(s.loading){ return head+Centered(ic('loader',26,'spin'),"Cargando…",""); }
+  if(s.error && !s.emp){ return head+Centered(ic('alert',26),"No disponible",s.error); }
+  var e=s.emp||{};
+  var nom=((e.first_name||"")+" "+(e.last_name||"")).trim();
+  if(s.done){
+    return head+'<div class="card" style="max-width:520px;margin:0 auto"><div class="center-block" style="padding:24px 12px">'+ic('check',34)+'<h2 style="font-size:20px">¡Legajo firmado!</h2><p>Gracias, '+esc(nom||"")+'. Tu firma quedó registrada.</p><div style="margin-top:14px;padding:16px;background:var(--surface-2);border-radius:10px">'+signatureHtml(s.name, s.font, 44)+'</div></div></div>';
+  }
+  var html=head+'<div class="card" style="max-width:520px;margin:0 auto">';
+  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 14px">Revisá tus datos, escribí tu nombre y elegí el estilo de tu firma. Al firmar, queda registrada en tu legajo.</p>';
+  html += '<div style="background:var(--surface-2);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--ink)">' +
+    '<b>'+esc(nom||"—")+'</b>'+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+(e.position?('<br><span style="color:var(--muted)">'+esc(e.position)+(e.category?(' · '+esc(e.category)):'')+'</span>'):'')+'</div>';
+  if(s.error) html += Note("err", esc(s.error));
+  html += '<label class="field" style="margin-bottom:12px"><span class="field-label">Tu nombre (como querés que figure la firma)</span><div class="input-row"><input id="f_sign_name" value="'+esc(s.name||"")+'" placeholder="Nombre y apellido"></div></label>';
+  html += '<span class="field-label" style="display:block;margin-bottom:8px">Estilo de firma</span>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
+    SIGN_FONTS.map(function(sf){ var on=(s.font===sf.id); return '<button type="button" data-action="sign-font" data-f="'+sf.id+'" style="cursor:pointer;text-align:left;border:2px solid '+(on?'var(--teal)':'var(--border)')+';border-radius:12px;padding:12px 14px;background:'+(on?'var(--teal-tint)':'var(--surface)')+'">' +
+      '<div style="min-height:48px;display:flex;align-items:center;overflow:hidden">'+(s.name?('<span style="font-family:'+sf.css+';'+sf.style+';font-size:'+Math.round(30*(sf.scale||1))+'px;color:var(--ink);white-space:nowrap;line-height:1.1">'+esc(s.name)+'</span>'):('<span style="font-family:'+sf.css+';'+sf.style+';font-size:30px;color:var(--muted)">Firma</span>'))+'</div>' +
+      '<div style="font-size:11px;color:'+(on?'var(--teal-strong)':'var(--muted)')+';font-weight:700;margin-top:6px">'+(on?ic('check',11)+' ':'')+esc(sf.label)+'</div></button>'; }).join('') +
+    '</div>';
+  if(s.name) html += '<div style="margin-top:12px;padding:16px;background:var(--surface-2);border-radius:10px"><span style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">Vista previa</span>'+signatureHtml(s.name, s.font, 44)+'</div>';
+  html += '<button class="btn btn-teal btn-block" data-action="sign-do" style="margin-top:16px"'+(s.sending?' disabled':'')+'>'+(s.sending?(ic('loader',15,'spin')+' Firmando…'):(ic('check',16)+' Firmar mi legajo'))+'</button>';
   html += '</div>';
   return html;
 };
@@ -4436,7 +4480,7 @@ function emptyEmpForm(){
     hire_date:"", position:"", category:"", collective_agreement:"", contract_type:"", salary:"", status:"activo", notes:"",
     shift_in:"", shift_out:"", work_days:"1,2,3,4,5", tolerance_min:5,
     schedule_type:"fijo", rotation:[], rotation_start:"", rotation_pattern:"semanal", week_shifts:{}, work_n:5, off_n:2,
-    signature_name:"", signature_font:1,
+    signature_name:"", signature_font:1, sign_token:"", signed_at:null,
     documents:[], saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
 }
 function goLegajo(){ state.emp.error=null; state.emp.msg=""; state.screen="mod2-legajo"; render(); loadEmployees(); }
@@ -4451,7 +4495,7 @@ function openEmployee(id){
   var e=(state.emp.items||[]).filter(function(z){return z.id===id;})[0];
   if(!e) return;
   var f=emptyEmpForm();
-  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min","schedule_type","rotation_start","rotation_pattern","work_n","off_n","signature_name","signature_font"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
+  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min","schedule_type","rotation_start","rotation_pattern","work_n","off_n","signature_name","signature_font","sign_token","signed_at"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
   f.rotation = Array.isArray(e.rotation) ? e.rotation.map(function(r){ return { in:(r.in||""), out:(r.out||""), days:String(r.days||"") }; }) : [];
   f.week_shifts = (e.week_shifts && typeof e.week_shifts==="object") ? JSON.parse(JSON.stringify(e.week_shifts)) : {};
   if(!f.schedule_type) f.schedule_type="fijo";
@@ -4459,6 +4503,49 @@ function openEmployee(id){
   if(f.work_n==null) f.work_n=5; if(f.off_n==null) f.off_n=2;
   f.documents = Array.isArray(e.documents)?e.documents.slice():[];
   state.empform=f; state.screen="emp-form"; render();
+}
+/* Envía el legajo al mail del empleado para que lo firme. */
+function sendLegajoForSign(){
+  var f=state.empform; if(!f) return;
+  if(!f.id){ f.signMsg="Guardá primero el legajo."; render(); return; }
+  var email=(f.email||"").trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ f.signMsg="Falta un email válido en el legajo del empleado."; render(); return; }
+  var token=f.sign_token||randToken();
+  f.sendingSign=true; f.signMsg=""; render();
+  dbUpdateEmployee(f.id, { sign_token:token }).then(function(){
+    f.sign_token=token;
+    // reflejamos en la lista
+    (state.emp.items||[]).forEach(function(e){ if(e.id===f.id) e.sign_token=token; });
+    var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, "");
+    var link=base+"?firmar_legajo="+encodeURIComponent(token);
+    var nom=((f.first_name||"")+" "+(f.last_name||"")).trim()||"empleado";
+    var msg="Hola "+nom+",\n\nPor favor firmá tu legajo desde este link:\n"+link+"\n\nVas a poder elegir el estilo de tu firma. Gracias.";
+    return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:email, subject:"Firmá tu legajo", message:msg }) })
+      .then(function(r){ return r.json(); })
+      .then(function(j){ f.sendingSign=false; if(j&&j.ok){ f.signMsg="Enviado a "+email+". Cuando el empleado firme, vas a ver su firma acá."; } else { f.signMsg=(j&&j.error==="no_config")?"Falta configurar el envío de emails (Brevo) en Vercel. El link igual quedó generado.":"No pude enviar el email. El link quedó generado igual."; } render(); });
+  }).catch(function(){ f.sendingSign=false; f.signMsg="No pude generar el link (¿corriste el SQL de firma?)."; render(); });
+}
+/* ---- Firma pública del legajo (empleado) ---- */
+function loadSignLegajo(token){
+  state.sign={ token:token, loading:true, error:null, emp:null, name:"", font:1, sending:false, done:false };
+  state.screen="sign-legajo"; render();
+  fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:token, action:"get" }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      state.sign.loading=false;
+      if(j&&j.ok&&j.employee){ var e=j.employee; state.sign.emp=e; state.sign.name=(e.signature_name||((e.first_name||"")+" "+(e.last_name||"")).trim()); state.sign.font=parseInt(e.signature_font,10)||1; state.sign.done=!!e.signed_at; }
+      else { state.sign.error=(j&&j.error==="not_found")?"Este link de firma no es válido o ya no está disponible.":"No pude cargar el legajo para firmar."; }
+      render();
+    }).catch(function(){ state.sign.loading=false; state.sign.error="No pude conectar. Probá de nuevo."; render(); });
+}
+function doSignLegajo(){
+  var s=state.sign; if(!s) return;
+  var name=(s.name||"").trim(); if(!name){ s.error="Escribí tu nombre para firmar."; render(); return; }
+  s.sending=true; s.error=null; render();
+  fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:s.token, action:"sign", signature_name:name, signature_font:s.font }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ s.sending=false; if(j&&j.ok){ s.done=true; s.signedAt=j.signed_at; } else { s.error="No pude registrar la firma. Probá de nuevo."; } render(); })
+    .catch(function(){ s.sending=false; s.error="No pude conectar. Probá de nuevo."; render(); });
 }
 function empFormRow(){
   var f=state.empform;
@@ -6223,6 +6310,9 @@ function bind(){
         if(state.empform){ state.empform.week_shifts=(state.empform.week_shifts&&typeof state.empform.week_shifts==="object")?state.empform.week_shifts:{}; var wdc=el.getAttribute("data-day"); if(state.empform.week_shifts[wdc]){ delete state.empform.week_shifts[wdc]; } else { state.empform.week_shifts[wdc]={ in:(state.empform.shift_in||"09:00"), out:(state.empform.shift_out||"18:00") }; } render(); }
       }
       else if (act === "emp-sign-font"){ if(state.empform){ state.empform.signature_font=parseInt(el.getAttribute("data-f"),10)||1; render(); } }
+      else if (act === "emp-send-sign"){ sendLegajoForSign(); }
+      else if (act === "sign-font"){ if(state.sign){ state.sign.font=parseInt(el.getAttribute("data-f"),10)||1; render(); } }
+      else if (act === "sign-do"){ doSignLegajo(); }
       else if (act === "go-admin") goAdmin();
       else if (act === "copy-bulk"){
         var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
@@ -6517,6 +6607,7 @@ function bind(){
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
   if ((f=document.getElementById("f_fi_dni"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.dni=e.target.value; });
+  if ((f=document.getElementById("f_sign_name"))){ f.addEventListener("input", function(e){ if(state.sign) state.sign.name=e.target.value; }); f.addEventListener("change", function(){ if(state.sign) render(); }); }
   if ((f=document.getElementById("fichEntradaBtn"))) f.addEventListener("click", function(){ doFichar("entrada"); });
   if ((f=document.getElementById("fichSalidaBtn"))) f.addEventListener("click", function(){ doFichar("salida"); });
   // Al mostrar el fichador (form), arrancamos cámara y ubicación.
@@ -6858,11 +6949,25 @@ var pendingFichar = (function(){
   return "";
 })();
 
+// Token de firma de legajo (?firmar_legajo=TOKEN)
+var pendingSign = (function(){
+  try{
+    var loc = window.location || {};
+    var mq = (loc.search || "").match(/[?&]firmar_legajo=([^&]+)/);
+    if (mq) return decodeURIComponent(mq[1]);
+    var mh = (loc.hash || "").match(/[#&]firmar_legajo=([^&]+)/);
+    if (mh) return decodeURIComponent(mh[1]);
+  }catch(e){}
+  return "";
+})();
+
 // Ruteo de arranque:
 if (handleOAuthRedirect()){
   // Volvimos de "Iniciar sesión con Google": ya guardamos la sesión y los tokens de Gmail.
   state.screen = "loading"; render();
   fetchSupaUser().then(function(){ routeAfterAuth(); });
+} else if (pendingSign){
+  loadSignLegajo(pendingSign);      // empleado firmando su legajo (público)
 } else if (pendingFichar){
   loadFichador(pendingFichar);      // empleado fichando (fichador público)
 } else if (pendingJob){
