@@ -35,8 +35,8 @@ module.exports = async function handler(req, res) {
     var base = url.replace(/\/+$/, "");
     var headers = { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
 
-    // Buscar el empleado por token
-    var er = await fetch(base + "/rest/v1/employees?sign_token=eq." + encodeURIComponent(token) + "&select=id,first_name,last_name,legajo_number,position,category,signature_name,signature_font,signed_at&limit=1", { headers: headers });
+    // Buscar el empleado por token (con todos los datos del legajo para mostrarle qué firma)
+    var er = await fetch(base + "/rest/v1/employees?sign_token=eq." + encodeURIComponent(token) + "&select=id,first_name,last_name,legajo_number,dni,cuil,birth_date,address,email,phone,hire_date,position,category,collective_agreement,contract_type,salary,shift_in,shift_out,work_days,schedule_type,signature_name,signature_font,signed_at&limit=1", { headers: headers });
     var rows = await er.json();
     var emp = Array.isArray(rows) && rows[0] ? rows[0] : null;
     if (!emp) { res.status(200).json({ ok: false, error: "not_found" }); return; }
@@ -44,7 +44,11 @@ module.exports = async function handler(req, res) {
     if (b.action === "get") {
       res.status(200).json({ ok: true, employee: {
         first_name: emp.first_name || "", last_name: emp.last_name || "", legajo_number: emp.legajo_number || "",
-        position: emp.position || "", category: emp.category || "",
+        dni: emp.dni || "", cuil: emp.cuil || "", birth_date: emp.birth_date || "", address: emp.address || "",
+        email: emp.email || "", phone: emp.phone || "", hire_date: emp.hire_date || "",
+        position: emp.position || "", category: emp.category || "", collective_agreement: emp.collective_agreement || "",
+        contract_type: emp.contract_type || "", salary: emp.salary || "",
+        shift_in: emp.shift_in || "", shift_out: emp.shift_out || "", work_days: emp.work_days || "", schedule_type: emp.schedule_type || "",
         signature_name: emp.signature_name || "", signature_font: emp.signature_font || 1,
         signed_at: emp.signed_at || null
       } });
