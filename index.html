@@ -242,6 +242,15 @@ var LANG_LABEL = { es:"ES", en:"EN", pt:"PT" };
 var RECOG_LANG = { es:"es-AR", en:"en-US", pt:"pt-BR" };
 var LEVELS = ["Junior","Semi-Senior","Senior","Gerencial"];
 var LANGS = [["es","Español"],["en","Inglés"],["pt","Português"]];
+/* Estilos de tipografía para la firma digital (1 a 4). */
+var SIGN_FONTS = [
+  { id:1, label:"Manuscrita", css:'"Segoe Script","Brush Script MT","Snell Roundhand",cursive', style:"font-style:italic" },
+  { id:2, label:"Elegante",   css:'"Fraunces",Georgia,"Times New Roman",serif',                 style:"font-style:italic" },
+  { id:3, label:"Redonda",    css:'"Snell Roundhand","Apple Chancery","Segoe Script",cursive',   style:"" },
+  { id:4, label:"Máquina",    css:'"IBM Plex Mono",ui-monospace,"Courier New",monospace',        style:"letter-spacing:1px" }
+];
+function signFont(id){ id=parseInt(id,10)||1; return SIGN_FONTS.filter(function(x){return x.id===id;})[0]||SIGN_FONTS[0]; }
+function signatureHtml(name, fontId, size){ var sf=signFont(fontId); return '<span style="font-family:'+sf.css+';'+sf.style+';font-size:'+(size||28)+'px;color:var(--ink);line-height:1.2">'+esc(name||"")+'</span>'; }
 
 function fmt(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
@@ -1672,7 +1681,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v32.2-r77";
+var APP_VERSION = "v32.3-r78";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2107,6 +2116,21 @@ Screens["emp-form"] = function(){
     }
   }
   html += '</div></div>';
+  // Firma digital
+  var signName=(f.signature_name!=null && f.signature_name!=="")?f.signature_name:((f.first_name||"")+" "+(f.last_name||"")).trim();
+  var signFontId=parseInt(f.signature_font,10)||1;
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 6px">Firma digital</h3>' +
+    '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Escribí el nombre y elegí el estilo de tipografía de la firma. Queda guardada en el legajo.</p>' +
+    '<label class="field" style="margin-bottom:12px"><span class="field-label">Nombre a firmar</span><div class="input-row"><input id="f_emp_signname" value="'+esc(signName)+'" placeholder="Nombre y apellido"></div></label>' +
+    '<span class="field-label" style="display:block;margin-bottom:8px">Estilo de firma</span>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
+      SIGN_FONTS.map(function(sf){ var on=(signFontId===sf.id); return '<button type="button" data-action="emp-sign-font" data-f="'+sf.id+'" style="cursor:pointer;text-align:left;border:2px solid '+(on?'var(--teal)':'var(--border)')+';border-radius:12px;padding:12px 14px;background:'+(on?'var(--teal-tint)':'var(--surface)')+'">' +
+        '<div style="min-height:36px;display:flex;align-items:center;overflow:hidden">'+ (signName? ('<span style="font-family:'+sf.css+';'+sf.style+';font-size:24px;color:var(--ink);white-space:nowrap">'+esc(signName)+'</span>') : ('<span style="font-family:'+sf.css+';'+sf.style+';font-size:24px;color:var(--muted)">Firma</span>')) +'</div>' +
+        '<div style="font-size:11px;color:'+(on?'var(--teal-strong)':'var(--muted)')+';font-weight:700;margin-top:6px">'+(on?ic('check',11)+' ':'')+esc(sf.label)+'</div>' +
+      '</button>'; }).join('') +
+    '</div>' +
+    (signName?('<div style="margin-top:12px;padding:14px 16px;background:var(--surface-2);border-radius:10px"><span style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Vista previa</span>'+signatureHtml(signName, signFontId, 34)+'</div>'):'') +
+  '</div>';
   // Documentación
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 6px">Documentación</h3>' +
     '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Adjuntá CV, títulos, certificados o contrato (PDF o imagen, máx. 10 MB c/u).</p>' +
@@ -4412,6 +4436,7 @@ function emptyEmpForm(){
     hire_date:"", position:"", category:"", collective_agreement:"", contract_type:"", salary:"", status:"activo", notes:"",
     shift_in:"", shift_out:"", work_days:"1,2,3,4,5", tolerance_min:5,
     schedule_type:"fijo", rotation:[], rotation_start:"", rotation_pattern:"semanal", week_shifts:{}, work_n:5, off_n:2,
+    signature_name:"", signature_font:1,
     documents:[], saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
 }
 function goLegajo(){ state.emp.error=null; state.emp.msg=""; state.screen="mod2-legajo"; render(); loadEmployees(); }
@@ -4426,7 +4451,7 @@ function openEmployee(id){
   var e=(state.emp.items||[]).filter(function(z){return z.id===id;})[0];
   if(!e) return;
   var f=emptyEmpForm();
-  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min","schedule_type","rotation_start","rotation_pattern","work_n","off_n"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
+  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min","schedule_type","rotation_start","rotation_pattern","work_n","off_n","signature_name","signature_font"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
   f.rotation = Array.isArray(e.rotation) ? e.rotation.map(function(r){ return { in:(r.in||""), out:(r.out||""), days:String(r.days||"") }; }) : [];
   f.week_shifts = (e.week_shifts && typeof e.week_shifts==="object") ? JSON.parse(JSON.stringify(e.week_shifts)) : {};
   if(!f.schedule_type) f.schedule_type="fijo";
@@ -4446,6 +4471,7 @@ function empFormRow(){
     shift_in:(f.shift_in||"").trim(), shift_out:(f.shift_out||"").trim(), work_days:(f.work_days||"").trim(), tolerance_min:(parseInt(f.tolerance_min,10)||0),
     schedule_type:(f.schedule_type||"fijo"), rotation:(Array.isArray(f.rotation)?f.rotation.map(function(r){ return { in:(r.in||"").trim(), out:(r.out||"").trim(), days:String(r.days||"").trim() }; }):[]), rotation_start:(f.rotation_start||"")||null,
     rotation_pattern:(f.rotation_pattern||"semanal"), week_shifts:(f.week_shifts&&typeof f.week_shifts==="object"?f.week_shifts:{}), work_n:(parseInt(f.work_n,10)||null), off_n:(parseInt(f.off_n,10)||null),
+    signature_name:(f.signature_name||"").trim(), signature_font:(parseInt(f.signature_font,10)||1),
     documents:Array.isArray(f.documents)?f.documents:[] };
 }
 function saveEmployee(){
@@ -4455,7 +4481,7 @@ function saveEmployee(){
   var row=empFormRow();
   var wasEdit=!!f.id;
   // Resiliente: si las columnas nuevas (legajo_number/salary) aún no existen, reintentamos sin ellas.
-  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min; delete slim.schedule_type; delete slim.rotation; delete slim.rotation_start; delete slim.rotation_pattern; delete slim.week_shifts; delete slim.work_n; delete slim.off_n;
+  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min; delete slim.schedule_type; delete slim.rotation; delete slim.rotation_start; delete slim.rotation_pattern; delete slim.week_shifts; delete slim.work_n; delete slim.off_n; delete slim.signature_name; delete slim.signature_font;
   function attempt(r){ return wasEdit ? dbUpdateEmployee(f.id, r) : dbCreateEmployee(r); }
   attempt(row).catch(function(){ return attempt(slim); }).then(function(saved){
     // Al dar de alta un empleado nuevo, registramos el movimiento "Alta" (best-effort).
@@ -6196,6 +6222,7 @@ function bind(){
       else if (act === "emp-wk-toggle"){
         if(state.empform){ state.empform.week_shifts=(state.empform.week_shifts&&typeof state.empform.week_shifts==="object")?state.empform.week_shifts:{}; var wdc=el.getAttribute("data-day"); if(state.empform.week_shifts[wdc]){ delete state.empform.week_shifts[wdc]; } else { state.empform.week_shifts[wdc]={ in:(state.empform.shift_in||"09:00"), out:(state.empform.shift_out||"18:00") }; } render(); }
       }
+      else if (act === "emp-sign-font"){ if(state.empform){ state.empform.signature_font=parseInt(el.getAttribute("data-f"),10)||1; render(); } }
       else if (act === "go-admin") goAdmin();
       else if (act === "copy-bulk"){
         var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
@@ -6414,6 +6441,7 @@ function bind(){
     var el=document.getElementById(p[0]); if(el) el.addEventListener("input", function(e){ if(state.empform) state.empform[p[1]]=e.target.value; });
   });
   if ((f=document.getElementById("f_emp_contract"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.contract_type=e.target.value; });
+  if ((f=document.getElementById("f_emp_signname"))){ f.addEventListener("input", function(e){ if(state.empform) state.empform.signature_name=e.target.value; }); f.addEventListener("change", function(){ if(state.empform) render(); }); }
   if ((f=document.getElementById("f_emp_schedtype"))) f.addEventListener("change", function(e){ if(state.empform){ state.empform.schedule_type=e.target.value; render(); } });
   if ((f=document.getElementById("f_emp_rotpattern"))) f.addEventListener("change", function(e){ if(state.empform){ state.empform.rotation_pattern=e.target.value; render(); } });
   if ((f=document.getElementById("f_emp_workn"))) f.addEventListener("input", function(e){ if(state.empform) state.empform.work_n=parseInt(e.target.value,10)||null; });
