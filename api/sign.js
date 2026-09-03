@@ -1,9 +1,8 @@
-// Función serverless (Vercel) — PÚBLICA. Firma de UN documento del legajo por el empleado.
+// Función serverless (Vercel) — PÚBLICA. Firma de UN documento (área Documentación) por el empleado.
 //   action "get":  devuelve los datos del documento a partir de su token de firma.
 //   action "sign": guarda la firma (nombre + estilo) y la fecha en ese documento.
 // El empleado NO tiene sesión: se usa la SERVICE ROLE del lado del servidor.
-// El documento vive dentro de employees.documents (jsonb array). Se ubica al empleado
-// por contención jsonb: documents @> [{"sign_token":"<token>"}].
+// El documento vive en la tabla hr_documents; se ubica por su columna sign_token (indexada).
 // Variables de entorno en Vercel: SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY.
 
 var _rlStore = global.__voz_rl || (global.__voz_rl = {});
@@ -37,22 +36,20 @@ module.exports = async function handler(req, res) {
     var base = url.replace(/\/+$/, "");
     var headers = { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
 
-    // Buscar al empleado cuyo array documents contenga un doc con este sign_token.
-    var contains = encodeURIComponent(JSON.stringify([{ sign_token: token }]));
-    var er = await fetch(base + "/rest/v1/employees?documents=cs." + contains + "&select=id,first_name,last_name,documents&limit=1", { headers: headers });
+    // Buscar el documento por su token, embebiendo el nombre del empleado.
+    var sel = "id,type,title,detail,doc_date,file_url,file_name,signed,signed_at,signature_name,signature_font,employees(first_name,last_name)";
+    var er = await fetch(base + "/rest/v1/hr_documents?sign_token=eq." + encodeURIComponent(token) + "&select=" + encodeURIComponent(sel) + "&limit=1", { headers: headers });
     var rows = await er.json();
-    var emp = Array.isArray(rows) && rows[0] ? rows[0] : null;
-    if (!emp || !Array.isArray(emp.documents)) { res.status(200).json({ ok: false, error: "not_found" }); return; }
-
-    var idx = -1;
-    for (var i = 0; i < emp.documents.length; i++) { if (emp.documents[i] && emp.documents[i].sign_token === token) { idx = i; break; } }
-    if (idx < 0) { res.status(200).json({ ok: false, error: "not_found" }); return; }
-    var doc = emp.documents[idx];
+    var doc = Array.isArray(rows) && rows[0] ? rows[0] : null;
+    if (!doc) { res.status(200).json({ ok: false, error: "not_found" }); return; }
+    var emp = doc.employees || {};
     var empName = ((emp.first_name || "") + " " + (emp.last_name || "")).trim();
 
     if (b.action === "get") {
       res.status(200).json({ ok: true, employee_name: empName, doc: {
-        label: doc.label || "Documento", filename: doc.filename || "archivo", url: doc.url || "",
+        label: doc.title || (doc.type ? String(doc.type) : "Documento"),
+        type: doc.type || "", filename: doc.file_name || "", url: doc.file_url || "",
+        detail: doc.detail || "", doc_date: doc.doc_date || "",
         signature_name: doc.signature_name || "", signature_font: doc.signature_font || 1,
         signed_at: doc.signed_at || null
       } });
@@ -63,13 +60,12 @@ module.exports = async function handler(req, res) {
       var signName = String(b.signature_name || "").slice(0, 120).trim();
       var signFont = parseInt(b.signature_font, 10); if (isNaN(signFont) || signFont < 1 || signFont > 4) signFont = 1;
       if (!signName) { res.status(200).json({ ok: false, error: "no_name" }); return; }
-      doc.signature_name = signName; doc.signature_font = signFont; doc.signed_at = new Date().toISOString();
-      emp.documents[idx] = doc;
-      var pr = await fetch(base + "/rest/v1/employees?id=eq." + encodeURIComponent(emp.id), {
-        method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify({ documents: emp.documents })
+      var patch = { signature_name: signName, signature_font: signFont, signed_at: new Date().toISOString(), signed: true };
+      var pr = await fetch(base + "/rest/v1/hr_documents?id=eq." + encodeURIComponent(doc.id), {
+        method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify(patch)
       });
       if (!pr.ok) { res.status(200).json({ ok: false, error: "save_failed" }); return; }
-      res.status(200).json({ ok: true, signed_at: doc.signed_at });
+      res.status(200).json({ ok: true, signed_at: patch.signed_at });
       return;
     }
 
