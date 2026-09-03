@@ -1685,7 +1685,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v32.6-r81";
+var APP_VERSION = "v32.7-r82";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -4540,8 +4540,19 @@ function sendLegajoForSign(){
     var msg="Hola "+nom+",\n\nPor favor firmá tu legajo desde este link:\n"+link+"\n\nVas a poder ver todos tus datos y elegir el estilo de tu firma. Gracias.";
     return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:email, subject:"Firmá tu legajo", message:msg }) })
       .then(function(r){ return r.json().catch(function(){ return {}; }); })
-      .then(function(j){ f.sendingSign=false; if(j&&j.ok){ f.signMsg="✓ Enviado por mail a "+email+". Cuando firme, vas a ver su firma acá."; f.signLink=""; } else { f.signLink=link; f.signMsg="No pude enviar el mail automático"+((j&&j.error==="no_config")?" (hay que configurar Brevo en Vercel)":"")+". Como respaldo, podés pasarle este link."; } render(); })
-      .catch(function(){ f.sendingSign=false; f.signLink=link; f.signMsg="No pude enviar el mail automático. Como respaldo, podés pasarle este link."; render(); });
+      .then(function(j){
+        f.sendingSign=false;
+        if(j&&j.ok){ f.signMsg="✓ Enviado por mail a "+email+". Cuando firme, vas a ver su firma acá."; f.signLink=""; return render(); }
+        f.signLink=link;
+        var why=(j&&j.error==="no_config")?"Falta configurar el envío de mails en Vercel (variables BREVO_API_KEY y BREVO_SENDER)."
+          :(j&&j.error==="brevo_error")?("El servicio de mail rechazó el envío"+(j.detail?(": "+j.detail):"")+". Suele ser que el remitente (BREVO_SENDER) no está verificado en Brevo.")
+          :(j&&j.error==="bad_recipient")?"El email del empleado no es válido."
+          :(j&&j.error==="rate_limited")?"Demasiados envíos seguidos, esperá unos minutos."
+          :"No pude enviar el mail automático.";
+        f.signMsg=why+" Mientras tanto, podés pasarle este link.";
+        render();
+      })
+      .catch(function(){ f.sendingSign=false; f.signLink=link; f.signMsg="No pude conectar con el servicio de mail. Mientras tanto, podés pasarle este link."; render(); });
   }).catch(function(){ f.sendingSign=false; f.signMsg="No pude generar el envío. Revisá que hayas corrido en Supabase el SQL de firma actualizado (sql_firma.sql, con las columnas sign_token y signed_at)."; render(); });
 }
 /* ---- Firma pública del legajo (empleado) ---- */
