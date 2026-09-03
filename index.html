@@ -9,6 +9,8 @@
 <script>try{ if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(e){}</script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 .addr-suggest{position:relative;z-index:20;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-top:6px;background:var(--surface);box-shadow:0 6px 20px rgba(0,0,0,.12)}
 .addr-suggest .as-item{padding:10px 12px;cursor:pointer;font-size:13.5px;border-top:1px solid var(--border);color:var(--ink);line-height:1.3}
@@ -1695,7 +1697,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v33.3-r88";
+var APP_VERSION = "v33.4-r89";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2177,13 +2179,29 @@ Screens["emp-form"] = function(){
       '<label class="field" style="flex:1;min-width:180px"><span class="field-label">Archivo</span><input id="f_emp_docfile" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)"></label>' +
     '</div>' +
     (f.upMsg?'<p style="font-size:12px;color:'+(/No pude|supera/.test(f.upMsg)?'var(--brick)':'var(--teal)')+';margin:0 0 10px">'+(f.uploading?ic('loader',12,'spin')+' ':'')+esc(f.upMsg)+'</p>':'') +
-    (f.documents && f.documents.length ? ('<div style="display:grid;gap:8px">'+f.documents.map(function(d,i){
-      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-2);border-radius:10px">' +
-        '<span style="flex-shrink:0;font-size:11px;font-weight:700;color:var(--teal);background:var(--teal-tint);padding:3px 8px;border-radius:999px">'+esc(d.label||'Doc')+'</span>' +
-        '<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="flex:1;min-width:0;font-size:13px;color:var(--ink);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.filename||'archivo')+'</a>' +
-        '<button class="dl-audio" data-action="emp-doc-del" data-idx="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">quitar</button>' +
-      '</div>';
-    }).join('')+'</div>') : '<p style="font-size:12.5px;color:var(--muted);margin:0">Sin documentos cargados todavía.</p>') +
+    (function(){
+      var norm=[], firm=[];
+      (f.documents||[]).forEach(function(d,i){ if(d && d.folder==="firmados") firm.push({d:d,i:i}); else norm.push({d:d,i:i}); });
+      var out = (norm.length ? ('<div style="display:grid;gap:8px">'+norm.map(function(o){ var d=o.d,i=o.i;
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-2);border-radius:10px">' +
+          '<span style="flex-shrink:0;font-size:11px;font-weight:700;color:var(--teal);background:var(--teal-tint);padding:3px 8px;border-radius:999px">'+esc(d.label||'Doc')+'</span>' +
+          '<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="flex:1;min-width:0;font-size:13px;color:var(--ink);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.filename||'archivo')+'</a>' +
+          '<button class="dl-audio" data-action="emp-doc-del" data-idx="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">quitar</button>' +
+        '</div>';
+      }).join('')+'</div>') : '<p style="font-size:12.5px;color:var(--muted);margin:0">Sin documentos cargados todavía.</p>');
+      if(firm.length){
+        out += '<div style="margin-top:16px"><div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:var(--teal);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px">'+ic('check',13)+' Documentos firmados ('+firm.length+')</div><div style="display:grid;gap:8px">' +
+          firm.map(function(o){ var d=o.d;
+            return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--green-tint);border:1px solid var(--border-soft);border-radius:10px">' +
+              '<span style="flex-shrink:0;color:var(--green)">'+ic('check',14)+'</span>' +
+              '<div style="flex:1;min-width:0"><p style="margin:0;font-size:13px;color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.title||d.filename||'Documento firmado')+'</p>'+(d.signed_at?('<p style="margin:1px 0 0;font-size:11px;color:var(--muted)">Firmado el '+esc(fmtDateTimeShort(d.signed_at))+'</p>'):'')+'</div>' +
+              '<a href="'+esc(d.url)+'" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">'+ic('file',12)+' Ver PDF</a>' +
+            '</div>';
+          }).join('') +
+          '</div></div>';
+      }
+      return out;
+    })() +
   '</div>';
   // Notas
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 12px">Notas (opcional)</h3>' +
@@ -4767,7 +4785,18 @@ function doSignDoc(){
   s.sending=true; s.error=null; render();
   fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:s.token, action:"sign", kind:(s.kind==="hs"?"hs":"doc"), signature_name:name, signature_font:s.font }) })
     .then(function(r){ return r.json(); })
-    .then(function(j){ s.sending=false; if(j&&j.ok){ s.done=true; s.signedAt=j.signed_at; } else { s.error="No pude registrar la firma. Probá de nuevo."; } render(); })
+    .then(function(j){ s.sending=false; if(j&&j.ok){ s.done=true; s.signedAt=j.signed_at;
+        try{
+          var d=s.doc||{}; var isHs=(s.kind==="hs");
+          var fdmy=function(x){ if(!x) return ""; var p=String(x).slice(0,10).split("-"); return (p.length===3)?(p[2]+"/"+p[1]+"/"+p[0]):String(x); };
+          fileSignedConstancia({
+            token:s.token, kind:(isHs?"hs":"doc"), empName:s.empName,
+            title:(isHs?"Entrega de EPP: ":"Documento: ")+(d.label||""),
+            signatureName:s.name, signatureFont:s.font, signedAtText:fmtDateTimeShort(j.signed_at||new Date().toISOString()),
+            lines:[ ["Tipo",d.type],["Descripción",d.label],["Detalle",d.detail],["Fecha",fdmy(d.doc_date)] ]
+          });
+        }catch(err){}
+      } else { s.error="No pude registrar la firma. Probá de nuevo."; } render(); })
     .catch(function(){ s.sending=false; s.error="No pude conectar. Probá de nuevo."; render(); });
 }
 /* Enviar una ENTREGA DE EPP (Salud y seguridad) al empleado para que la firme. */
@@ -4799,6 +4828,67 @@ function hsSendForSign(id){
     });
   }).catch(function(){ ui.sending=false; ui.msg="No pude preparar el envío. Revisá que hayas corrido el SQL de salud actualizado (columnas sign_token y signed_at)."; render(); });
 }
+/* ---- Constancia de firma en PDF (se genera al firmar y se archiva en el legajo) ---- */
+function generateConstanciaPdf(o){
+  return new Promise(function(resolve){
+    try{
+      if(!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF){ resolve(null); return; }
+      var sf=signFont(o.signatureFont);
+      var rows=(o.lines||[]).filter(function(r){ return r[1]!=null && String(r[1]).trim()!==""; }).map(function(r){
+        return '<div style="display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px solid #eee;font-size:13px"><span style="color:#666">'+esc(r[0])+'</span><span style="color:#111;font-weight:600;text-align:right">'+esc(String(r[1]))+'</span></div>';
+      }).join('');
+      var wrap=document.createElement("div");
+      wrap.style.cssText="position:fixed;left:-10000px;top:0;width:720px;background:#ffffff;color:#111111;padding:48px;font-family:'Public Sans',Arial,sans-serif;box-sizing:border-box";
+      wrap.innerHTML =
+        '<div style="border-bottom:3px solid #0f766e;padding-bottom:14px;margin-bottom:20px">'+
+          '<div style="font-size:22px;font-weight:800;color:#0f766e">Constancia de firma digital</div>'+
+          '<div style="font-size:12px;color:#888;margin-top:2px">TalentIA · Consultora de RR.HH.</div>'+
+        '</div>'+
+        '<div style="font-size:16px;font-weight:800;margin-bottom:4px;color:#111">'+esc(o.title||"Documento firmado")+'</div>'+
+        '<div style="font-size:13px;color:#555;margin-bottom:18px">Firmado por: '+esc(o.empName||"")+'</div>'+
+        '<div style="margin-bottom:22px">'+rows+'</div>'+
+        '<div style="margin-top:26px;padding-top:16px;border-top:1px solid #ddd">'+
+          '<div style="font-size:11px;color:#888;margin-bottom:6px">Firma</div>'+
+          '<div style="font-family:'+sf.css+';'+(sf.style||'')+';font-size:'+Math.round(40*(sf.scale||1))+'px;color:#111;line-height:1.15">'+esc(o.signatureName||o.empName||"")+'</div>'+
+          '<div style="font-size:12px;color:#555;margin-top:12px">Firmado digitalmente por <b>'+esc(o.signatureName||o.empName||"")+'</b> el '+esc(o.signedAtText||"")+'.</div>'+
+        '</div>';
+      document.body.appendChild(wrap);
+      var finished=false;
+      var done=function(blob){ if(finished) return; finished=true; try{ document.body.removeChild(wrap); }catch(e){} resolve(blob||null); };
+      var started=false;
+      var doRender=function(){
+        if(started) return; started=true;
+        html2canvas(wrap, { scale:2, backgroundColor:"#ffffff", useCORS:true }).then(function(canvas){
+          try{
+            var img=canvas.toDataURL("image/jpeg", 0.92);
+            var jsPDF=window.jspdf.jsPDF;
+            var pdf=new jsPDF({ orientation:"portrait", unit:"pt", format:"a4" });
+            var pw=pdf.internal.pageSize.getWidth();
+            var margin=32; var iw=pw-margin*2; var ih=iw*(canvas.height/canvas.width);
+            pdf.addImage(img, "JPEG", margin, margin, iw, ih);
+            done(pdf.output("blob"));
+          }catch(e){ done(null); }
+        }).catch(function(){ done(null); });
+      };
+      if(document.fonts && document.fonts.ready){ document.fonts.ready.then(doRender).catch(doRender); }
+      setTimeout(doRender, 1500);
+      setTimeout(function(){ done(null); }, 9000); // tope de seguridad
+    }catch(e){ resolve(null); }
+  });
+}
+/* Genera la constancia, la sube a Cloudinary y la archiva en el legajo (carpeta "Documentos firmados"). Best-effort. */
+function fileSignedConstancia(o){
+  try{
+    if(!audioUploadConfigured()) return;
+    generateConstanciaPdf(o).then(function(blob){
+      if(!blob) return;
+      uploadAudioToCloudinary(blob, "firmado_"+randToken()).then(function(url){
+        if(!url) return;
+        fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:o.token, kind:(o.kind||"legajo"), action:"constancia", url:url, title:(o.title||"Documento firmado") }) }).catch(function(){});
+      }).catch(function(){});
+    }).catch(function(){});
+  }catch(e){}
+}
 /* ---- Firma pública del legajo (empleado) ---- */
 function loadSignLegajo(token){
   state.sign={ token:token, loading:true, error:null, emp:null, name:"", font:1, sending:false, done:false };
@@ -4818,7 +4908,21 @@ function doSignLegajo(){
   s.sending=true; s.error=null; render();
   fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:s.token, action:"sign", signature_name:name, signature_font:s.font }) })
     .then(function(r){ return r.json(); })
-    .then(function(j){ s.sending=false; if(j&&j.ok){ s.done=true; s.signedAt=j.signed_at; } else { s.error="No pude registrar la firma. Probá de nuevo."; } render(); })
+    .then(function(j){ s.sending=false; if(j&&j.ok){ s.done=true; s.signedAt=j.signed_at;
+        // Constancia en PDF archivada en el legajo (best-effort, no bloquea la firma).
+        try{
+          var e=s.emp||{};
+          var fdmy=function(d){ if(!d) return ""; var p=String(d).slice(0,10).split("-"); return (p.length===3)?(p[2]+"/"+p[1]+"/"+p[0]):String(d); };
+          fileSignedConstancia({
+            token:s.token, kind:"legajo", empName:name,
+            title:"Legajo del empleado"+(e.legajo_number?(" N° "+e.legajo_number):""),
+            signatureName:name, signatureFont:s.font, signedAtText:fmtDateTimeShort(j.signed_at||new Date().toISOString()),
+            lines:[ ["N° de legajo",e.legajo_number],["DNI",e.dni],["CUIL",e.cuil],["Domicilio",e.address],
+              ["Email",e.email],["Teléfono",e.phone],["Fecha de ingreso",fdmy(e.hire_date)],["Puesto",e.position],
+              ["Categoría",e.category],["Convenio",e.collective_agreement],["Tipo de contrato",e.contract_type],["Salario",e.salary] ]
+          });
+        }catch(err){}
+      } else { s.error="No pude registrar la firma. Probá de nuevo."; } render(); })
     .catch(function(){ s.sending=false; s.error="No pude conectar. Probá de nuevo."; render(); });
 }
 function empFormRow(){
