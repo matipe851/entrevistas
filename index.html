@@ -1667,7 +1667,7 @@ var state = {
   lic: { loading:false, items:null, notes:null, error:null, msg:"", emp:null, form:null },
   perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null, view:"emp", ai:null, rankAI:null, aiQ:"" },
   cap: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ai:null },
-  hs: { loading:false, items:null, error:null, msg:"", emp:null, form:null },
+  hs: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ui:{} },
   doc: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ui:{} },
   fichador: null,
   sign: null,
@@ -1695,7 +1695,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v33.2-r87";
+var APP_VERSION = "v33.3-r88";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2941,6 +2941,8 @@ Screens["mod2-salud"] = function(){
   var fD=function(ts){ if(!ts) return "—"; try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(x){ return "—"; } };
   var rowHS=function(t){
     var ty2=HS_TYPES[t.type]||{label:t.type,color:"var(--muted)"};
+    var isEpp=(t.type==="epp");
+    var ui=(state.hs.ui && state.hs.ui[t.id]) || {};
     var subMap=hsSubOptions(t.type); var subLbl=(subMap&&t.subtype)?(subMap[t.subtype]||t.subtype):"";
     var meta=[];
     if(subLbl) meta.push(subLbl);
@@ -2948,15 +2950,21 @@ Screens["mod2-salud"] = function(){
     if(t.date) meta.push("Fecha: "+fD(t.date));
     var chips="";
     if(t.result){ var rc=(t.result==="apto"?"var(--green)":(t.result==="no_apto"?"var(--brick)":"var(--amber)")); chips+='<span class="badge" style="background:var(--surface);color:'+rc+'">'+esc(HS_RESULT[t.result]||t.result)+'</span>'; }
+    if(isEpp && t.signed_at){ chips+='<span class="badge" style="background:var(--surface);color:var(--green)">'+ic('check',11)+' Firmado</span>'; }
+    else if(isEpp && t.sign_token){ chips+='<span class="badge" style="background:var(--surface);color:var(--amber)">'+ic('clock',11)+' Pendiente de firma</span>'; }
     if(t.expiry_date){ var du=daysUntil(t.expiry_date); var col=(du==null?"var(--muted)":(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)"))); var txt=(du<0?("VENCIDO "+fD(t.expiry_date)):("Vence "+fD(t.expiry_date)+" · "+du+"d")); chips+='<span class="badge" style="background:var(--surface);color:'+col+'">'+ic('clock',11)+' '+txt+'</span>'; }
     var certRow = t.file_url ? ('<div style="margin-top:8px"><a href="'+esc(t.file_url)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--teal);text-decoration:none;background:var(--surface);border-radius:8px;padding:6px 10px">'+ic('file',13)+' Ver adjunto'+(t.file_name?(' ('+esc(t.file_name)+')'):'')+'</a></div>') : '';
     var actions='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">' +
+      (isEpp ? ('<button class="btn btn-sm btn-teal" data-action="hs-send-sign" data-id="'+esc(t.id)+'"'+(ui.sending?' disabled':'')+' style="font-size:11px;padding:5px 9px">'+(ui.sending?(ic('loader',11,'spin')+' Enviando…'):(ic('mic',12)+' '+((t.signed_at||t.sign_token)?'Reenviar a firmar':'Enviar a firmar')))+'</button>') : '') +
       '<label class="dl-audio" style="display:inline-flex;align-items:center;gap:5px;color:var(--teal);cursor:pointer;font-size:11px">'+ic('file',12)+' '+(t.file_url?"Reemplazar":"Adjuntar")+'<input type="file" accept=".pdf,application/pdf,image/*" data-hsfile="'+esc(t.id)+'" style="display:none"></label>' +
       '<button class="dl-audio" data-action="hs-del" data-id="'+esc(t.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;margin-left:auto">'+ic('trash',12)+' eliminar</button></div>';
     return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px;border-left:3px solid '+ty2.color+'">' +
       '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><b style="font-size:13px;color:var(--ink)">'+esc(t.title||ty2.label)+'</b>'+(meta.length?(' <span style="font-size:12px;color:var(--muted)">· '+meta.join(" · ")+'</span>'):'')+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+chips+'</div></div>' +
       (t.detail?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(t.detail)+'</p>'):'') +
       certRow + actions +
+      (isEpp && ui.msg?('<p style="font-size:12px;color:'+(/^✓/.test(ui.msg)?'var(--green)':'var(--brick)')+';margin:8px 0 0">'+esc(ui.msg)+'</p>'):'') +
+      (isEpp && ui.link?('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><input readonly value="'+esc(ui.link)+'" onclick="this.select()" style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;color:var(--ink);font-size:12px;font-family:inherit"><button type="button" class="btn btn-ghost btn-sm" data-action="emp-copy-signlink" data-link="'+esc(ui.link)+'">'+ic('copy',13)+' Copiar link</button></div>'):'') +
+      (isEpp && t.signed_at && t.signature_name?('<div style="margin-top:8px;display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">Firma: '+signatureHtml(t.signature_name, t.signature_font, 22)+' · '+esc(fD(t.signed_at))+'</div>'):'') +
     '</div>';
   };
   var hsSection=function(title, type){
@@ -3141,15 +3149,17 @@ Screens["sign-legajo"] = function(){
 
 Screens["sign-doc"] = function(){
   var s=state.signdoc||{};
-  var head='<div style="display:flex;align-items:center;gap:10px;padding:14px 4px 18px;max-width:520px;margin:0 auto">'+ic('file',24)+'<span style="font-weight:800;font-size:16px;color:var(--ink)">Firma de documento</span></div>';
+  var isHs=(s.kind==="hs");
+  var titulo=isHs?"Firma de entrega":"Firma de documento";
+  var head='<div style="display:flex;align-items:center;gap:10px;padding:14px 4px 18px;max-width:520px;margin:0 auto">'+ic('file',24)+'<span style="font-weight:800;font-size:16px;color:var(--ink)">'+titulo+'</span></div>';
   if(s.loading){ return head+Centered(ic('loader',26,'spin'),"Cargando…",""); }
   if(s.error && !s.doc){ return head+Centered(ic('alert',26),"No disponible",s.error); }
   var d=s.doc||{};
   if(s.done){
-    return head+'<div class="card" style="max-width:520px;margin:0 auto"><div class="center-block" style="padding:24px 12px">'+ic('check',34)+'<h2 style="font-size:20px">¡Documento firmado!</h2><p>Gracias'+(s.empName?(", "+esc(s.empName)):"")+'. Tu firma quedó registrada.</p><div style="margin-top:14px;padding:16px;background:var(--surface-2);border-radius:10px">'+signatureHtml(s.name, s.font, 44)+'</div></div></div>';
+    return head+'<div class="card" style="max-width:520px;margin:0 auto"><div class="center-block" style="padding:24px 12px">'+ic('check',34)+'<h2 style="font-size:20px">'+(isHs?'¡Entrega firmada!':'¡Documento firmado!')+'</h2><p>Gracias'+(s.empName?(", "+esc(s.empName)):"")+'. Tu firma quedó registrada.</p><div style="margin-top:14px;padding:16px;background:var(--surface-2);border-radius:10px">'+signatureHtml(s.name, s.font, 44)+'</div></div></div>';
   }
   var html=head+'<div class="card" style="max-width:560px;margin:0 auto">';
-  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 14px">Revisá el documento, escribí tu nombre y elegí el estilo de tu firma. Al firmar, confirmás que lo leíste y tu firma queda registrada.</p>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 14px">'+(isHs?'Revisá la constancia de entrega, escribí tu nombre y elegí el estilo de tu firma. Al firmar, confirmás que recibiste el elemento y tu firma queda registrada.':'Revisá el documento, escribí tu nombre y elegí el estilo de tu firma. Al firmar, confirmás que lo leíste y tu firma queda registrada.')+'</p>';
   var dFmt=function(ds){ if(!ds) return ""; var p=String(ds).slice(0,10).split("-"); return (p.length===3)?(p[2]+"/"+p[1]+"/"+p[0]):String(ds); };
   html += '<div style="background:var(--surface-2);border-radius:12px;padding:14px 16px;margin-bottom:16px;display:grid;gap:8px">' +
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
@@ -3169,7 +3179,7 @@ Screens["sign-doc"] = function(){
       '<div style="font-size:11px;color:'+(on?'var(--teal-strong)':'var(--muted)')+';font-weight:700;margin-top:6px">'+(on?ic('check',11)+' ':'')+esc(sf.label)+'</div></button>'; }).join('') +
     '</div>';
   if(s.name) html += '<div style="margin-top:12px;padding:16px;background:var(--surface-2);border-radius:10px"><span style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">Vista previa</span>'+signatureHtml(s.name, s.font, 44)+'</div>';
-  html += '<button class="btn btn-teal btn-block" data-action="doc-sign-do" style="margin-top:16px"'+(s.sending?' disabled':'')+'>'+(s.sending?(ic('loader',15,'spin')+' Firmando…'):(ic('check',16)+' Firmar documento'))+'</button>';
+  html += '<button class="btn btn-teal btn-block" data-action="doc-sign-do" style="margin-top:16px"'+(s.sending?' disabled':'')+'>'+(s.sending?(ic('loader',15,'spin')+' Firmando…'):(ic('check',16)+' '+(isHs?'Firmar entrega':'Firmar documento')))+'</button>';
   html += '</div>';
   return html;
 };
@@ -4736,16 +4746,18 @@ function docSendForSign(id){
     });
   }).catch(function(){ ui.sending=false; ui.msg="No pude preparar el envío. Revisá que hayas corrido el SQL de documentación actualizado (columnas sign_token y signed_at)."; render(); });
 }
-/* ---- Firma pública de UN documento (empleado) ---- */
-function loadSignDoc(token){
-  state.signdoc={ token:token, loading:true, error:null, doc:null, empName:"", name:"", font:1, sending:false, done:false };
+/* ---- Firma pública de UN documento o de UNA entrega de EPP (empleado) ----
+   kind: "doc" (área Documentación · hr_documents) | "hs" (Salud y seguridad · entrega de EPP) */
+function loadSignDoc(token, kind){
+  kind=(kind==="hs")?"hs":"doc";
+  state.signdoc={ token:token, kind:kind, loading:true, error:null, doc:null, empName:"", name:"", font:1, sending:false, done:false };
   state.screen="sign-doc"; render();
-  fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:token, action:"get", kind:"doc" }) })
+  fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:token, action:"get", kind:kind }) })
     .then(function(r){ return r.json(); })
     .then(function(j){
       state.signdoc.loading=false;
       if(j&&j.ok&&j.doc){ var d=j.doc; state.signdoc.doc=d; state.signdoc.empName=j.employee_name||""; state.signdoc.name=(d.signature_name||j.employee_name||""); state.signdoc.font=parseInt(d.signature_font,10)||1; state.signdoc.done=!!d.signed_at; }
-      else { state.signdoc.error=(j&&j.error==="not_found")?"Este link de firma no es válido o ya no está disponible.":"No pude cargar el documento para firmar."; }
+      else { state.signdoc.error=(j&&j.error==="not_found")?"Este link de firma no es válido o ya no está disponible.":"No pude cargar el registro para firmar."; }
       render();
     }).catch(function(){ state.signdoc.loading=false; state.signdoc.error="No pude conectar. Probá de nuevo."; render(); });
 }
@@ -4753,10 +4765,39 @@ function doSignDoc(){
   var s=state.signdoc; if(!s) return;
   var name=(s.name||"").trim(); if(!name){ s.error="Escribí tu nombre para firmar."; render(); return; }
   s.sending=true; s.error=null; render();
-  fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:s.token, action:"sign", kind:"doc", signature_name:name, signature_font:s.font }) })
+  fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:s.token, action:"sign", kind:(s.kind==="hs"?"hs":"doc"), signature_name:name, signature_font:s.font }) })
     .then(function(r){ return r.json(); })
     .then(function(j){ s.sending=false; if(j&&j.ok){ s.done=true; s.signedAt=j.signed_at; } else { s.error="No pude registrar la firma. Probá de nuevo."; } render(); })
     .catch(function(){ s.sending=false; s.error="No pude conectar. Probá de nuevo."; render(); });
+}
+/* Enviar una ENTREGA DE EPP (Salud y seguridad) al empleado para que la firme. */
+function buildEppLink(token){ var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?firmar_entrega="+encodeURIComponent(token); }
+function notifyEppEmail(email, nom, link, label){
+  var msg="Hola "+(nom||"")+",\n\nNecesitamos tu firma por la entrega de "+(label||"un elemento")+". Por favor firmá la constancia desde este link:\n"+link+"\n\nVas a poder verla y elegir el estilo de tu firma. Gracias.";
+  return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:email, subject:"Firmá la entrega: "+(label||"elemento"), message:msg }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); })
+    .catch(function(){ return { ok:false, error:"network" }; });
+}
+function hsSendForSign(id){
+  var s=state.hs; var t=(s.items||[]).filter(function(x){ return x.id===id; })[0]; if(!t) return;
+  var e=(state.emp.items||[]).filter(function(x){ return x.id===t.employee_id; })[0] || (s.emp?((state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0]):null);
+  s.ui=s.ui||{}; var ui=s.ui[id]=(s.ui[id]||{});
+  var email=((e&&e.email)||"").trim();
+  var hasEmail=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+  var token=t.sign_token||randToken();
+  ui.sending=true; ui.msg=""; ui.link=""; render();
+  dbUpdateHealth(id, { sign_token:token, signed_at:null }).then(function(){
+    t.sign_token=token; t.signed_at=null;
+    var link=buildEppLink(token);
+    if(!hasEmail){ ui.sending=false; ui.link=link; ui.msg="El empleado no tiene email cargado en su legajo. Cargalo en «Legajo del empleado» y reenviá (o pasale este link)."; render(); return; }
+    var nom=(e?empFullName(e):"empleado");
+    var label=(t.title||"elemento de protección");
+    return notifyEppEmail(email, nom, link, label).then(function(j){
+      ui.sending=false;
+      if(j&&j.ok){ ui.msg="✓ Enviado a "+email+". Cuando lo firme, vas a verlo firmado acá."; ui.link=""; return render(); }
+      ui.link=link; ui.msg=signEmailError(j)+" Mientras tanto, pasale este link."; render();
+    });
+  }).catch(function(){ ui.sending=false; ui.msg="No pude preparar el envío. Revisá que hayas corrido el SQL de salud actualizado (columnas sign_token y signed_at)."; render(); });
 }
 /* ---- Firma pública del legajo (empleado) ---- */
 function loadSignLegajo(token){
@@ -6519,6 +6560,7 @@ function bind(){
       else if (act === "hs-cancel"){ state.hs.form=null; render(); }
       else if (act === "hs-save"){ hsSave(el.getAttribute("data-e")); }
       else if (act === "hs-del"){ hsDelete(el.getAttribute("data-id")); }
+      else if (act === "hs-send-sign"){ hsSendForSign(el.getAttribute("data-id")); }
       else if (act === "go-documentacion") goDocumentacion();
       else if (act === "doc-emp"){ state.doc.emp=el.getAttribute("data-e")||null; state.doc.form=null; state.doc.msg=""; render(); }
       else if (act === "doc-emp-back"){ state.doc.emp=null; state.doc.form=null; render(); }
@@ -7238,6 +7280,18 @@ var pendingDoc = (function(){
   return "";
 })();
 
+// Token de firma de UNA entrega de EPP (?firmar_entrega=TOKEN)
+var pendingEpp = (function(){
+  try{
+    var loc = window.location || {};
+    var mq = (loc.search || "").match(/[?&]firmar_entrega=([^&]+)/);
+    if (mq) return decodeURIComponent(mq[1]);
+    var mh = (loc.hash || "").match(/[#&]firmar_entrega=([^&]+)/);
+    if (mh) return decodeURIComponent(mh[1]);
+  }catch(e){}
+  return "";
+})();
+
 // Ruteo de arranque:
 if (handleOAuthRedirect()){
   // Volvimos de "Iniciar sesión con Google": ya guardamos la sesión y los tokens de Gmail.
@@ -7246,7 +7300,9 @@ if (handleOAuthRedirect()){
 } else if (pendingSign){
   loadSignLegajo(pendingSign);      // empleado firmando su legajo (público)
 } else if (pendingDoc){
-  loadSignDoc(pendingDoc);          // empleado firmando un documento (público)
+  loadSignDoc(pendingDoc, "doc");    // empleado firmando un documento (público)
+} else if (pendingEpp){
+  loadSignDoc(pendingEpp, "hs");     // empleado firmando una entrega de EPP (público)
 } else if (pendingFichar){
   loadFichador(pendingFichar);      // empleado fichando (fichador público)
 } else if (pendingJob){
