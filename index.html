@@ -7,6 +7,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Dancing+Script:wght@600&family=Pacifico&family=Sacramento&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>try{ if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }catch(e){}</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+.addr-suggest{position:relative;z-index:20;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-top:6px;background:var(--surface);box-shadow:0 6px 20px rgba(0,0,0,.12)}
+.addr-suggest .as-item{padding:10px 12px;cursor:pointer;font-size:13.5px;border-top:1px solid var(--border);color:var(--ink);line-height:1.3}
+.addr-suggest .as-item:first-child{border-top:none}
+.addr-suggest .as-item:hover{background:var(--teal-tint)}
+.addr-suggest .as-note{padding:10px 12px;font-size:12.5px;color:var(--muted)}
+.leaflet-container{font:inherit;background:var(--surface)}
+</style>
 
 <style>
 :root{
@@ -1685,7 +1695,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v32.7-r82";
+var APP_VERSION = "v32.8-r83";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2050,7 +2060,12 @@ Screens["emp-form"] = function(){
   // Contacto
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 12px">Contacto</h3><div style="display:grid;gap:14px">' +
     '<div class="grid2" style="gap:14px">'+empInput("f_emp_email","Email",f.email,"","nombre@correo.com")+empInput("f_emp_phone","Teléfono",f.phone,"","Ej: 11 2345 6789")+'</div>' +
-    empInput("f_emp_address","Domicilio",f.address,"","Calle, número, localidad, provincia") +
+    empInput("f_emp_address","Domicilio",f.address,"","Empezá a escribir la calle y número…","Escribí y elegí una opción del listado: se completan solos la localidad, la provincia y el mapa.") +
+    '<div id="addrSuggest" class="addr-suggest" style="display:none"></div>' +
+    '<div class="grid2" style="gap:14px">'+empInput("f_emp_locality","Localidad",f.address_locality,"","Se completa solo")+empInput("f_emp_province","Provincia",f.address_province,"","Se completa solo")+'</div>' +
+    ((f.address_lat!=null && f.address_lon!=null)
+      ? '<div style="display:grid;gap:6px"><span class="field-label">Ubicación en el mapa</span><div id="addrMap" style="height:230px;border-radius:12px;overflow:hidden;border:1px solid var(--border)"></div><span class="field-hint">Podés arrastrar el marcador o tocar el mapa para ajustar la ubicación exacta.</span></div>'
+      : '<div id="addrMap" style="display:none"></div>') +
   '</div></div>';
   // Datos laborales
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 12px">Datos laborales</h3><div style="display:grid;gap:14px">' +
@@ -4492,11 +4507,94 @@ function goMod2(){ resetInterview(); state.error=null; state.dash.detail=null; s
 /* ---- Módulo 2 · Legajo del empleado ---- */
 function emptyEmpForm(){
   return { id:null, legajo_number:"", first_name:"", last_name:"", birth_date:"", dni:"", cuil:"", address:"", email:"", phone:"",
+    address_locality:"", address_province:"", address_postal:"", address_lat:null, address_lon:null,
     hire_date:"", position:"", category:"", collective_agreement:"", contract_type:"", salary:"", status:"activo", notes:"",
     shift_in:"", shift_out:"", work_days:"1,2,3,4,5", tolerance_min:5,
     schedule_type:"fijo", rotation:[], rotation_start:"", rotation_pattern:"semanal", week_shifts:{}, work_n:5, off_n:2,
     signature_name:"", signature_font:1, sign_token:"", signed_at:null, signLink:"", signMsg:"", sendingSign:false,
     documents:[], saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
+}
+/* ---- Domicilio: autocompletado + mapa (OpenStreetMap / Nominatim, sin API key) ---- */
+var _addrTimer=null;
+function addrParseResult(r){
+  var a=r.address||{};
+  var loc=a.city||a.town||a.village||a.hamlet||a.municipality||a.suburb||a.city_district||a.county||"";
+  var prov=a.state||a.province||a.region||"";
+  var road=a.road||a.pedestrian||a.footway||a.residential||"";
+  var num=a.house_number||"";
+  var street=road?(road+(num?(" "+num):"")):"";
+  var display=street||String(r.display_name||"").split(",").slice(0,2).join(",").trim();
+  return { label:String(r.display_name||""), address:display, locality:loc, province:prov,
+    postal:a.postcode||"", lat:parseFloat(r.lat), lon:parseFloat(r.lon) };
+}
+function addrRenderSuggest(list, note){
+  var box=document.getElementById("addrSuggest"); if(!box) return;
+  if(note){ box.innerHTML='<div class="as-note">'+esc(note)+'</div>'; box.style.display="block"; box._items=null; return; }
+  if(!list || !list.length){ box.style.display="none"; box.innerHTML=""; box._items=null; return; }
+  box._items=list;
+  box.innerHTML=list.map(function(it,i){ return '<div class="as-item" data-ai="'+i+'">'+esc(it.label)+'</div>'; }).join('');
+  box.style.display="block";
+  Array.prototype.forEach.call(box.querySelectorAll(".as-item"), function(el){
+    el.addEventListener("mousedown", function(ev){ ev.preventDefault(); var idx=parseInt(el.getAttribute("data-ai"),10); if(box._items&&box._items[idx]) addrPick(box._items[idx]); });
+  });
+}
+function addrSearch(q){
+  q=(q||"").trim(); if(q.length<4){ addrRenderSuggest([]); return; }
+  addrRenderSuggest(null, "Buscando…");
+  var url="https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&countrycodes=ar&accept-language=es&q="+encodeURIComponent(q);
+  fetch(url, { headers:{ "Accept":"application/json" } })
+    .then(function(r){ return r.json(); })
+    .then(function(arr){
+      if(!Array.isArray(arr) || !arr.length){ addrRenderSuggest(null, "Sin resultados. Seguí escribiendo o cargá la dirección a mano."); return; }
+      addrRenderSuggest(arr.map(addrParseResult));
+    })
+    .catch(function(){ addrRenderSuggest(null, "No pude buscar direcciones ahora. Podés cargarla a mano."); });
+}
+function addrPick(it){
+  var f=state.empform; if(!f) return;
+  f.address=it.address||f.address;
+  f.address_locality=it.locality||"";
+  f.address_province=it.province||"";
+  f.address_postal=it.postal||"";
+  f.address_lat=isNaN(it.lat)?null:it.lat;
+  f.address_lon=isNaN(it.lon)?null:it.lon;
+  addrRenderSuggest([]);
+  render();
+}
+function addrReverse(lat, lon){
+  var f=state.empform; if(!f) return;
+  f.address_lat=lat; f.address_lon=lon;
+  var url="https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&accept-language=es&lat="+encodeURIComponent(lat)+"&lon="+encodeURIComponent(lon);
+  fetch(url, { headers:{ "Accept":"application/json" } })
+    .then(function(r){ return r.json(); })
+    .then(function(r){
+      if(!r || !r.address){ render(); return; }
+      var p=addrParseResult(r);
+      if(p.address) f.address=p.address;
+      if(p.locality) f.address_locality=p.locality;
+      if(p.province) f.address_province=p.province;
+      if(p.postal) f.address_postal=p.postal;
+      render();
+    })
+    .catch(function(){ render(); });
+}
+function addrInitMap(){
+  var el=document.getElementById("addrMap");
+  if(!el || el.style.display==="none") return;
+  var f=state.empform; if(!f || f.address_lat==null || f.address_lon==null) return;
+  if(!window.L){ return; }
+  if(el._leaflet_id){ return; } // ya inicializado
+  try{
+    var lat=parseFloat(f.address_lat), lon=parseFloat(f.address_lon);
+    var map=L.map(el, { scrollWheelZoom:false }).setView([lat,lon], 16);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19, attribution:"© OpenStreetMap" }).addTo(map);
+    var icon=L.divIcon({ className:"", iconSize:[20,20], iconAnchor:[10,20],
+      html:'<div style="width:18px;height:18px;border-radius:50% 50% 50% 0;background:var(--teal);border:2px solid #fff;transform:rotate(-45deg);box-shadow:0 2px 5px rgba(0,0,0,.4)"></div>' });
+    var mk=L.marker([lat,lon], { icon:icon, draggable:true }).addTo(map);
+    mk.on("dragend", function(){ var p=mk.getLatLng(); addrReverse(p.lat, p.lng); });
+    map.on("click", function(e){ mk.setLatLng(e.latlng); addrReverse(e.latlng.lat, e.latlng.lng); });
+    setTimeout(function(){ try{ map.invalidateSize(); }catch(e){} }, 150);
+  }catch(e){}
 }
 function goLegajo(){ state.emp.error=null; state.emp.msg=""; state.screen="mod2-legajo"; render(); loadEmployees(); }
 function loadEmployees(){
@@ -4510,7 +4608,7 @@ function openEmployee(id){
   var e=(state.emp.items||[]).filter(function(z){return z.id===id;})[0];
   if(!e) return;
   var f=emptyEmpForm();
-  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min","schedule_type","rotation_start","rotation_pattern","work_n","off_n","signature_name","signature_font","sign_token","signed_at"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
+  ["id","legajo_number","first_name","last_name","birth_date","dni","cuil","address","address_locality","address_province","address_postal","address_lat","address_lon","email","phone","hire_date","position","category","collective_agreement","contract_type","salary","status","notes","shift_in","shift_out","work_days","tolerance_min","schedule_type","rotation_start","rotation_pattern","work_n","off_n","signature_name","signature_font","sign_token","signed_at"].forEach(function(k){ if(e[k]!=null) f[k]=e[k]; });
   f.rotation = Array.isArray(e.rotation) ? e.rotation.map(function(r){ return { in:(r.in||""), out:(r.out||""), days:String(r.days||"") }; }) : [];
   f.week_shifts = (e.week_shifts && typeof e.week_shifts==="object") ? JSON.parse(JSON.stringify(e.week_shifts)) : {};
   if(!f.schedule_type) f.schedule_type="fijo";
@@ -4582,6 +4680,8 @@ function empFormRow(){
   return { legajo_number:(f.legajo_number||"").trim(), first_name:(f.first_name||"").trim(), last_name:(f.last_name||"").trim(),
     birth_date:(f.birth_date||"")||null, dni:(f.dni||"").trim(), cuil:(f.cuil||"").trim(),
     address:(f.address||"").trim(), email:(f.email||"").trim(), phone:(f.phone||"").trim(),
+    address_locality:(f.address_locality||"").trim(), address_province:(f.address_province||"").trim(), address_postal:(f.address_postal||"").trim(),
+    address_lat:(f.address_lat!=null && f.address_lat!==""?parseFloat(f.address_lat):null), address_lon:(f.address_lon!=null && f.address_lon!==""?parseFloat(f.address_lon):null),
     hire_date:(f.hire_date||"")||null, position:(f.position||"").trim(), category:(f.category||"").trim(),
     collective_agreement:(f.collective_agreement||"").trim(), contract_type:(f.contract_type||"").trim(),
     salary:(f.salary||"").trim(), status:f.status||"activo", notes:(f.notes||"").trim(),
@@ -4598,7 +4698,7 @@ function saveEmployee(){
   var row=empFormRow();
   var wasEdit=!!f.id;
   // Resiliente: si las columnas nuevas (legajo_number/salary) aún no existen, reintentamos sin ellas.
-  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min; delete slim.schedule_type; delete slim.rotation; delete slim.rotation_start; delete slim.rotation_pattern; delete slim.week_shifts; delete slim.work_n; delete slim.off_n; delete slim.signature_name; delete slim.signature_font;
+  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min; delete slim.schedule_type; delete slim.rotation; delete slim.rotation_start; delete slim.rotation_pattern; delete slim.week_shifts; delete slim.work_n; delete slim.off_n; delete slim.signature_name; delete slim.signature_font; delete slim.address_locality; delete slim.address_province; delete slim.address_postal; delete slim.address_lat; delete slim.address_lon;
   function attempt(r){ return wasEdit ? dbUpdateEmployee(f.id, r) : dbCreateEmployee(r); }
   attempt(row).catch(function(){ return attempt(slim); }).then(function(saved){
     // Al dar de alta un empleado nuevo, registramos el movimiento "Alta" (best-effort).
@@ -6556,11 +6656,22 @@ function bind(){
   }
   // ---- Legajo: campos de la ficha ----
   [["f_emp_legajo","legajo_number"],["f_emp_first","first_name"],["f_emp_last","last_name"],["f_emp_dni","dni"],["f_emp_cuil","cuil"],["f_emp_birth","birth_date"],
-   ["f_emp_email","email"],["f_emp_phone","phone"],["f_emp_address","address"],["f_emp_hire","hire_date"],["f_emp_position","position"],
+   ["f_emp_email","email"],["f_emp_phone","phone"],["f_emp_hire","hire_date"],["f_emp_position","position"],
+   ["f_emp_locality","address_locality"],["f_emp_province","address_province"],
    ["f_emp_category","category"],["f_emp_convenio","collective_agreement"],["f_emp_salary","salary"],
    ["f_emp_shiftin","shift_in"],["f_emp_shiftout","shift_out"],["f_emp_tol","tolerance_min"]].forEach(function(p){
     var el=document.getElementById(p[0]); if(el) el.addEventListener("input", function(e){ if(state.empform) state.empform[p[1]]=e.target.value; });
   });
+  // Domicilio: escribir en el campo actualiza el valor y dispara la búsqueda de sugerencias (con debounce).
+  if ((f=document.getElementById("f_emp_address"))){
+    f.addEventListener("input", function(e){
+      if(state.empform) state.empform.address=e.target.value;
+      var q=e.target.value; clearTimeout(_addrTimer);
+      _addrTimer=setTimeout(function(){ addrSearch(q); }, 500);
+    });
+    f.addEventListener("blur", function(){ setTimeout(function(){ addrRenderSuggest([]); }, 180); });
+  }
+  addrInitMap();
   if ((f=document.getElementById("f_emp_contract"))) f.addEventListener("change", function(e){ if(state.empform) state.empform.contract_type=e.target.value; });
   if ((f=document.getElementById("f_emp_signname"))){ f.addEventListener("input", function(e){ if(state.empform) state.empform.signature_name=e.target.value; }); f.addEventListener("change", function(){ if(state.empform) render(); }); }
   if ((f=document.getElementById("f_emp_schedtype"))) f.addEventListener("change", function(e){ if(state.empform){ state.empform.schedule_type=e.target.value; render(); } });
