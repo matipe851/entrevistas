@@ -1,8 +1,7 @@
-// Función serverless (Vercel) — PÚBLICA. Firma de UN documento (área Documentación) por el empleado.
-//   action "get":  devuelve los datos del documento a partir de su token de firma.
-//   action "sign": guarda la firma (nombre + estilo) y la fecha en ese documento.
+// Función serverless (Vercel) — PÚBLICA. Firma del legajo por parte del empleado.
+//   action "get":  devuelve datos básicos del legajo a partir del token de firma.
+//   action "sign": guarda la firma (nombre + estilo) y la fecha de firma.
 // El empleado NO tiene sesión: se usa la SERVICE ROLE del lado del servidor.
-// El documento vive en la tabla hr_documents; se ubica por su columna sign_token (indexada).
 // Variables de entorno en Vercel: SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY.
 
 var _rlStore = global.__voz_rl || (global.__voz_rl = {});
@@ -24,7 +23,7 @@ module.exports = async function handler(req, res) {
   var url = process.env.SUPABASE_URL;
   var key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) { res.status(200).json({ ok: false, error: "no_config" }); return; }
-  if (rateLimited("signdoc:" + clientIp(req), 40, 5 * 60 * 1000)) { res.status(429).json({ ok: false, error: "rate_limited" }); return; }
+  if (rateLimited("sign:" + clientIp(req), 40, 5 * 60 * 1000)) { res.status(429).json({ ok: false, error: "rate_limited" }); return; }
 
   try {
     var b = req.body;
@@ -36,22 +35,22 @@ module.exports = async function handler(req, res) {
     var base = url.replace(/\/+$/, "");
     var headers = { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
 
-    // Buscar el documento por su token, embebiendo el nombre del empleado.
-    var sel = "id,type,title,detail,doc_date,file_url,file_name,signed,signed_at,signature_name,signature_font,employees(first_name,last_name)";
-    var er = await fetch(base + "/rest/v1/hr_documents?sign_token=eq." + encodeURIComponent(token) + "&select=" + encodeURIComponent(sel) + "&limit=1", { headers: headers });
+    // Buscar el empleado por token (con todos los datos del legajo para mostrarle qué firma)
+    var er = await fetch(base + "/rest/v1/employees?sign_token=eq." + encodeURIComponent(token) + "&select=id,first_name,last_name,legajo_number,dni,cuil,birth_date,address,email,phone,hire_date,position,category,collective_agreement,contract_type,salary,shift_in,shift_out,work_days,schedule_type,signature_name,signature_font,signed_at&limit=1", { headers: headers });
     var rows = await er.json();
-    var doc = Array.isArray(rows) && rows[0] ? rows[0] : null;
-    if (!doc) { res.status(200).json({ ok: false, error: "not_found" }); return; }
-    var emp = doc.employees || {};
-    var empName = ((emp.first_name || "") + " " + (emp.last_name || "")).trim();
+    var emp = Array.isArray(rows) && rows[0] ? rows[0] : null;
+    if (!emp) { res.status(200).json({ ok: false, error: "not_found" }); return; }
 
     if (b.action === "get") {
-      res.status(200).json({ ok: true, employee_name: empName, doc: {
-        label: doc.title || (doc.type ? String(doc.type) : "Documento"),
-        type: doc.type || "", filename: doc.file_name || "", url: doc.file_url || "",
-        detail: doc.detail || "", doc_date: doc.doc_date || "",
-        signature_name: doc.signature_name || "", signature_font: doc.signature_font || 1,
-        signed_at: doc.signed_at || null
+      res.status(200).json({ ok: true, employee: {
+        first_name: emp.first_name || "", last_name: emp.last_name || "", legajo_number: emp.legajo_number || "",
+        dni: emp.dni || "", cuil: emp.cuil || "", birth_date: emp.birth_date || "", address: emp.address || "",
+        email: emp.email || "", phone: emp.phone || "", hire_date: emp.hire_date || "",
+        position: emp.position || "", category: emp.category || "", collective_agreement: emp.collective_agreement || "",
+        contract_type: emp.contract_type || "", salary: emp.salary || "",
+        shift_in: emp.shift_in || "", shift_out: emp.shift_out || "", work_days: emp.work_days || "", schedule_type: emp.schedule_type || "",
+        signature_name: emp.signature_name || "", signature_font: emp.signature_font || 1,
+        signed_at: emp.signed_at || null
       } });
       return;
     }
@@ -60,8 +59,8 @@ module.exports = async function handler(req, res) {
       var signName = String(b.signature_name || "").slice(0, 120).trim();
       var signFont = parseInt(b.signature_font, 10); if (isNaN(signFont) || signFont < 1 || signFont > 4) signFont = 1;
       if (!signName) { res.status(200).json({ ok: false, error: "no_name" }); return; }
-      var patch = { signature_name: signName, signature_font: signFont, signed_at: new Date().toISOString(), signed: true };
-      var pr = await fetch(base + "/rest/v1/hr_documents?id=eq." + encodeURIComponent(doc.id), {
+      var patch = { signature_name: signName, signature_font: signFont, signed_at: new Date().toISOString() };
+      var pr = await fetch(base + "/rest/v1/employees?id=eq." + encodeURIComponent(emp.id), {
         method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify(patch)
       });
       if (!pr.ok) { res.status(200).json({ ok: false, error: "save_failed" }); return; }
