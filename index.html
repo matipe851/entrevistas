@@ -1697,7 +1697,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v33.4-r89";
+var APP_VERSION = "v33.5-r90";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -5355,7 +5355,10 @@ function hsSave(empId){
   dbCreateHealth(row).then(function(){ state.hs.form=null; state.hs.saving=false; state.hs.msg="Guardado."; return dbListHealth().then(function(l){ state.hs.items=l||[]; render(); }); })
     .catch(function(){ state.hs.saving=false; state.hs.msg="No pude guardar (¿corriste el SQL de salud y seguridad?)."; render(); });
 }
-function hsDelete(id){ if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return; dbDeleteHealth(id).then(function(){ return dbListHealth(); }).then(function(l){ state.hs.items=l||[]; state.hs.msg="Registro eliminado."; render(); }); }
+function hsDelete(id){
+  if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return;
+  var t=(state.hs.items||[]).filter(function(x){ return x.id===id; })[0];
+  dbDeleteHealth(id).then(function(){ return removeSignedConstancia(t&&t.employee_id, "hs", id); }).then(function(){ return dbListHealth(); }).then(function(l){ state.hs.items=l||[]; state.hs.msg="Registro eliminado."; render(); }); }
 function hsFormUpload(file){
   var f=state.hs.form; if(!f||!file) return;
   if(file.size>10*1024*1024){ state.hs.msg="El archivo supera los 10 MB."; render(); return; }
@@ -5452,7 +5455,23 @@ function docSave(empId){
     .catch(function(){ state.doc.saving=false; state.doc.msg="No pude guardar (¿corriste el SQL de documentación?)."; render(); });
 }
 function docSetSigned(id, signed){ dbUpdateDoc(id, { signed:!!signed }).then(function(){ return dbListDocs(); }).then(function(l){ state.doc.items=l||[]; render(); }).catch(function(){ state.doc.msg="No pude actualizar."; render(); }); }
-function docDelete(id){ if(!confirm("¿Eliminar este documento? No se puede deshacer.")) return; dbDeleteDoc(id).then(function(){ return dbListDocs(); }).then(function(l){ state.doc.items=l||[]; state.doc.msg="Documento eliminado."; render(); }); }
+/* Al borrar un documento/registro, quita también su constancia firmada del legajo (carpeta "Documentos firmados"). */
+function removeSignedConstancia(empId, source, sourceId){
+  if(!empId || !sourceId) return Promise.resolve();
+  return supaFetch("/rest/v1/employees?id=eq."+encodeURIComponent(empId)+"&select=documents").then(function(r){ return r.json(); }).then(function(rows){
+    var docs=(Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].documents))?rows[0].documents:null;
+    if(!docs) return;
+    var filtered=docs.filter(function(d){ return !(d && d.folder==="firmados" && d.source===source && d.source_id===sourceId); });
+    if(filtered.length!==docs.length){
+      (state.emp.items||[]).forEach(function(e){ if(e.id===empId) e.documents=filtered; });
+      return dbUpdateEmployee(empId, { documents:filtered });
+    }
+  }).catch(function(){});
+}
+function docDelete(id){
+  if(!confirm("¿Eliminar este documento? No se puede deshacer.")) return;
+  var t=(state.doc.items||[]).filter(function(x){ return x.id===id; })[0];
+  dbDeleteDoc(id).then(function(){ return removeSignedConstancia(t&&t.employee_id, "doc", id); }).then(function(){ return dbListDocs(); }).then(function(l){ state.doc.items=l||[]; state.doc.msg="Documento eliminado."; render(); }); }
 function docFormUpload(file){
   var f=state.doc.form; if(!f||!file) return;
   if(file.size>10*1024*1024){ state.doc.msg="El archivo supera los 10 MB."; render(); return; }
