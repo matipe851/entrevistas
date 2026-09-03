@@ -39,7 +39,35 @@ module.exports = async function handler(req, res) {
     var base = url.replace(/\/+$/, "");
     var headers = { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
 
-    // ---- Firma de UN DOCUMENTO (área Documentación · tabla hr_documents) ----
+    // ---- Archivar la CONSTANCIA firmada (PDF) en el legajo del empleado (carpeta "Documentos firmados") ----
+    if (b.action === "constancia") {
+      var pdfUrl = String(b.url || "").trim();
+      if (!/^https:\/\/[^\s]+$/.test(pdfUrl)) { res.status(200).json({ ok: false, error: "bad_url" }); return; }
+      var cTitle = String(b.title || "Documento firmado").slice(0, 200);
+      var cKind = (b.kind === "doc" || b.kind === "hs") ? b.kind : "legajo";
+      var empId = null;
+      if (cKind === "legajo") {
+        var erL = await fetch(base + "/rest/v1/employees?sign_token=eq." + encodeURIComponent(token) + "&select=id&limit=1", { headers: headers });
+        var rL = await erL.json(); if (Array.isArray(rL) && rL[0]) empId = rL[0].id;
+      } else {
+        var tbl = (cKind === "hs") ? "health_safety" : "hr_documents";
+        var erR = await fetch(base + "/rest/v1/" + tbl + "?sign_token=eq." + encodeURIComponent(token) + "&select=employee_id&limit=1", { headers: headers });
+        var rR = await erR.json(); if (Array.isArray(rR) && rR[0]) empId = rR[0].employee_id;
+      }
+      if (!empId) { res.status(200).json({ ok: false, error: "not_found" }); return; }
+      var erD2 = await fetch(base + "/rest/v1/employees?id=eq." + encodeURIComponent(empId) + "&select=documents&limit=1", { headers: headers });
+      var rD2 = await erD2.json();
+      var docsArr = (Array.isArray(rD2) && rD2[0] && Array.isArray(rD2[0].documents)) ? rD2[0].documents : [];
+      var rid = "f" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      docsArr.push({ id: rid, label: "Firmado", folder: "firmados", title: cTitle, filename: cTitle + ".pdf", url: pdfUrl, signed_pdf: true, source: cKind, signed_at: new Date().toISOString() });
+      var prC = await fetch(base + "/rest/v1/employees?id=eq." + encodeURIComponent(empId), {
+        method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify({ documents: docsArr })
+      });
+      if (!prC.ok) { res.status(200).json({ ok: false, error: "save_failed" }); return; }
+      res.status(200).json({ ok: true });
+      return;
+    }
+
     // ---- Firma de UN DOCUMENTO (hr_documents) o de UNA ENTREGA DE EPP (health_safety) ----
     if (b.kind === "doc" || b.kind === "hs") {
       var isHs = (b.kind === "hs");
