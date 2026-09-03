@@ -1695,7 +1695,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v33.1-r86";
+var APP_VERSION = "v33.2-r87";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -4740,7 +4740,7 @@ function docSendForSign(id){
 function loadSignDoc(token){
   state.signdoc={ token:token, loading:true, error:null, doc:null, empName:"", name:"", font:1, sending:false, done:false };
   state.screen="sign-doc"; render();
-  fetch("/api/sign-doc", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:token, action:"get" }) })
+  fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:token, action:"get", kind:"doc" }) })
     .then(function(r){ return r.json(); })
     .then(function(j){
       state.signdoc.loading=false;
@@ -4753,7 +4753,7 @@ function doSignDoc(){
   var s=state.signdoc; if(!s) return;
   var name=(s.name||"").trim(); if(!name){ s.error="Escribí tu nombre para firmar."; render(); return; }
   s.sending=true; s.error=null; render();
-  fetch("/api/sign-doc", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:s.token, action:"sign", signature_name:name, signature_font:s.font }) })
+  fetch("/api/sign", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:s.token, action:"sign", kind:"doc", signature_name:name, signature_font:s.font }) })
     .then(function(r){ return r.json(); })
     .then(function(j){ s.sending=false; if(j&&j.ok){ s.done=true; s.signedAt=j.signed_at; } else { s.error="No pude registrar la firma. Probá de nuevo."; } render(); })
     .catch(function(){ s.sending=false; s.error="No pude conectar. Probá de nuevo."; render(); });
