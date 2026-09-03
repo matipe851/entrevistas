@@ -1695,7 +1695,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v32.8-r83";
+var APP_VERSION = "v32.9-r84";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2014,6 +2014,11 @@ Screens["mod2-legajo"] = function(){
     var ndoc = Array.isArray(x.documents)?x.documents.length:0;
     var inactive = (x.status==="inactivo");
     var skey = ((x.legajo_number||"")+" "+empFullName(x)+" "+(x.dni||"")+" "+(x.position||"")+" "+(x.cuil||"")).toLowerCase();
+    var stChip = x.signed_at
+      ? '<span style="flex-shrink:0;font-size:11px;font-weight:800;color:var(--green);background:var(--green-tint);border-radius:20px;padding:4px 10px">'+ic('check',11)+' Firmado</span>'
+      : (x.sign_token
+          ? '<span style="flex-shrink:0;font-size:11px;font-weight:800;color:var(--amber);background:rgba(240,170,60,.16);border-radius:20px;padding:4px 10px">'+ic('clock',11)+' Pendiente de firma</span>'
+          : '<span style="flex-shrink:0;font-size:11px;font-weight:700;color:var(--muted);background:var(--surface-2);border-radius:20px;padding:4px 10px">Sin firmar</span>');
     html += '<div class="qa-item emprow" data-search="'+esc(skey)+'" style="cursor:pointer'+(inactive?';opacity:.6':'')+'" data-action="emp-open" data-id="'+esc(x.id)+'">' +
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
         '<span style="flex-shrink:0;width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(x)[0]||"?").toUpperCase())+'</span>' +
@@ -2021,6 +2026,7 @@ Screens["mod2-legajo"] = function(){
           '<p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(empFullName(x))+(x.legajo_number?(' <span style="font-size:11px;color:var(--muted)">· leg. '+esc(x.legajo_number)+'</span>'):'')+(inactive?' <span style="font-size:11px;color:var(--brick)">· inactivo</span>':'')+'</p>' +
           '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">'+esc(x.position||'—')+(x.dni?(' · DNI '+esc(x.dni)):'')+(ndoc?(' · '+ndoc+' doc'+(ndoc===1?'':'s')):'')+'</p>' +
         '</div>' +
+        stChip +
         '<span style="color:var(--muted)">'+ic('chevron',16)+'</span>' +
       '</div>' +
     '</div>';
@@ -2154,8 +2160,8 @@ Screens["emp-form"] = function(){
       (f.signed_at
         ? ('<div style="background:var(--green-tint);border-radius:10px;padding:12px 14px"><p style="margin:0;font-size:12.5px;color:var(--green);font-weight:700">'+ic('check',13)+' Firmado por el empleado el '+esc(fmtDateTimeShort(f.signed_at))+'</p><div style="margin-top:8px">'+signatureHtml(f.signature_name, f.signature_font, 40)+'</div></div>')
         : (f.id
-            ? ('<p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">Enviá el legajo al mail del empleado con un solo click. Va a poder ver todos sus datos, elegir el estilo y firmar. Cuando firme, vas a ver acá su firma registrada.</p>' +
-               '<button type="button" class="btn btn-teal btn-sm" data-action="emp-send-sign"'+(f.sendingSign?' disabled':'')+'>'+(f.sendingSign?(ic('loader',13,'spin')+' Enviando…'):(ic('mic',14)+' Enviar por mail para firmar'))+'</button>' +
+            ? ('<p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">Cada vez que guardás el legajo se le envía automáticamente el mail de firma al empleado y queda <b>Pendiente de firma</b> hasta que lo firme. Con este botón podés <b>reenviárselo</b> cuando quieras.</p>' +
+               '<button type="button" class="btn btn-teal btn-sm" data-action="emp-send-sign"'+(f.sendingSign?' disabled':'')+'>'+(f.sendingSign?(ic('loader',13,'spin')+' Enviando…'):(ic('mic',14)+' Reenviar mail de firma'))+'</button>' +
                (f.sign_token?('<span style="font-size:12px;color:var(--amber);margin-left:10px">'+ic('clock',12)+' Pendiente de firma</span>'):'') +
                (f.signMsg?('<p style="font-size:12px;color:'+(/^✓/.test(f.signMsg)?'var(--green)':'var(--brick)')+';margin:8px 0 0">'+esc(f.signMsg)+'</p>'):'') +
                (f.signLink?('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><input readonly value="'+esc(f.signLink)+'" onclick="this.select()" style="flex:1;min-width:200px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;color:var(--ink);font-size:12px;font-family:inherit"><button type="button" class="btn btn-ghost btn-sm" data-action="emp-copy-signlink" data-link="'+esc(f.signLink)+'">'+ic('copy',13)+' Copiar link</button></div>'):''))
@@ -4618,6 +4624,25 @@ function openEmployee(id){
   state.empform=f; state.screen="emp-form"; render();
 }
 /* Envía el legajo al mail del empleado para que lo firme. */
+/* Link público de firma a partir del token. */
+function buildSignLink(token){ var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?firmar_legajo="+encodeURIComponent(token); }
+/* Envía el mail de firma al empleado (Brevo vía /api/notify). Resuelve con el JSON de respuesta; nunca rechaza. */
+function notifySignEmail(email, nom, link){
+  var msg="Hola "+(nom||"")+",\n\nNecesitamos tu firma en tu legajo. Por favor firmalo desde este link:\n"+link+"\n\nVas a poder ver todos tus datos y elegir el estilo de tu firma. Gracias.";
+  return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:email, subject:"Firmá tu legajo", message:msg }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); })
+    .catch(function(){ return { ok:false, error:"network" }; });
+}
+/* Traduce el error del envío a un mensaje claro. */
+function signEmailError(j){
+  return (j&&j.error==="no_config")?"Falta configurar el envío de mails en Vercel (variables BREVO_API_KEY y BREVO_SENDER)."
+    :(j&&j.error==="brevo_error")?("El servicio de mail rechazó el envío"+(j.detail?(": "+j.detail):"")+". Suele ser que el remitente (BREVO_SENDER) no está verificado en Brevo.")
+    :(j&&j.error==="bad_recipient")?"El email del empleado no es válido."
+    :(j&&j.error==="rate_limited")?"Demasiados envíos seguidos, esperá unos minutos."
+    :(j&&j.error==="network")?"No pude conectar con el servicio de mail."
+    :"No pude enviar el mail automático.";
+}
+/* Reenvío manual desde el legajo (botón "Enviar por mail para firmar"). */
 function sendLegajoForSign(){
   var f=state.empform; if(!f) return;
   if(!f.id){ f.signMsg="Guardá primero el legajo."; render(); return; }
@@ -4625,32 +4650,19 @@ function sendLegajoForSign(){
   var hasEmail=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
   var token=f.sign_token||randToken();
   f.sendingSign=true; f.signMsg=""; render();
-  // 1) Guardamos el token en el legajo (si falla, es porque falta el SQL).
-  dbUpdateEmployee(f.id, { sign_token:token }).then(function(){
-    f.sign_token=token;
-    (state.emp.items||[]).forEach(function(e){ if(e.id===f.id) e.sign_token=token; });
-    var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, "");
-    var link=base+"?firmar_legajo="+encodeURIComponent(token);
+  // 1) Guardamos el token (y anulamos cualquier firma previa) en el legajo.
+  dbUpdateEmployee(f.id, { sign_token:token, signed_at:null }).then(function(){
+    f.sign_token=token; f.signed_at=null;
+    (state.emp.items||[]).forEach(function(e){ if(e.id===f.id){ e.sign_token=token; e.signed_at=null; } });
+    var link=buildSignLink(token);
     f.signLink="";
-    // 2) Enviamos el mail con un solo click (Brevo). Si algo falla, dejamos el link como respaldo.
     if(!hasEmail){ f.sendingSign=false; f.signLink=link; f.signMsg="El empleado no tiene email cargado en el legajo. Cargalo y volvé a enviar (o usá este link)."; render(); return; }
     var nom=((f.first_name||"")+" "+(f.last_name||"")).trim()||"empleado";
-    var msg="Hola "+nom+",\n\nPor favor firmá tu legajo desde este link:\n"+link+"\n\nVas a poder ver todos tus datos y elegir el estilo de tu firma. Gracias.";
-    return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:email, subject:"Firmá tu legajo", message:msg }) })
-      .then(function(r){ return r.json().catch(function(){ return {}; }); })
-      .then(function(j){
-        f.sendingSign=false;
-        if(j&&j.ok){ f.signMsg="✓ Enviado por mail a "+email+". Cuando firme, vas a ver su firma acá."; f.signLink=""; return render(); }
-        f.signLink=link;
-        var why=(j&&j.error==="no_config")?"Falta configurar el envío de mails en Vercel (variables BREVO_API_KEY y BREVO_SENDER)."
-          :(j&&j.error==="brevo_error")?("El servicio de mail rechazó el envío"+(j.detail?(": "+j.detail):"")+". Suele ser que el remitente (BREVO_SENDER) no está verificado en Brevo.")
-          :(j&&j.error==="bad_recipient")?"El email del empleado no es válido."
-          :(j&&j.error==="rate_limited")?"Demasiados envíos seguidos, esperá unos minutos."
-          :"No pude enviar el mail automático.";
-        f.signMsg=why+" Mientras tanto, podés pasarle este link.";
-        render();
-      })
-      .catch(function(){ f.sendingSign=false; f.signLink=link; f.signMsg="No pude conectar con el servicio de mail. Mientras tanto, podés pasarle este link."; render(); });
+    return notifySignEmail(email, nom, link).then(function(j){
+      f.sendingSign=false;
+      if(j&&j.ok){ f.signMsg="✓ Enviado por mail a "+email+". Cuando firme, vas a ver su firma acá."; f.signLink=""; return render(); }
+      f.signLink=link; f.signMsg=signEmailError(j)+" Mientras tanto, podés pasarle este link."; render();
+    });
   }).catch(function(){ f.sendingSign=false; f.signMsg="No pude generar el envío. Revisá que hayas corrido en Supabase el SQL de firma actualizado (sql_firma.sql, con las columnas sign_token y signed_at)."; render(); });
 }
 /* ---- Firma pública del legajo (empleado) ---- */
@@ -4697,16 +4709,30 @@ function saveEmployee(){
   f.saving=true; f.error=""; render();
   var row=empFormRow();
   var wasEdit=!!f.id;
-  // Resiliente: si las columnas nuevas (legajo_number/salary) aún no existen, reintentamos sin ellas.
-  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min; delete slim.schedule_type; delete slim.rotation; delete slim.rotation_start; delete slim.rotation_pattern; delete slim.week_shifts; delete slim.work_n; delete slim.off_n; delete slim.signature_name; delete slim.signature_font; delete slim.address_locality; delete slim.address_province; delete slim.address_postal; delete slim.address_lat; delete slim.address_lon;
+  // Cada guardado (alta o edición) invalida la firma previa y genera un token nuevo:
+  // el legajo queda "Pendiente de firma" hasta que el empleado lo firme otra vez.
+  var newToken=randToken();
+  row.sign_token=newToken; row.signed_at=null;
+  // Resiliente: si las columnas nuevas aún no existen, reintentamos sin ellas.
+  var slim=Object.assign({}, row); delete slim.legajo_number; delete slim.salary; delete slim.termination_date; delete slim.termination_reason; delete slim.shift_in; delete slim.shift_out; delete slim.work_days; delete slim.tolerance_min; delete slim.schedule_type; delete slim.rotation; delete slim.rotation_start; delete slim.rotation_pattern; delete slim.week_shifts; delete slim.work_n; delete slim.off_n; delete slim.signature_name; delete slim.signature_font; delete slim.address_locality; delete slim.address_province; delete slim.address_postal; delete slim.address_lat; delete slim.address_lon; delete slim.sign_token; delete slim.signed_at;
   function attempt(r){ return wasEdit ? dbUpdateEmployee(f.id, r) : dbCreateEmployee(r); }
   attempt(row).catch(function(){ return attempt(slim); }).then(function(saved){
     // Al dar de alta un empleado nuevo, registramos el movimiento "Alta" (best-effort).
     if (!wasEdit && saved && saved.id){
       dbCreateMovement({ employee_id:saved.id, type:"alta", effective_date:(row.hire_date||todayISO()), description:"Alta del empleado", to_value:(row.position||"") });
     }
-    state.empform=null; state.emp.items=null; state.emp.msg = wasEdit?"Legajo actualizado.":"Empleado agregado al legajo.";
-    state.screen="mod2-legajo"; render(); loadEmployees();
+    var base = wasEdit ? "Legajo actualizado" : "Empleado agregado al legajo";
+    var email=(f.email||"").trim();
+    var hasEmail=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+    var nom=((f.first_name||"")+" "+(f.last_name||"")).trim()||"empleado";
+    var link=buildSignLink(newToken);
+    function go(msg){ state.empform=null; state.emp.items=null; state.emp.msg=msg; state.screen="mod2-legajo"; render(); loadEmployees(); }
+    if(!hasEmail){ go(base+". ⚠ Queda PENDIENTE DE FIRMA: el empleado no tiene email cargado. Cargáselo y reenviá desde el legajo, o pasale el link de firma."); return; }
+    // Envío automático del mail de firma (obligatorio en cada alta/edición).
+    return notifySignEmail(email, nom, link).then(function(j){
+      if(j&&j.ok){ go(base+". ✓ Se le envió el mail de firma a "+email+". El legajo queda ACTIVO cuando el empleado lo firme."); }
+      else { go(base+", pero no pude enviar el mail de firma. "+signEmailError(j)+" Queda PENDIENTE DE FIRMA — abrí el legajo y reenviá, o pasale el link."); }
+    });
   }).catch(function(){
     f.saving=false;
     f.error="No pude guardar. Si es la primera vez, revisá que hayas corrido el SQL del legajo (sql_empleados.sql) en Supabase.";
