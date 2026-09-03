@@ -1695,7 +1695,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v32.9-r84";
+var APP_VERSION = "v33.0-r85";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2177,11 +2177,27 @@ Screens["emp-form"] = function(){
       '<label class="field" style="flex:1;min-width:180px"><span class="field-label">Archivo</span><input id="f_emp_docfile" type="file" accept=".pdf,application/pdf,image/*" style="width:100%;font-size:13px;color:var(--muted)"></label>' +
     '</div>' +
     (f.upMsg?'<p style="font-size:12px;color:'+(/No pude|supera/.test(f.upMsg)?'var(--brick)':'var(--teal)')+';margin:0 0 10px">'+(f.uploading?ic('loader',12,'spin')+' ':'')+esc(f.upMsg)+'</p>':'') +
-    (f.documents && f.documents.length ? ('<div style="display:grid;gap:8px">'+f.documents.map(function(d,i){
-      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-2);border-radius:10px">' +
-        '<span style="flex-shrink:0;font-size:11px;font-weight:700;color:var(--teal);background:var(--teal-tint);padding:3px 8px;border-radius:999px">'+esc(d.label||'Doc')+'</span>' +
-        '<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="flex:1;min-width:0;font-size:13px;color:var(--ink);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.filename||'archivo')+'</a>' +
-        '<button class="dl-audio" data-action="emp-doc-del" data-idx="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">quitar</button>' +
+    (f.documents && f.documents.length ? ('<div style="display:grid;gap:10px">'+f.documents.map(function(d,i){
+      var ui=(f.docUI && d.id && f.docUI[d.id]) || {};
+      var signed=!!d.signed_at, pend=(!signed && !!d.sign_token);
+      var chip = signed
+        ? '<span style="font-size:11px;font-weight:800;color:var(--green);background:var(--green-tint);border-radius:999px;padding:3px 9px">'+ic('check',11)+' Firmado</span>'
+        : (pend ? '<span style="font-size:11px;font-weight:800;color:var(--amber);background:rgba(240,170,60,.16);border-radius:999px;padding:3px 9px">'+ic('clock',11)+' Pendiente de firma</span>' : '');
+      return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px;display:grid;gap:8px">' +
+        '<div style="display:flex;align-items:center;gap:10px">' +
+          '<span style="flex-shrink:0;font-size:11px;font-weight:700;color:var(--teal);background:var(--teal-tint);padding:3px 8px;border-radius:999px">'+esc(d.label||'Doc')+'</span>' +
+          '<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="flex:1;min-width:0;font-size:13px;color:var(--ink);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.filename||'archivo')+'</a>' +
+          '<button class="dl-audio" data-action="emp-doc-del" data-idx="'+i+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px">quitar</button>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          chip +
+          (f.id
+            ? '<button type="button" class="btn btn-teal btn-sm" data-action="emp-doc-sign" data-idx="'+i+'"'+(ui.sending?' disabled':'')+'>'+(ui.sending?(ic('loader',12,'spin')+' Enviando…'):(ic('mic',13)+' '+((signed||pend)?'Reenviar a firmar':'Enviar a firmar')))+'</button>'
+            : '<span style="font-size:11.5px;color:var(--muted)">Guardá el legajo para poder enviar este documento a firmar.</span>') +
+          (signed && d.signature_name ? ('<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">Firma: '+signatureHtml(d.signature_name, d.signature_font, 22)+(d.signed_at?(' · '+esc(fmtDateTimeShort(d.signed_at))):'')+'</span>') : '') +
+        '</div>' +
+        (ui.msg?('<p style="font-size:12px;color:'+(/^✓/.test(ui.msg)?'var(--green)':'var(--brick)')+';margin:0">'+esc(ui.msg)+'</p>'):'') +
+        (ui.link?('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input readonly value="'+esc(ui.link)+'" onclick="this.select()" style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;color:var(--ink);font-size:12px;font-family:inherit"><button type="button" class="btn btn-ghost btn-sm" data-action="emp-copy-signlink" data-link="'+esc(ui.link)+'">'+ic('copy',13)+' Copiar link</button></div>'):'') +
       '</div>';
     }).join('')+'</div>') : '<p style="font-size:12.5px;color:var(--muted);margin:0">Sin documentos cargados todavía.</p>') +
   '</div>';
@@ -3129,6 +3145,36 @@ Screens["sign-legajo"] = function(){
     '</div>';
   if(s.name) html += '<div style="margin-top:12px;padding:16px;background:var(--surface-2);border-radius:10px"><span style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">Vista previa</span>'+signatureHtml(s.name, s.font, 44)+'</div>';
   html += '<button class="btn btn-teal btn-block" data-action="sign-do" style="margin-top:16px"'+(s.sending?' disabled':'')+'>'+(s.sending?(ic('loader',15,'spin')+' Firmando…'):(ic('check',16)+' Firmar mi legajo'))+'</button>';
+  html += '</div>';
+  return html;
+};
+
+Screens["sign-doc"] = function(){
+  var s=state.signdoc||{};
+  var head='<div style="display:flex;align-items:center;gap:10px;padding:14px 4px 18px;max-width:520px;margin:0 auto">'+ic('file',24)+'<span style="font-weight:800;font-size:16px;color:var(--ink)">Firma de documento</span></div>';
+  if(s.loading){ return head+Centered(ic('loader',26,'spin'),"Cargando…",""); }
+  if(s.error && !s.doc){ return head+Centered(ic('alert',26),"No disponible",s.error); }
+  var d=s.doc||{};
+  if(s.done){
+    return head+'<div class="card" style="max-width:520px;margin:0 auto"><div class="center-block" style="padding:24px 12px">'+ic('check',34)+'<h2 style="font-size:20px">¡Documento firmado!</h2><p>Gracias'+(s.empName?(", "+esc(s.empName)):"")+'. Tu firma quedó registrada.</p><div style="margin-top:14px;padding:16px;background:var(--surface-2);border-radius:10px">'+signatureHtml(s.name, s.font, 44)+'</div></div></div>';
+  }
+  var html=head+'<div class="card" style="max-width:560px;margin:0 auto">';
+  html += '<p style="font-size:13px;color:var(--muted);margin:0 0 14px">Revisá el documento, escribí tu nombre y elegí el estilo de tu firma. Al firmar, confirmás que lo leíste y tu firma queda registrada.</p>';
+  html += '<div style="background:var(--surface-2);border-radius:12px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px">' +
+    '<span style="flex-shrink:0;font-size:11px;font-weight:700;color:var(--teal);background:var(--teal-tint);padding:4px 9px;border-radius:999px">'+esc(d.label||'Documento')+'</span>' +
+    '<span style="flex:1;min-width:0;font-size:13.5px;color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.filename||'archivo')+'</span>' +
+    (d.url?('<a href="'+esc(d.url)+'" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">'+ic('eye',13)+' Ver documento</a>'):'') +
+    '</div>';
+  if(s.error) html += Note("err", esc(s.error));
+  html += '<label class="field" style="margin-bottom:12px"><span class="field-label">Tu nombre (como querés que figure la firma)</span><div class="input-row"><input id="f_docsign_name" value="'+esc(s.name||"")+'" placeholder="Nombre y apellido"></div></label>';
+  html += '<span class="field-label" style="display:block;margin-bottom:8px">Estilo de firma</span>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
+    SIGN_FONTS.map(function(sf){ var on=(s.font===sf.id); return '<button type="button" data-action="doc-sign-font" data-f="'+sf.id+'" style="cursor:pointer;text-align:left;border:2px solid '+(on?'var(--teal)':'var(--border)')+';border-radius:12px;padding:12px 14px;background:'+(on?'var(--teal-tint)':'var(--surface)')+'">' +
+      '<div style="min-height:48px;display:flex;align-items:center;overflow:hidden">'+(s.name?('<span style="font-family:'+sf.css+';'+sf.style+';font-size:'+Math.round(30*(sf.scale||1))+'px;color:var(--ink);white-space:nowrap;line-height:1.1">'+esc(s.name)+'</span>'):('<span style="font-family:'+sf.css+';'+sf.style+';font-size:30px;color:var(--muted)">Firma</span>'))+'</div>' +
+      '<div style="font-size:11px;color:'+(on?'var(--teal-strong)':'var(--muted)')+';font-weight:700;margin-top:6px">'+(on?ic('check',11)+' ':'')+esc(sf.label)+'</div></button>'; }).join('') +
+    '</div>';
+  if(s.name) html += '<div style="margin-top:12px;padding:16px;background:var(--surface-2);border-radius:10px"><span style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">Vista previa</span>'+signatureHtml(s.name, s.font, 44)+'</div>';
+  html += '<button class="btn btn-teal btn-block" data-action="doc-sign-do" style="margin-top:16px"'+(s.sending?' disabled':'')+'>'+(s.sending?(ic('loader',15,'spin')+' Firmando…'):(ic('check',16)+' Firmar documento'))+'</button>';
   html += '</div>';
   return html;
 };
@@ -4518,7 +4564,7 @@ function emptyEmpForm(){
     shift_in:"", shift_out:"", work_days:"1,2,3,4,5", tolerance_min:5,
     schedule_type:"fijo", rotation:[], rotation_start:"", rotation_pattern:"semanal", week_shifts:{}, work_n:5, off_n:2,
     signature_name:"", signature_font:1, sign_token:"", signed_at:null, signLink:"", signMsg:"", sendingSign:false,
-    documents:[], saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
+    documents:[], docUI:{}, saving:false, error:"", uploading:false, docLabel:"CV", upMsg:"" };
 }
 /* ---- Domicilio: autocompletado + mapa (OpenStreetMap / Nominatim, sin API key) ---- */
 var _addrTimer=null;
@@ -4620,7 +4666,8 @@ function openEmployee(id){
   if(!f.schedule_type) f.schedule_type="fijo";
   if(!f.rotation_pattern) f.rotation_pattern="semanal";
   if(f.work_n==null) f.work_n=5; if(f.off_n==null) f.off_n=2;
-  f.documents = Array.isArray(e.documents)?e.documents.slice():[];
+  f.documents = Array.isArray(e.documents)?e.documents.map(function(d){ d=Object.assign({}, d); if(!d.id) d.id=randToken(); return d; }):[];
+  f.docUI = {};
   state.empform=f; state.screen="emp-form"; render();
 }
 /* Envía el legajo al mail del empleado para que lo firme. */
@@ -4664,6 +4711,60 @@ function sendLegajoForSign(){
       f.signLink=link; f.signMsg=signEmailError(j)+" Mientras tanto, podés pasarle este link."; render();
     });
   }).catch(function(){ f.sendingSign=false; f.signMsg="No pude generar el envío. Revisá que hayas corrido en Supabase el SQL de firma actualizado (sql_firma.sql, con las columnas sign_token y signed_at)."; render(); });
+}
+/* ---- Envío de UN documento del legajo para que el empleado lo firme (mail por documento) ---- */
+function buildDocLink(token){ var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?firmar_doc="+encodeURIComponent(token); }
+function notifyDocEmail(email, nom, link, label){
+  var msg="Hola "+(nom||"")+",\n\nNecesitamos tu firma en un documento ("+(label||"documento")+"). Por favor firmalo desde este link:\n"+link+"\n\nVas a poder verlo y elegir el estilo de tu firma. Gracias.";
+  return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:email, subject:"Firmá tu documento: "+(label||"documento"), message:msg }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); })
+    .catch(function(){ return { ok:false, error:"network" }; });
+}
+function sendDocForSign(i){
+  var f=state.empform; if(!f) return;
+  var d=(f.documents||[])[i]; if(!d) return;
+  if(!d.id) d.id=randToken();
+  f.docUI=f.docUI||{}; var ui=f.docUI[d.id]=(f.docUI[d.id]||{});
+  if(!f.id){ ui.msg="Guardá primero el legajo para poder enviar documentos a firmar."; render(); return; }
+  var email=(f.email||"").trim();
+  var hasEmail=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+  var token=d.sign_token||randToken();
+  d.sign_token=token; d.signed_at=null; d.sent_at=new Date().toISOString();
+  ui.sending=true; ui.msg=""; ui.link=""; render();
+  // Persistimos el array de documentos (con el token) para que el link público lo encuentre.
+  dbUpdateEmployee(f.id, { documents:(f.documents||[]) }).then(function(){
+    (state.emp.items||[]).forEach(function(e){ if(e.id===f.id) e.documents=f.documents; });
+    var link=buildDocLink(token);
+    if(!hasEmail){ ui.sending=false; ui.link=link; ui.msg="El empleado no tiene email cargado en el legajo. Cargalo y reenviá (o pasale este link)."; render(); return; }
+    var nom=((f.first_name||"")+" "+(f.last_name||"")).trim()||"empleado";
+    return notifyDocEmail(email, nom, link, d.label||"documento").then(function(j){
+      ui.sending=false;
+      if(j&&j.ok){ ui.msg="✓ Enviado a "+email+". Cuando lo firme, vas a ver la firma acá."; ui.link=""; return render(); }
+      ui.link=link; ui.msg=signEmailError(j)+" Mientras tanto, pasale este link."; render();
+    });
+  }).catch(function(){ ui.sending=false; ui.msg="No pude guardar el documento para enviarlo. Revisá que hayas corrido el SQL del legajo en Supabase."; render(); });
+}
+/* ---- Firma pública de UN documento (empleado) ---- */
+function loadSignDoc(token){
+  state.signdoc={ token:token, loading:true, error:null, doc:null, empName:"", name:"", font:1, sending:false, done:false };
+  state.screen="sign-doc"; render();
+  fetch("/api/sign-doc", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:token, action:"get" }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      state.signdoc.loading=false;
+      if(j&&j.ok&&j.doc){ var d=j.doc; state.signdoc.doc=d; state.signdoc.empName=j.employee_name||""; state.signdoc.name=(d.signature_name||j.employee_name||""); state.signdoc.font=parseInt(d.signature_font,10)||1; state.signdoc.done=!!d.signed_at; }
+      else { state.signdoc.error=(j&&j.error==="not_found")?"Este link de firma no es válido o ya no está disponible.":"No pude cargar el documento para firmar."; }
+      render();
+    }).catch(function(){ state.signdoc.loading=false; state.signdoc.error="No pude conectar. Probá de nuevo."; render(); });
+}
+function doSignDoc(){
+  var s=state.signdoc; if(!s) return;
+  var name=(s.name||"").trim(); if(!name){ s.error="Escribí tu nombre para firmar."; render(); return; }
+  s.sending=true; s.error=null; render();
+  fetch("/api/sign-doc", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ token:s.token, action:"sign", signature_name:name, signature_font:s.font }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ s.sending=false; if(j&&j.ok){ s.done=true; s.signedAt=j.signed_at; } else { s.error="No pude registrar la firma. Probá de nuevo."; } render(); })
+    .catch(function(){ s.sending=false; s.error="No pude conectar. Probá de nuevo."; render(); });
 }
 /* ---- Firma pública del legajo (empleado) ---- */
 function loadSignLegajo(token){
@@ -5559,7 +5660,7 @@ function addEmployeeDoc(file){
   if(!audioUploadConfigured()){ f.upMsg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
   f.uploading=true; f.upMsg="Subiendo "+file.name+"…"; render();
   uploadAudioToCloudinary(file).then(function(url){
-    f.documents=f.documents||[]; f.documents.push({ label:f.docLabel||"Documento", filename:file.name, url:url });
+    f.documents=f.documents||[]; f.documents.push({ id:randToken(), label:f.docLabel||"Documento", filename:file.name, url:url });
     f.uploading=false; f.upMsg=""; render();
   }).catch(function(){ f.uploading=false; f.upMsg="No pude subir el archivo. Probá de nuevo."; render(); });
 }
@@ -6470,6 +6571,9 @@ function bind(){
       else if (act === "emp-copy-signlink"){ var sl=el.getAttribute("data-link")||""; try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(sl).then(function(){ el.innerHTML=ic('check',13)+' Copiado'; setTimeout(function(){ if(state.screen==="emp-form") render(); },1200); }, function(){ alert("Copiá el link: "+sl); }); } else alert("Copiá el link: "+sl); }catch(e){ alert("Copiá el link: "+sl); } }
       else if (act === "sign-font"){ if(state.sign){ state.sign.font=parseInt(el.getAttribute("data-f"),10)||1; render(); } }
       else if (act === "sign-do"){ doSignLegajo(); }
+      else if (act === "emp-doc-sign"){ sendDocForSign(parseInt(el.getAttribute("data-idx"),10)); }
+      else if (act === "doc-sign-font"){ if(state.signdoc){ state.signdoc.font=parseInt(el.getAttribute("data-f"),10)||1; render(); } }
+      else if (act === "doc-sign-do"){ doSignDoc(); }
       else if (act === "go-admin") goAdmin();
       else if (act === "copy-bulk"){
         var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
@@ -6776,6 +6880,7 @@ function bind(){
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
   if ((f=document.getElementById("f_fi_dni"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.dni=e.target.value; });
   if ((f=document.getElementById("f_sign_name"))){ f.addEventListener("input", function(e){ if(state.sign) state.sign.name=e.target.value; }); f.addEventListener("change", function(){ if(state.sign) render(); }); }
+  if ((f=document.getElementById("f_docsign_name"))){ f.addEventListener("input", function(e){ if(state.signdoc) state.signdoc.name=e.target.value; }); f.addEventListener("change", function(){ if(state.signdoc) render(); }); }
   if ((f=document.getElementById("fichEntradaBtn"))) f.addEventListener("click", function(){ doFichar("entrada"); });
   if ((f=document.getElementById("fichSalidaBtn"))) f.addEventListener("click", function(){ doFichar("salida"); });
   // Al mostrar el fichador (form), arrancamos cámara y ubicación.
@@ -7129,6 +7234,18 @@ var pendingSign = (function(){
   return "";
 })();
 
+// Token de firma de UN documento (?firmar_doc=TOKEN)
+var pendingDoc = (function(){
+  try{
+    var loc = window.location || {};
+    var mq = (loc.search || "").match(/[?&]firmar_doc=([^&]+)/);
+    if (mq) return decodeURIComponent(mq[1]);
+    var mh = (loc.hash || "").match(/[#&]firmar_doc=([^&]+)/);
+    if (mh) return decodeURIComponent(mh[1]);
+  }catch(e){}
+  return "";
+})();
+
 // Ruteo de arranque:
 if (handleOAuthRedirect()){
   // Volvimos de "Iniciar sesión con Google": ya guardamos la sesión y los tokens de Gmail.
@@ -7136,6 +7253,8 @@ if (handleOAuthRedirect()){
   fetchSupaUser().then(function(){ routeAfterAuth(); });
 } else if (pendingSign){
   loadSignLegajo(pendingSign);      // empleado firmando su legajo (público)
+} else if (pendingDoc){
+  loadSignDoc(pendingDoc);          // empleado firmando un documento (público)
 } else if (pendingFichar){
   loadFichador(pendingFichar);      // empleado fichando (fichador público)
 } else if (pendingJob){
