@@ -1717,6 +1717,7 @@ var state = {
   hs: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ui:{} },
   doc: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ui:{} },
   ben: { loading:false, items:null, error:null, msg:"", emp:null, folder:null, form:null, ui:{} },
+  empPick: "", empPickInactive: false,
   fichador: null,
   sign: null,
   brand: { name:"", logo:"" },
@@ -2402,7 +2403,7 @@ Screens["emp-movements"] = function(){
       html += '<div class="qa-item" style="border-left:3px solid '+mt.color+'">' +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
           '<span style="font-size:11px;font-weight:800;color:#fff;background:'+mt.color+';padding:3px 9px;border-radius:999px">'+esc(mt.label)+'</span>' +
-          '<span style="font-size:12px;color:var(--muted)">'+esc(m.effective_date||fmtDate(m.created_at)||"")+'</span>' +
+          '<span style="font-size:12px;color:var(--muted)">'+esc(m.effective_date?fDMY(m.effective_date):(fmtDate(m.created_at)||""))+'</span>' +
         '</div>' +
         (m.description?'<p style="margin:8px 0 0;font-size:13.5px;color:var(--ink)">'+esc(m.description)+'</p>':'') +
         (m.reason && m.type!=="baja"?'<p style="margin:4px 0 0;font-size:12.5px;color:var(--muted)">Motivo: '+esc(m.reason)+'</p>':'') +
@@ -2667,29 +2668,18 @@ Screens["mod2-licencias"] = function(){
   if(s.msg) html += Note("ok", esc(s.msg));
   if(s.error) html += Note("err", esc(s.error));
   if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
-  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  var emps=moduleEmployees();
   if(!s.emp){
     if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
-    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
-      var pend=licEmpLeaves(e.id).filter(function(l){ return l.status==="pendiente"; }).length;
-      html += '<button class="tile tile-light" data-action="lic-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
-        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
-        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
-        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(pend?('<span style="color:var(--amber);font-weight:700">'+pend+' pendiente'+(pend===1?'':'s')+'</span>'):'Ver')+'</p></button>';
-    });
-    html += '</div>';
+    html += empPicker(emps, "lic-emp", function(e){ var p=licEmpLeaves(e.id).filter(function(l){ return l.status==="pendiente"; }).length; return p?('<span style="color:var(--amber);font-weight:700">'+p+' pendiente'+(p===1?'':'s')+'</span>'):"Ver"; });
     return html;
   }
   var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
   if(!e){ html += Note("err","No encontré a este empleado."); return html; }
   html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="lic-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span></div>';
   var leaves=licEmpLeaves(e.id);
-  var curYear=new Date().getFullYear();
-  var vac=vacationEntitlement(e, curYear);
-  var override=(e.vacation_override!=null && e.vacation_override!=="")?parseInt(e.vacation_override,10):null; if(override!=null && isNaN(override)) override=null;
-  var entitlement=(override!=null)?override:vac.auto;
-  var used=licVacUsed(e.id); var avail=entitlement-used;
+  var bal=licVacBalance(e);
+  var curYear=bal.year, vac=bal.vac, override=bal.override, entitlement=bal.entitlement, used=bal.used, avail=bal.avail;
   // Días disponibles (proporcional automático por antigüedad, con ajuste manual opcional)
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Días disponibles · vacaciones '+curYear+'</h3>' +
     '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">' +
@@ -2760,7 +2750,7 @@ Screens["mod2-desempeno"] = function(){
   if(s.msg) html += Note("ok", esc(s.msg));
   if(s.error) html += Note("err", esc(s.error));
   if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
-  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  var emps=moduleEmployees();
   if(!s.emp){
     if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
     // Toggle: empleados / ranking por demora
@@ -2791,15 +2781,7 @@ Screens["mod2-desempeno"] = function(){
       }
       return html;
     }
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
-    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
-      var n=perfEmpItems(e.id).length;
-      html += '<button class="tile tile-light" data-action="perf-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
-        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
-        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
-        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(n?(n+' registro'+(n===1?'':'s')):'Ver')+'</p></button>';
-    });
-    html += '</div>';
+    html += empPicker(emps, "perf-emp", function(e){ var n=perfEmpItems(e.id).length; return n?(n+" registro"+(n===1?"":"s")):"Ver"; });
     return html;
   }
   var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
@@ -2849,7 +2831,7 @@ Screens["mod2-desempeno"] = function(){
     '</div>';
     var body=p.detail?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(p.detail)+'</p>'):'';
     if(p.type==="objetivo"||p.type==="mejora"){
-      var fD=function(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(e){ return "—"; } };
+      var fD=fDMY;
       var meta='Cargado: '+fD(p.created_at);
       if(p.status==="cumplido" && p.completed_at){ var dd=Math.max(0,Math.round((new Date(p.completed_at)-new Date(p.created_at))/(24*3600*1000))); meta += ' · <span style="color:var(--green)">Cumplido: '+fD(p.completed_at)+'</span> · <b style="color:var(--ink)">'+dd+' día'+(dd===1?'':'s')+'</b>'; }
       body += '<p style="margin:6px 0 0;font-size:11.5px;color:var(--muted)">'+ic('clock',11)+' '+meta+'</p>';
@@ -2890,19 +2872,10 @@ Screens["mod2-capacitacion"] = function(){
   if(s.msg) html += Note("ok", esc(s.msg));
   if(s.error) html += Note("err", esc(s.error));
   if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
-  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  var emps=moduleEmployees();
   if(!s.emp){
     if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
-    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
-      var its=capEmpItems(e.id);
-      var venc=its.filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
-      html += '<button class="tile tile-light" data-action="cap-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
-        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
-        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
-        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(its.length?(its.length+' registro'+(its.length===1?'':'s')):'Ver')+(venc?(' · <span style="color:var(--brick);font-weight:700">'+venc+' vencido'+(venc===1?'':'s')+'</span>'):'')+'</p></button>';
-    });
-    html += '</div>';
+    html += empPicker(emps, "cap-emp", function(e){ var its=capEmpItems(e.id); return (its.length?(its.length+" registro"+(its.length===1?"":"s")):"Ver")+empVencMeta(its); });
     return html;
   }
   var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
@@ -2946,7 +2919,7 @@ Screens["mod2-capacitacion"] = function(){
     (ai.error?Note("err", esc(ai.error)):'') +
     (ai.answer?('<div style="margin-top:10px;background:var(--surface);border-radius:10px;padding:12px 14px;white-space:pre-wrap;font-size:13.5px;line-height:1.55;color:var(--ink)">'+esc(ai.answer)+'</div>'):'') +
   '</div>';
-  var fD=function(ts){ if(!ts) return "—"; try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(x){ return "—"; } };
+  var fD=fDMY;
   var rowCap=function(t){
     var ty2=TRAIN_TYPES[t.type]||{label:t.type,color:"var(--muted)"};
     var meta=[];
@@ -3000,19 +2973,10 @@ Screens["mod2-salud"] = function(){
   if(s.msg) html += Note("ok", esc(s.msg));
   if(s.error) html += Note("err", esc(s.error));
   if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
-  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  var emps=moduleEmployees();
   if(!s.emp){
     if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
-    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
-      var its=hsEmpItems(e.id);
-      var venc=its.filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
-      html += '<button class="tile tile-light" data-action="hs-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
-        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
-        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
-        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(its.length?(its.length+' registro'+(its.length===1?'':'s')):'Ver')+(venc?(' · <span style="color:var(--brick);font-weight:700">'+venc+' vencido'+(venc===1?'':'s')+'</span>'):'')+'</p></button>';
-    });
-    html += '</div>';
+    html += empPicker(emps, "hs-emp", function(e){ var its=hsEmpItems(e.id); return (its.length?(its.length+" registro"+(its.length===1?"":"s")):"Ver")+empVencMeta(its); });
     return html;
   }
   var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
@@ -3049,7 +3013,7 @@ Screens["mod2-salud"] = function(){
       '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="hs-save" data-e="'+esc(e.id)+'"'+((s.saving||f.uploading)?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="hs-cancel">Cancelar</button></div>' +
       '</div></div>';
   }
-  var fD=function(ts){ if(!ts) return "—"; try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(x){ return "—"; } };
+  var fD=fDMY;
   var rowHS=function(t){
     var ty2=HS_TYPES[t.type]||{label:t.type,color:"var(--muted)"};
     var isEpp=(t.type==="epp");
@@ -3114,19 +3078,10 @@ Screens["mod2-documentacion"] = function(){
   if(s.msg) html += Note("ok", esc(s.msg));
   if(s.error) html += Note("err", esc(s.error));
   if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
-  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  var emps=moduleEmployees();
   if(!s.emp){
     if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
-    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
-      var its=docEmpItems(e.id);
-      var venc=its.filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
-      html += '<button class="tile tile-light" data-action="doc-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
-        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
-        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
-        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(its.length?(its.length+' doc'+(its.length===1?'':'s')):'Ver')+(venc?(' · <span style="color:var(--brick);font-weight:700">'+venc+' vencido'+(venc===1?'':'s')+'</span>'):'')+'</p></button>';
-    });
-    html += '</div>';
+    html += empPicker(emps, "doc-emp", function(e){ var its=docEmpItems(e.id); return (its.length?(its.length+" doc"+(its.length===1?"":"s")):"Ver")+empVencMeta(its); });
     return html;
   }
   var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
@@ -3158,7 +3113,7 @@ Screens["mod2-documentacion"] = function(){
       '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="doc-save" data-e="'+esc(e.id)+'"'+((s.saving||f.uploading)?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="doc-cancel">Cancelar</button></div>' +
       '</div></div>';
   }
-  var fD=function(ts){ if(!ts) return "—"; try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(x){ return "—"; } };
+  var fD=fDMY;
   var rowDoc=function(t){
     var ty2=DOC_TYPES[t.type]||{label:t.type,color:"var(--muted)"};
     var ui=(state.doc.ui && state.doc.ui[t.id]) || {};
@@ -3224,22 +3179,12 @@ Screens["mod2-beneficios"] = function(){
   if(s.msg) html += Note("ok", esc(s.msg));
   if(s.error) html += Note("err", esc(s.error));
   if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
-  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+  var emps=moduleEmployees();
 
   /* 1) Elegir empleado */
   if(!s.emp){
     if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
-    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
-      var its=benEmpItems(e.id);
-      var act=its.filter(function(t){ return (t.status||"activo")==="activo"; }).length;
-      var venc=its.filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
-      html += '<button class="tile tile-light" data-action="ben-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
-        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
-        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
-        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(its.length?(act+' activo'+(act===1?'':'s')+' de '+its.length):'Abrir carpeta')+(venc?(' · <span style="color:var(--brick);font-weight:700">'+venc+' vencido'+(venc===1?'':'s')+'</span>'):'')+'</p></button>';
-    });
-    html += '</div>';
+    html += empPicker(emps, "ben-emp", function(e){ var its=benEmpItems(e.id); var a=its.filter(function(t){ return (t.status||"activo")==="activo"; }).length; return (its.length?(a+" activo"+(a===1?"":"s")+" de "+its.length):"Abrir carpeta")+empVencMeta(its); });
     return html;
   }
 
@@ -5285,7 +5230,7 @@ function empFormRow(){
 }
 function saveEmployee(){
   var f=state.empform; if(!f) return;
-  if(!(f.first_name||"").trim() && !(f.last_name||"").trim()){ f.error="Poné al menos el nombre y el apellido."; render(); return; }
+  var invalid=empValidate(f); if(invalid){ f.error=invalid; render(); return; }
   f.saving=true; f.error=""; render();
   var row=empFormRow();
   var wasEdit=!!f.id;
@@ -5454,10 +5399,88 @@ function vacationEntitlement(emp, year){
   var prop=Math.floor(corridos/20);
   return { auto:prop, hasHire:true, proportional:true, note:"Ingreso "+fmtDMY(hire)+": no completó medio año laboral → proporcional de 1 día cada 20 días trabajados = "+prop+" días ("+corridos+" días corridos en "+year+")." };
 }
+/* Fecha en dd/mm/aaaa. Acepta fechas puras ("2026-09-20") y timestamps.
+   Las fechas puras se parten a mano: pasarlas por new Date() las interpreta en UTC
+   y en zonas negativas (Argentina, UTC-3) mostraba el día anterior. */
+function fDMY(v){
+  if(v==null || v==="") return "—";
+  var s=String(v).trim();
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if(m) return m[3]+"/"+m[2]+"/"+m[1];
+  var d=new Date(s);
+  if(isNaN(d.getTime())) return "—";
+  return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear();
+}
+/* " · N vencidos" para las tarjetas de empleado, o "" si no hay ninguno. */
+function empVencMeta(items){
+  var n=(items||[]).filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
+  return n?(' · <span style="color:var(--brick);font-weight:700">'+n+' vencido'+(n===1?'':'s')+'</span>'):'';
+}
+/* Empleados que listan las áreas del módulo 2: activos, más los inactivos si se pidió verlos.
+   Los inactivos siguen teniendo legajo, documentación y antecedentes que hay que poder consultar. */
+function moduleEmployees(){
+  var all=state.emp.items||[];
+  return state.empPickInactive ? all.slice() : all.filter(function(e){ return (e.status||"activo")==="activo"; });
+}
+function hasInactiveEmployees(){ return (state.emp.items||[]).some(function(e){ return (e.status||"activo")!=="activo"; }); }
+/* Selector de empleado compartido por las áreas del módulo 2.
+   Con 6 o más empleados agrega un buscador que filtra en el DOM (sin re-render, no se pierde el foco). */
+function empPicker(emps, action, metaFn){
+  var list=emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b), "es"); });
+  var html="";
+  var tools=[];
+  if(list.length>=6 || state.empPick){
+    tools.push('<div class="input-row" style="flex:1;min-width:220px"><span style="color:var(--muted)">'+ic('eye',14)+'</span>' +
+      '<input id="f_pick_search" type="text" placeholder="Buscar por nombre, N° de legajo, DNI o puesto…" value="'+esc(state.empPick||"")+'" autocomplete="off"></div>');
+  }
+  if(hasInactiveEmployees()){
+    tools.push('<label style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap">' +
+      '<input type="checkbox" id="f_pick_inactive"'+(state.empPickInactive?' checked':'')+'> Incluir inactivos</label>');
+  }
+  if(tools.length) html += '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">'+tools.join("")+'</div>';
+  html += '<div id="pickList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
+  list.forEach(function(e){
+    var off=((e.status||"activo")!=="activo");
+    var skey=((e.legajo_number||"")+" "+empFullName(e)+" "+(e.dni||"")+" "+(e.position||"")).toLowerCase();
+    html += '<button class="tile tile-light pickrow" data-search="'+esc(skey)+'" data-action="'+action+'" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer'+(off?';opacity:.62':'')+'">' +
+      '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:'+(off?'var(--surface-2)':'var(--teal-tint)')+';color:'+(off?'var(--muted)':'var(--teal)')+';font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
+      '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+(off?' <span style="font-size:11px;font-weight:700;color:var(--brick)">· inactivo</span>':'')+'</h3>' +
+      (e.position?('<p style="color:var(--muted)">'+esc(e.position)+'</p>'):'') +
+      '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+metaFn(e)+'</p></button>';
+  });
+  html += '</div>';
+  html += '<p id="pickNoMatch" style="display:none;font-size:13px;color:var(--muted);text-align:center;margin-top:14px">Ningún empleado coincide con la búsqueda.</p>';
+  return html;
+}
+/* Saldo de vacaciones del año en curso: asignados (automático o manual), gozados y disponibles. */
+function licVacBalance(e){
+  var year=new Date().getFullYear();
+  var vac=vacationEntitlement(e, year);
+  var override=(e.vacation_override!=null && e.vacation_override!=="")?parseInt(e.vacation_override,10):null;
+  if(override!=null && isNaN(override)) override=null;
+  var entitlement=(override!=null)?override:vac.auto;
+  var used=licVacUsed(e.id);
+  return { year:year, vac:vac, override:override, entitlement:entitlement, used:used, avail:entitlement-used };
+}
+/* Valida el legajo antes de guardar. Devuelve "" si está todo bien. */
+function empValidate(f){
+  if(!(f.first_name||"").trim() || !(f.last_name||"").trim()) return "Cargá el nombre y el apellido del empleado.";
+  var email=(f.email||"").trim();
+  if(email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return "El email no tiene un formato válido: «"+email+"». Corregilo (o dejalo vacío) para poder enviarle el legajo a firmar.";
+  var others=(state.emp.items||[]).filter(function(x){ return x.id!==f.id; });
+  var leg=(f.legajo_number||"").trim();
+  if(leg && others.some(function(x){ return String(x.legajo_number||"").trim()===leg; })) return "Ya hay otro empleado con el N° de legajo "+leg+".";
+  var dni=(f.dni||"").replace(/\D/g,"");
+  if(dni && others.some(function(x){ return String(x.dni||"").replace(/\D/g,"")===dni; })) return "Ya hay otro empleado con el DNI "+(f.dni||"").trim()+".";
+  var hoy=todayISO();
+  if(f.birth_date && hoy && f.birth_date>hoy) return "La fecha de nacimiento no puede ser futura.";
+  if(f.birth_date && f.hire_date && f.hire_date<f.birth_date) return "La fecha de ingreso no puede ser anterior a la de nacimiento.";
+  return "";
+}
 function leaveRangeLabel(l){ function f(d){ if(!d) return "—"; var p=String(d).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+p[0]; } return f(l.start_date)+" → "+f(l.end_date); }
 function licEmpLeaves(empId){ return (state.lic.items||[]).filter(function(l){ return l.employee_id===empId; }); }
 function licVacUsed(empId){ var y=new Date().getFullYear(); return licEmpLeaves(empId).filter(function(l){ var sd=parseYMD(String(l.start_date||"").slice(0,10)); return l.type==="vacaciones" && l.status==="aprobada" && sd && sd.getFullYear()===y; }).reduce(function(a,l){ return a+(parseInt(l.days,10)||leaveDays(l.start_date,l.end_date)); },0); }
-function goLicencias(){ state.error=null; state.lic.msg=""; state.lic.error=null; state.lic.emp=null; state.lic.form=null; state.screen="mod2-licencias"; render(); loadLicencias(); }
+function goLicencias(){ state.error=null; state.empPick=""; state.empPickInactive=false; state.lic.msg=""; state.lic.error=null; state.lic.emp=null; state.lic.form=null; state.screen="mod2-licencias"; render(); loadLicencias(); }
 function loadLicencias(){
   if(!(supaConfigured() && isLoggedIn())){ state.lic.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
   state.lic.loading=true; state.lic.error=null; render();
@@ -5471,9 +5494,27 @@ function licSave(empId){
   if(!f.start_date || !f.end_date){ state.lic.msg="Cargá las fechas desde y hasta."; render(); return; }
   var days=leaveDays(f.start_date, f.end_date);
   if(days<=0){ state.lic.msg="El rango de fechas no es válido (revisá desde/hasta)."; render(); return; }
+  // No dejamos superponer con otra licencia ya cargada del mismo empleado (las rechazadas no cuentan).
+  var clash=licEmpLeaves(empId).filter(function(l){
+    return l.status!=="rechazada" &&
+      String(l.start_date||"").slice(0,10) <= f.end_date &&
+      String(l.end_date||"").slice(0,10) >= f.start_date;
+  })[0];
+  if(clash){
+    state.lic.msg="Se superpone con otra licencia ya cargada ("+((LEAVE_TYPES[clash.type]||{}).label||clash.type)+" "+leaveRangeLabel(clash)+"). Revisá las fechas.";
+    render(); return;
+  }
   var row={ employee_id:empId, type:f.type, start_date:f.start_date, end_date:f.end_date, days:days, status:"pendiente", note:(f.note||"").trim() };
   state.lic.saving=true; render();
-  dbCreateLeave(row).then(function(){ state.lic.form=null; state.lic.saving=false; state.lic.msg="Solicitud cargada."; return dbListLeaves().then(function(l){ state.lic.items=l||[]; render(); }); })
+  dbCreateLeave(row).then(function(){
+    state.lic.form=null; state.lic.saving=false; state.lic.msg="Solicitud cargada.";
+    // Si son vacaciones y no alcanza el saldo del año, lo avisamos (igual queda cargada).
+    if(f.type==="vacaciones"){
+      var emp=(state.emp.items||[]).filter(function(x){ return x.id===empId; })[0];
+      if(emp){ var b=licVacBalance(emp); if(days>b.avail) state.lic.msg="Solicitud cargada. ⚠ Supera el saldo de vacaciones "+b.year+": pide "+days+" día(s) y quedan "+b.avail+" disponibles."; }
+    }
+    return dbListLeaves().then(function(l){ state.lic.items=l||[]; render(); });
+  })
     .catch(function(){ state.lic.saving=false; state.lic.msg="No pude guardar la solicitud (¿corriste el SQL de licencias?)."; render(); });
 }
 function licSetStatus(id, status){ dbUpdateLeave(id, { status:status }).then(function(){ return dbListLeaves(); }).then(function(l){ state.lic.items=l||[]; state.lic.msg=(status==="aprobada"?"Solicitud aprobada.":(status==="rechazada"?"Solicitud rechazada.":"")); render(); }).catch(function(){ state.lic.msg="No pude actualizar el estado."; render(); }); }
@@ -5501,7 +5542,7 @@ var PERF_TYPES = {
 var PERF_STATUS = { pendiente:"Pendiente", en_curso:"En curso", cumplido:"Cumplido" };
 function perfStars(n){ n=parseInt(n,10)||0; var out=""; for(var i=1;i<=5;i++){ out+= (i<=n?"★":"☆"); } return out; }
 function perfEmpItems(empId){ return (state.perf.items||[]).filter(function(p){ return p.employee_id===empId; }); }
-function goDesempeno(){ state.error=null; state.perf.msg=""; state.perf.error=null; state.perf.emp=null; state.perf.form=null; state.screen="mod2-desempeno"; render(); loadDesempeno(); }
+function goDesempeno(){ state.error=null; state.empPick=""; state.empPickInactive=false; state.perf.msg=""; state.perf.error=null; state.perf.emp=null; state.perf.form=null; state.screen="mod2-desempeno"; render(); loadDesempeno(); }
 function loadDesempeno(){
   if(!(supaConfigured() && isLoggedIn())){ state.perf.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
   state.perf.loading=true; state.perf.error=null; render();
@@ -5544,7 +5585,7 @@ function perfEmpContext(e){
   if(e.contract_type) leg.push("Contrato: "+e.contract_type);
   if(leg.length) L.push("LEGAJO: "+leg.join(" · "));
   var items=perfEmpItems(e.id);
-  function fD(ts){ try{ var d=new Date(ts); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(x){ return ""; } }
+  var fD=fDMY;
   ["objetivo","competencia","evaluacion","feedback","mejora"].forEach(function(ty){
     var arr=items.filter(function(p){ return p.type===ty; });
     if(!arr.length) return;
@@ -5606,7 +5647,7 @@ var TRAIN_TYPES = {
 var TRAIN_STATUS = { pendiente:"Pendiente", en_curso:"En curso", completado:"Completado" };
 function capEmpItems(empId){ return (state.cap.items||[]).filter(function(t){ return t.employee_id===empId; }); }
 function daysUntil(dateStr){ var d=parseYMD(String(dateStr||"").slice(0,10)); if(!d) return null; var t=new Date(); t.setHours(0,0,0,0); return Math.round((d-t)/(864e5)); }
-function goCapacitacion(){ state.error=null; state.cap.msg=""; state.cap.error=null; state.cap.emp=null; state.cap.form=null; state.screen="mod2-capacitacion"; render(); loadCapacitacion(); }
+function goCapacitacion(){ state.error=null; state.empPick=""; state.empPickInactive=false; state.cap.msg=""; state.cap.error=null; state.cap.emp=null; state.cap.form=null; state.screen="mod2-capacitacion"; render(); loadCapacitacion(); }
 function loadCapacitacion(){
   if(!(supaConfigured() && isLoggedIn())){ state.cap.items=[]; if(state.emp.items===null) state.emp.items=[]; if(state.perf.items===null) state.perf.items=[]; render(); return; }
   state.cap.loading=true; state.cap.error=null; render();
@@ -5675,7 +5716,7 @@ var HS_SUB_ACC = { laboral:"Laboral", in_itinere:"In itínere" };
 var HS_RESULT = { apto:"Apto", apto_restricciones:"Apto con restricciones", no_apto:"No apto" };
 function hsSubOptions(type){ return type==="preocupacional"?HS_SUB_PRE:(type==="accidente"?HS_SUB_ACC:null); }
 function hsEmpItems(empId){ return (state.hs.items||[]).filter(function(t){ return t.employee_id===empId; }); }
-function goSalud(){ state.error=null; state.hs.msg=""; state.hs.error=null; state.hs.emp=null; state.hs.form=null; state.screen="mod2-salud"; render(); loadSalud(); }
+function goSalud(){ state.error=null; state.empPick=""; state.empPickInactive=false; state.hs.msg=""; state.hs.error=null; state.hs.emp=null; state.hs.form=null; state.screen="mod2-salud"; render(); loadSalud(); }
 function loadSalud(){
   if(!(supaConfigured() && isLoggedIn())){ state.hs.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
   state.hs.loading=true; state.hs.error=null; render();
@@ -5776,7 +5817,7 @@ var DOC_TYPES = {
   otro:{        label:"Otro documento", color:"var(--muted)" }
 };
 function docEmpItems(empId){ return (state.doc.items||[]).filter(function(t){ return t.employee_id===empId; }); }
-function goDocumentacion(){ state.error=null; state.doc.msg=""; state.doc.error=null; state.doc.emp=null; state.doc.form=null; state.screen="mod2-documentacion"; render(); loadDocumentacion(); }
+function goDocumentacion(){ state.error=null; state.empPick=""; state.empPickInactive=false; state.doc.msg=""; state.doc.error=null; state.doc.emp=null; state.doc.form=null; state.screen="mod2-documentacion"; render(); loadDocumentacion(); }
 function loadDocumentacion(){
   if(!(supaConfigured() && isLoggedIn())){ state.doc.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
   state.doc.loading=true; state.doc.error=null; render();
@@ -5898,7 +5939,7 @@ var BEN_FOLDERS = {
   }
 };
 function benEmpItems(empId){ return (state.ben.items||[]).filter(function(t){ return t.employee_id===empId; }); }
-function benDate(str){ var d=parseYMD(String(str||"").slice(0,10)); if(!d||isNaN(d.getTime())) return "—"; return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }
+function benDate(str){ return fDMY(String(str||"").slice(0,10)); }
 function benMoney(v){
   var n=Number(v); if(v==null||v===""||!isFinite(n)) return "—";
   var s=Math.round(Math.abs(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
@@ -5919,7 +5960,7 @@ function benLoan(t){
   var pct = total ? Math.min(100, Math.round(paid*100/total)) : (saldo>0?0:100);
   return { total:total, paid:paid, each:each, amount:amount, saldo:saldo, pct:pct };
 }
-function goBeneficios(){ state.error=null; state.ben.msg=""; state.ben.error=null; state.ben.emp=null; state.ben.folder=null; state.ben.form=null; state.ben.ui={}; state.screen="mod2-beneficios"; render(); loadBeneficios(); }
+function goBeneficios(){ state.error=null; state.empPick=""; state.empPickInactive=false; state.ben.msg=""; state.ben.error=null; state.ben.emp=null; state.ben.folder=null; state.ben.form=null; state.ben.ui={}; state.screen="mod2-beneficios"; render(); loadBeneficios(); }
 function loadBeneficios(){
   if(!(supaConfigured() && isLoggedIn())){ state.ben.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
   state.ben.loading=true; state.ben.error=null; render();
@@ -7454,6 +7495,18 @@ function bind(){
     f.addEventListener("input", function(e){ state.emp.search=e.target.value; applyEmpFilter(); });
     applyEmpFilter();
   }
+  // ---- Selector de empleado de las áreas del módulo 2 ----
+  if ((f=document.getElementById("f_pick_search"))){
+    var applyPickFilter=function(){
+      var qq=(state.empPick||"").trim().toLowerCase(), shown=0;
+      var rows=document.querySelectorAll("#pickList .pickrow");
+      rows.forEach(function(row){ var k=row.getAttribute("data-search")||""; var m=!qq||k.indexOf(qq)>=0; row.style.display=m?"":"none"; if(m)shown++; });
+      var nm=document.getElementById("pickNoMatch"); if(nm) nm.style.display=(rows.length && !shown)?"block":"none";
+    };
+    f.addEventListener("input", function(e){ state.empPick=e.target.value; applyPickFilter(); });
+    applyPickFilter();
+  }
+  if ((f=document.getElementById("f_pick_inactive"))) f.addEventListener("change", function(e){ state.empPickInactive=e.target.checked; render(); });
   // ---- ABM: buscador de empleados (por N° de legajo, nombre, DNI) ----
   if ((f=document.getElementById("f_abm_search"))){
     var applyAbmFilter=function(){
