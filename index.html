@@ -1707,7 +1707,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v34.4-r99";
+var APP_VERSION = "v34.5-r100";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -3315,10 +3315,11 @@ function recSideNav(active){
     item('jobs','go-jobs','briefcase','Portal de búsquedas')+
     item('config','go-config','sparkle','Nueva entrevista')+
     item('cvs','go-cvhome','trophy','Screening de CVs')+
-    item('dash','go-recruiterhome','eye','Entrevistas realizadas')+
+    item('dash','go-dash','eye','Entrevistas realizadas')+
     '<div style="flex:1;min-height:14px"></div>'+
     item('guide','go-guide','info','¿Cómo funciona?')+
-    '<button class="btn btn-sm" data-action="logout" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;background:transparent;color:var(--muted);border:1px solid var(--border)">'+ic('back',16)+' Salir</button>'+
+    '<button class="btn btn-sm" data-action="go-hub" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;background:transparent;color:var(--ink);border:1px solid var(--border)">'+ic('back',16)+' Volver a áreas</button>'+
+    '<button class="btn btn-sm" data-action="logout" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;background:transparent;color:var(--muted);border:1px solid var(--border)">'+ic('lock',16)+' Salir</button>'+
   '</aside>';
 }
 /* Envuelve una pantalla del Módulo 1 con la barra lateral, a todo el ancho. */
@@ -6828,6 +6829,7 @@ function bind(){
       else if (act === "hide-guide"){ try{ lset("voz_guide","off"); }catch(e){} render(); }
       else if (act === "show-guide"){ try{ lset("voz_guide","on"); }catch(e){} render(); }
       else if (act === "go-guide"){ try{ lset("voz_guide","on"); }catch(e){} goRecruiterHome(); }
+      else if (act === "go-dash"){ try{ lset("voz_guide","off"); }catch(e){} goRecruiterHome(); }
       else if (act === "open-joblink"){ var jc=el.getAttribute("data-code")||""; if(jc){ try{ window.open(computeJobLink(jc), "_blank"); }catch(e){} } }
       else if (act === "copy-joblink"){
         var jl=el.getAttribute("data-link")||"";
