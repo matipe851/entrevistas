@@ -106,7 +106,8 @@
 html,body{height:100%}
 body{
   margin:0;
-  background:var(--bg);
+  background:radial-gradient(1100px 520px at 50% -8%, rgba(37,99,235,.16), rgba(37,99,235,0) 62%), var(--bg);
+  background-attachment:fixed;
   color:var(--ink);
   font-family:"Public Sans", ui-sans-serif, system-ui, sans-serif;
   font-size:15px;
@@ -114,7 +115,7 @@ body{
   -webkit-font-smoothing:antialiased;
 }
 ::selection{ background:var(--teal); color:var(--cta-fg); }
-h1,h2,h3{ font-family:"Fraunces", Georgia, serif; font-weight:600; letter-spacing:-.01em; text-wrap:balance; margin:0; }
+h1,h2,h3{ font-family:"Inter","Public Sans", ui-sans-serif, system-ui, sans-serif; font-weight:700; letter-spacing:-.015em; text-wrap:balance; margin:0; }
 a{ color:inherit; }
 button{ font-family:inherit; }
 button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-action:manipulation; -webkit-tap-highlight-color:rgba(20,60,60,0.08); }
@@ -122,6 +123,7 @@ button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-act
 .mono{ font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; }
 .wrap{ max-width:760px; margin:0 auto; padding:40px 20px 64px; }
 @media (min-width:640px){ .wrap{ padding:56px 32px 80px; } }
+@media (max-width:640px){ .rec-side{ flex-basis:100% !important; } }
 
 /* header */
 .hdr{ display:flex; align-items:center; gap:14px; margin-bottom:36px; }
@@ -1699,7 +1701,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v34.2-r97";
+var APP_VERSION = "v34.3-r98";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -3322,22 +3324,34 @@ function GuideCard(){
 Screens["rec-home"] = function(){
   if (supaConfigured()){
     var u = currentUser();
+    var navBtn = function(action, icon, label, primary){
+      return '<button class="btn '+(primary?'btn-primary':'btn-ghost')+' btn-sm" data-action="'+action+'" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px">'+ic(icon,16)+' '+label+'</button>';
+    };
+    var guideOpen = !guideHidden();
+    var sidebar =
+      '<aside class="rec-side" style="flex:0 0 236px;align-self:stretch;display:flex;flex-direction:column;gap:9px;background:rgba(15,23,42,.5);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(37,99,235,.30);border-radius:18px;padding:16px;box-shadow:0 18px 44px rgba(0,0,0,.35),0 0 24px rgba(37,99,235,.14)">' +
+        '<span style="font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:2px 4px 6px">Accesos</span>' +
+        navBtn('go-jobs','briefcase','Portal de búsquedas') +
+        navBtn('go-config','sparkle','Nueva entrevista', true) +
+        navBtn('go-cvhome','trophy','Screening de CVs') +
+        navBtn('reload-dash','rotate','Actualizar') +
+        '<div style="flex:1;min-height:14px"></div>' +
+        navBtn(guideOpen?'hide-guide':'show-guide','info', guideOpen?'Ocultar guía':'¿Cómo funciona? Ver la guía') +
+      '</aside>';
+    var main =
+      '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px">' +
+        '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+          '<div><span style="font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--teal)">Módulo 1</span><h2 style="font-size:20px">Reclutamiento y selección</h2><p style="font-size:12.5px;color:var(--muted);margin:2px 0 0">'+esc(u&&u.email||'')+'</p></div>' +
+          '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
+        '</div>' +
+        (guideOpen ? GuideCard() : '') +
+        MetricsPanel() +
+        '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('eye',18)+'<h3 style="font-size:15px;color:var(--ink)">Entrevistas realizadas</h3></div>' +
+        DashboardList() +
+      '</div>';
     return Header() +
-    backlink("go-hub","Volver a áreas") +
-    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px;flex-wrap:wrap">' +
-      '<div><span style="font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--teal)">Módulo 1</span><h2 style="font-size:18px">Reclutamiento y selección</h2><p style="font-size:12.5px;color:var(--muted);margin:2px 0 0">'+esc(u&&u.email||'')+'</p></div>' +
-      '<div style="display:flex;gap:8px">' +
-        '<button class="btn btn-primary btn-sm" data-action="go-config">'+ic('sparkle',14)+' Nueva entrevista</button>' +
-        '<button class="btn btn-ghost btn-sm" data-action="go-cvhome">'+ic('trophy',14)+' Screening de CVs</button>' +
-        '<button class="btn btn-ghost btn-sm" data-action="go-jobs">'+ic('briefcase',14)+' Portal de búsquedas</button>' +
-        '<button class="btn btn-ghost btn-sm" data-action="reload-dash" title="Actualizar">'+ic('rotate',14)+'</button>' +
-        '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
-      '</div>' +
-    '</div>' +
-    GuideCard() +
-    MetricsPanel() +
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--teal)">'+ic('eye',18)+'<h3 style="font-size:15px;color:var(--ink)">Entrevistas realizadas</h3></div>' +
-    DashboardList();
+      backlink("go-hub","Volver a áreas") +
+      '<div style="display:flex;gap:18px;align-items:stretch;flex-wrap:wrap">' + sidebar + main + '</div>';
   }
   return Header() +
   Note("info", ic('shield',13)+' &nbsp;Sesión de reclutador — solo vos ves la configuración y las evaluaciones en este navegador.') +
