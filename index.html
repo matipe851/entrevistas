@@ -1,5 +1,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>try{document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
 <title>TalentIA — Consultora de RR.HH. con IA</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -56,9 +57,9 @@
     --muted:#96A6BA;
     --border:#26394F;
     --border-soft:#1D2C3E;
-    --teal:#5A9BE8;
-    --teal-strong:#86B7F0;
-    --teal-tint:#16293E;
+    --teal:#E9B44C;
+    --teal-strong:#F4CE7A;
+    --teal-tint:#35290F;
     --brick:#E38079;
     --brick-tint:#33201E;
     --amber:#E0B767;
@@ -69,10 +70,10 @@
     --blue-tint:#172A3E;
     --green:#6FC9A2;
     --green-tint:#152E26;
-    --cta-bg:#E9EFF7;
-    --cta-fg:#0D1826;
+    --cta-bg:#E9A83C;
+    --cta-fg:#201400;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
-    --ring: rgba(90,155,232,.35);
+    --ring: rgba(233,180,76,.35);
   }
 }
 :root[data-theme="dark"]{
@@ -83,9 +84,9 @@
   --muted:#96A6BA;
   --border:#26394F;
   --border-soft:#1D2C3E;
-  --teal:#5A9BE8;
-  --teal-strong:#86B7F0;
-  --teal-tint:#16293E;
+  --teal:#E9B44C;
+  --teal-strong:#F4CE7A;
+  --teal-tint:#35290F;
   --brick:#E38079;
   --brick-tint:#33201E;
   --amber:#E0B767;
@@ -96,10 +97,10 @@
   --blue-tint:#172A3E;
   --green:#6FC9A2;
   --green-tint:#152E26;
-  --cta-bg:#E9EFF7;
-  --cta-fg:#0D1826;
+  --cta-bg:#E9A83C;
+  --cta-fg:#201400;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
-  --ring: rgba(90,155,232,.35);
+  --ring: rgba(233,180,76,.35);
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -145,7 +146,8 @@ button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-act
 .tile{ display:flex; flex-direction:column; align-items:flex-start; gap:12px; border-radius:18px; padding:26px; text-align:left; cursor:pointer; border:1px solid transparent; transition:transform .15s ease; }
 .tile:hover{ transform:translateY(-2px); }
 .tile:active{ transform:translateY(0) scale(.99); }
-.tile-dark{ background:var(--ink); color:var(--bg); }
+.tile-dark{ background:var(--surface-2); color:var(--ink); border:1px solid rgba(233,180,76,.26); box-shadow:var(--shadow); }
+.tile-dark:hover{ border-color:rgba(233,180,76,.5); }
 .tile-light{ background:var(--surface); border-color:var(--border); color:var(--ink); }
 .tile h3{ font-size:17.5px; }
 .tile p{ margin:0; font-size:13.5px; opacity:.82; line-height:1.5; }
@@ -176,7 +178,7 @@ select.bare:focus{ border-color:var(--teal); box-shadow:0 0 0 3px var(--ring); }
 .btn:active{ transform:scale(.98); }
 .btn[disabled]{ cursor:not-allowed; opacity:.5; }
 .btn-primary{ background:var(--cta-bg); color:var(--cta-fg); }
-.btn-teal{ background:var(--teal); color:#fff; }
+.btn-teal{ background:var(--teal); color:#231600; font-weight:700; }
 .btn-ghost{ background:var(--surface); color:var(--ink); border:1px solid var(--border); }
 .btn-ghost:hover{ border-color:var(--teal); }
 .btn-block{ width:100%; }
@@ -1697,7 +1699,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v33.9-r94";
+var APP_VERSION = "v34.0-r95";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1932,8 +1934,8 @@ function DashboardList(){
 function areaTile(a){
   if (a.active){
     return '<button class="tile tile-dark" data-action="'+a.action+'"'+(a.dataAttr||'')+' style="text-align:left">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">' + ic(a.icon,22) +
-      '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:rgba(255,255,255,.18);color:#fff;padding:3px 9px;border-radius:999px">'+esc(a.tag)+'</span></div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">' + '<span style="color:var(--teal)">'+ic(a.icon,22)+'</span>' +
+      '<span style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:var(--teal-tint);color:var(--teal-strong);padding:3px 9px;border-radius:999px">'+esc(a.tag)+'</span></div>' +
       '<h3>'+esc(a.title)+'</h3><p>'+esc(a.desc)+'</p></button>';
   }
   return '<div class="tile tile-light" style="text-align:left;opacity:.6;cursor:default;border-style:dashed">' +
@@ -1982,6 +1984,7 @@ Screens["hub"] = function(){
         '<div style="display:flex;gap:22px;flex-wrap:wrap;justify-content:center;width:100%">' +
           card({ icon:"sparkle", tag:"MÓDULO 1", title:"Reclutamiento y Selección", desc:"Entrevistas por audio con preguntas a medida, evaluación automática y screening de CVs.", action:"go-module-recruit", btn:"Comenzar ahora" }) +
           card({ icon:"users", tag:"MÓDULO 2", title:"Administración de personal", desc:"Legajo, altas y bajas, asistencia, vacaciones, sueldos, capacitación, reportes y más.", action:"go-module-admin-hr", btn:"Gestionar equipo" }) +
+          card({ icon:"globe", tag:"MÓDULO 3", title:"Clima y Cultura", desc:"Encuestas de clima, eNPS, feedback y reconocimiento, valores y planes de acción para un mejor ambiente laboral.", action:"go-module-clima", btn:"Explorar" }) +
         '</div>' +
       '</div>' +
     '</div>' +
@@ -2010,6 +2013,25 @@ Screens["mod2-home"] = function(){
       '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('users',20)+'<h2 style="font-size:18px;color:var(--ink)">Administración de personal</h2></div>' +
     '</div>' +
     '<p style="font-size:13px;color:var(--muted);margin:6px 0 18px">Todas las herramientas para gestionar al personal ya dado de alta. Vamos a ir activando cada área.</p>' +
+    '<div class="grid2">' + areaCards(areas) + '</div>';
+};
+
+/* ===================== MÓDULO 3: CLIMA Y CULTURA ===================== */
+Screens["mod3-home"] = function(){
+  var areas = [
+    { icon:"list",     tag:"Próximamente", title:"1 · Encuestas de clima",        desc:"Encuestas anónimas periódicas por equipo/área, con dimensiones y resultados comparables." },
+    { icon:"eye",      tag:"Próximamente", title:"2 · eNPS y satisfacción",       desc:"Medición del Employee Net Promoter Score y de la satisfacción del personal en el tiempo." },
+    { icon:"msg",      tag:"Próximamente", title:"3 · Feedback y reconocimiento",  desc:"Canal de feedback continuo, felicitaciones y reconocimientos entre colaboradores." },
+    { icon:"trophy",   tag:"Próximamente", title:"4 · Valores y cultura",          desc:"Valores de la empresa, encuestas de alineamiento cultural y embajadores de cultura." },
+    { icon:"square",   tag:"Próximamente", title:"5 · Planes de acción",           desc:"Del diagnóstico a la acción: iniciativas, responsables y seguimiento del impacto." },
+    { icon:"send",     tag:"Próximamente", title:"6 · Comunicación interna",       desc:"Anuncios, novedades y campañas internas para mantener al equipo conectado." }
+  ];
+  return Header() +
+    backlink("go-hub","Volver a áreas") +
+    '<div style="margin-bottom:6px"><span style="font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--teal)">Módulo 3</span>' +
+      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('globe',20)+'<h2 style="font-size:18px;color:var(--ink)">Clima y Cultura</h2></div>' +
+    '</div>' +
+    '<p style="font-size:13px;color:var(--muted);margin:6px 0 18px">Herramientas para medir y mejorar el clima laboral, la cultura y el compromiso del equipo. Vamos a ir activando cada área.</p>' +
     '<div class="grid2">' + areaCards(areas) + '</div>';
 };
 
@@ -4596,6 +4618,7 @@ function goHome(){ resetInterview(); state.error=null; enterRecruiter(); }
 function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="rec-home"; render(); if (supaConfigured() && isLoggedIn()) loadDashboard(); }
 function goHub(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="hub"; render(); }
 function goMod2(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod2-home"; render(); }
+function goMod3(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod3-home"; render(); }
 /* ---- Módulo 2 · Legajo del empleado ---- */
 function emptyEmpForm(){
   return { id:null, legajo_number:"", first_name:"", last_name:"", birth_date:"", dni:"", cuil:"", address:"", email:"", phone:"",
@@ -6659,6 +6682,7 @@ function bind(){
       else if (act === "go-hub") goHub();
       else if (act === "go-module-recruit") goRecruiterHome();
       else if (act === "go-module-admin-hr") goMod2();
+      else if (act === "go-module-clima") goMod3();
       else if (act === "go-legajo") goLegajo();
       else if (act === "emp-new") newEmployee();
       else if (act === "emp-open"){ openEmployee(el.getAttribute("data-id")); }
