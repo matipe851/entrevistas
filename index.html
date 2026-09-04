@@ -791,6 +791,22 @@ function dbUpdateDoc(id, patch){
 function dbDeleteDoc(id){
   return supaFetch("/rest/v1/hr_documents?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
+/* ----- Beneficios ----- */
+function dbListBenefits(){
+  return supaFetch("/rest/v1/benefits?select=*&order=created_at.desc").then(function(r){ return r.json(); })
+    .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
+}
+function dbCreateBenefit(row){
+  return supaFetch("/rest/v1/benefits", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateBenefit(id, patch){
+  return supaFetch("/rest/v1/benefits?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeleteBenefit(id){
+  return supaFetch("/rest/v1/benefits?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
   return supaFetch("/rest/v1/question_bank?select=id,text,category&order=created_at.desc")
@@ -1700,6 +1716,7 @@ var state = {
   cap: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ai:null },
   hs: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ui:{} },
   doc: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ui:{} },
+  ben: { loading:false, items:null, error:null, msg:"", emp:null, folder:null, form:null, ui:{} },
   fichador: null,
   sign: null,
   brand: { name:"", logo:"" },
@@ -1724,7 +1741,7 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 var REC_SHELL_SCREENS = { "rec-home":"dash", "cv-home":"cvs", "jobs-home":"jobs", "config":"config" };
-var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion" };
+var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion", "mod2-beneficios":"beneficios" };
 function render(){
   var out = Screens[state.screen]();
   if (supaConfigured() && isLoggedIn()){
@@ -2040,7 +2057,7 @@ Screens["mod2-home"] = function(){
     { active:true, action:"go-capacitacion", icon:"users", tag:"Activo", title:"7 · Capacitación", desc:"Por empleado: cursos, certificados, vencimientos, capacitaciones obligatorias e historial, con sugerencias de la IA según su desempeño." },
     { active:true, action:"go-salud", icon:"shield", tag:"Activo", title:"8 · Salud y seguridad", desc:"Por empleado: exámenes preocupacionales, periódicos, ART, accidentes, entrega de EPP y aptos médicos, con adjuntos y vencimientos." },
     { active:true, action:"go-documentacion", icon:"copy", tag:"Activo", title:"9 · Documentación", desc:"Por empleado: contratos, recibos, certificados, constancias, firmas digitales y vencimientos, con lectura de PDF por IA." },
-    { icon:"check",    tag:"Próximamente", title:"10 · Beneficios",                 desc:"Obra social, bonos, descuentos y beneficios asignados." },
+    { active:true, action:"go-beneficios", icon:"sparkle", tag:"Activo", title:"10 · Beneficios", desc:"Por empleado, en subcarpetas: obra social, prepaga, bonificaciones, beneficios corporativos y préstamos, con adjuntos y vencimientos." },
     { icon:"list",     tag:"Próximamente", title:"11 · Reportes",                   desc:"Indicadores de headcount, rotación, ausentismo y costos." },
     { icon:"back",     tag:"Próximamente", title:"12 · Off boarding",               desc:"Proceso de egreso: liquidación final, entrega y documentación." }
   ];
@@ -3198,6 +3215,182 @@ Screens["mod2-documentacion"] = function(){
   return html;
 };
 
+/* ---- Módulo 2 · Beneficios (carpeta con subcarpetas) ---- */
+Screens["mod2-beneficios"] = function(){
+  var s=state.ben;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('sparkle',20)+'<h2 style="font-size:18px;color:var(--ink)">Beneficios</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">Elegí un empleado y abrí la subcarpeta que necesites: obra social, prepaga, bonificaciones, beneficios corporativos y préstamos. Podés adjuntar credenciales o convenios y la IA lee el PDF para completar los casilleros.</p>';
+  if(s.msg) html += Note("ok", esc(s.msg));
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
+  var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+
+  /* 1) Elegir empleado */
+  if(!s.emp){
+    if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">';
+    emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b)); }).forEach(function(e){
+      var its=benEmpItems(e.id);
+      var act=its.filter(function(t){ return (t.status||"activo")==="activo"; }).length;
+      var venc=its.filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
+      html += '<button class="tile tile-light" data-action="ben-emp" data-e="'+esc(e.id)+'" style="text-align:left;cursor:pointer">' +
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--teal-tint);color:var(--teal);font-weight:800">'+esc((empFullName(e)[0]||"?").toUpperCase())+'</span>' +
+        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(empFullName(e))+'</h3>' +
+        '<p>'+(e.legajo_number?('Leg. '+esc(e.legajo_number)+' · '):'')+(its.length?(act+' activo'+(act===1?'':'s')+' de '+its.length):'Abrir carpeta')+(venc?(' · <span style="color:var(--brick);font-weight:700">'+venc+' vencido'+(venc===1?'':'s')+'</span>'):'')+'</p></button>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  var e=emps.filter(function(x){ return x.id===s.emp; })[0] || (state.emp.items||[]).filter(function(x){ return x.id===s.emp; })[0];
+  if(!e){ html += Note("err","No encontré a este empleado."); return html; }
+  var items=benEmpItems(e.id);
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="ben-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span></div>';
+
+  /* 2) Carpeta del empleado: las 5 subcarpetas */
+  if(!s.folder){
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px">';
+    BEN_ORDER.forEach(function(k){
+      var cfg=BEN_FOLDERS[k];
+      var arr=items.filter(function(t){ return t.type===k; });
+      var act=arr.filter(function(t){ return (t.status||"activo")==="activo"; }).length;
+      var venc=arr.filter(function(t){ var du=daysUntil(t.expiry_date); return du!=null && du<0; }).length;
+      html += '<button class="tile tile-light" data-action="ben-folder" data-f="'+esc(k)+'" style="text-align:left;cursor:pointer;border-left:3px solid '+cfg.color+'">' +
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:var(--surface-2);color:'+cfg.color+'">'+ic(cfg.icon,20)+'</span>' +
+        '<h3 style="margin:8px 0 2px;font-size:15px">'+esc(cfg.label)+'</h3>' +
+        '<p>'+esc(cfg.desc)+'</p>' +
+        '<p style="font-weight:700;color:'+cfg.color+'">'+arr.length+' registro'+(arr.length===1?'':'s')+(act?(' · '+act+' activo'+(act===1?'':'s')):'')+(venc?(' · <span style="color:var(--brick)">'+venc+' vencido'+(venc===1?'':'s')+'</span>'):'')+'</p>' +
+      '</button>';
+    });
+    html += '</div>';
+    html += benResumen(items);
+    return html;
+  }
+
+  /* 3) Dentro de una subcarpeta */
+  var cfg=BEN_FOLDERS[s.folder];
+  if(!cfg){ html += Note("err","Esa subcarpeta no existe."); return html; }
+  var arr=items.filter(function(t){ return t.type===s.folder; }).sort(function(a,b){ return new Date(b.created_at||0)-new Date(a.created_at||0); });
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">' +
+    '<button class="btn btn-ghost btn-sm" data-action="ben-folder-back">'+ic('back',14)+' Carpetas</button>' +
+    '<span style="display:inline-flex;align-items:center;gap:7px;font-weight:800;color:'+cfg.color+';font-size:15px">'+ic(cfg.icon,17)+esc(cfg.label)+'</span>' +
+    '<span style="font-size:12.5px;color:var(--muted)">'+arr.length+' registro'+(arr.length===1?'':'s')+'</span></div>';
+  if(!s.form){ html += '<button class="btn btn-primary btn-sm" data-action="ben-new" style="margin-bottom:14px">'+ic('plus',14)+' Nuevo registro</button>'; }
+  else { html += benForm(e, cfg, s.form); }
+  html += arr.length
+    ? ('<div style="display:grid;gap:8px">'+arr.map(function(t){ return benRow(t); }).join('')+'</div>')
+    : '<div style="padding:10px 12px;color:var(--muted);font-size:13px;background:var(--surface-2);border-radius:10px">— todavía no hay registros en esta subcarpeta</div>';
+  return html;
+};
+
+/* Formulario de alta dentro de una subcarpeta (los campos dependen de la carpeta). */
+function benForm(e, cfg, f){
+  var has=function(k){ return cfg.fields.indexOf(k)>=0; };
+  var fld=function(label, id, value, type, ph){
+    return '<label class="field"><span class="field-label">'+esc(label)+'</span><div class="input-row"><input id="'+id+'"'+(type?(' type="'+type+'"'):'')+' value="'+esc(value==null?"":String(value))+'" placeholder="'+esc(ph||"")+'"></div></label>';
+  };
+  var h='<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:'+cfg.color+';margin:0 0 10px">Nuevo registro · '+esc(cfg.label)+'</h3><div style="display:grid;gap:12px">';
+  h += '<div class="field"><span class="field-label">Comprobante — PDF (opcional)</span>' +
+    '<div id="f_ben_drop" style="border:2px dashed var(--border);border-radius:12px;padding:14px;text-align:center;background:var(--surface);transition:border-color .15s,background .15s">' +
+      '<p style="margin:0 0 8px;font-size:12.5px;color:var(--muted)">'+ic('file',15)+' Arrastrá el PDF acá (o elegí archivo). La IA lo lee y completa los casilleros automáticamente.</p>' +
+      '<input id="f_ben_file" type="file" accept=".pdf,application/pdf,image/*" style="font-size:13px;color:var(--muted)">' +
+      (f.reading?('<p style="margin:8px 0 0;font-size:12px;color:var(--teal)">'+ic('loader',12,'spin')+' Leyendo el PDF con IA…</p>'):'') +
+      (f.uploading?('<p style="margin:6px 0 0;font-size:12px;color:var(--teal)">'+ic('loader',12,'spin')+' Subiendo…</p>'):(f.file_url?('<p style="margin:6px 0 0;font-size:12px;color:var(--green)">'+ic('check',12)+' Adjunto: '+esc(f.file_name||"archivo")+'</p>'):(!audioUploadConfigured()?'<p style="margin:6px 0 0;font-size:12px;color:var(--muted)">Para adjuntar falta configurar Cloudinary.</p>':''))) +
+    '</div></div>';
+  h += fld(cfg.titleLabel||"Descripción", "f_ben_title", f.title, "", cfg.titlePh||"");
+  if(has("provider")) h += fld(cfg.providerLabel||"Proveedor", "f_ben_provider", f.provider, "", cfg.providerPh||"");
+  var g=[];
+  if(has("plan")) g.push(fld("Plan / categoría","f_ben_plan",f.plan,"",cfg.planPh||"Ej: 210, Plan Azul…"));
+  if(has("member_id")) g.push(fld(cfg.memberLabel||"N° de afiliado","f_ben_member",f.member_id,"","Ej: 1234567/01"));
+  if(has("amount")) g.push(fld(cfg.amountLabel||"Monto","f_ben_amount",f.amount,"number","0"));
+  if(has("frequency")) g.push('<label class="field"><span class="field-label">Periodicidad</span><select class="bare" id="f_ben_freq">'+Object.keys(BEN_FREQ).map(function(k){ return '<option value="'+k+'"'+((f.frequency||"mensual")===k?' selected':'')+'>'+esc(BEN_FREQ[k])+'</option>'; }).join('')+'</select></label>');
+  if(has("installments")) g.push(fld("Cantidad de cuotas","f_ben_inst",f.installments,"number","Ej: 12"));
+  if(has("installment_amount")) g.push(fld("Valor de cada cuota","f_ben_instamt",f.installment_amount,"number","0"));
+  if(has("installments_paid")) g.push(fld("Cuotas ya descontadas","f_ben_instpaid",f.installments_paid,"number","0"));
+  if(has("start_date")) g.push(fld(cfg.startLabel||"Fecha","f_ben_start",f.start_date,"date",""));
+  if(has("end_date")) g.push(fld(cfg.endLabel||"Vigente hasta (opcional)","f_ben_end",f.end_date,"date",""));
+  if(has("expiry_date")) g.push(fld(cfg.expiryLabel||"Vencimiento (opcional)","f_ben_exp",f.expiry_date,"date",""));
+  g.push('<label class="field"><span class="field-label">Estado</span><select class="bare" id="f_ben_status">'+Object.keys(BEN_STATUS).map(function(k){ return '<option value="'+k+'"'+((f.status||"activo")===k?' selected':'')+'>'+esc(BEN_STATUS[k].label)+'</option>'; }).join('')+'</select></label>');
+  h += '<div class="grid2" style="gap:12px">'+g.join('')+'</div>';
+  h += '<label class="field"><span class="field-label">Detalle (opcional)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_ben_detail" rows="2" placeholder="Notas del beneficio">'+esc(f.detail||"")+'</textarea></div></label>';
+  h += '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="ben-save" data-e="'+esc(e.id)+'"'+((state.ben.saving||f.uploading)?' disabled':'')+'>'+(state.ben.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="ben-cancel">Cancelar</button></div>';
+  return h + '</div></div>';
+}
+
+/* Una fila de beneficio. */
+function benRow(t){
+  var cfg=BEN_FOLDERS[t.type]||{ label:t.type, color:"var(--muted)", icon:"check" };
+  var st=BEN_STATUS[t.status||"activo"]||BEN_STATUS.activo;
+  var ui=(state.ben.ui && state.ben.ui[t.id]) || {};
+  var name=(t.title||"").trim() || (t.provider||"").trim() || cfg.label;
+  var meta=[];
+  if(t.provider && (t.title||"").trim()) meta.push(esc(t.provider));
+  if(t.plan) meta.push("Plan: "+esc(t.plan));
+  if(t.member_id) meta.push("N° "+esc(t.member_id));
+  if(t.start_date) meta.push("Desde "+benDate(t.start_date));
+  if(t.end_date) meta.push("hasta "+benDate(t.end_date));
+  var chips='<span class="badge" style="background:var(--surface);color:'+st.color+'">'+esc(st.label)+'</span>';
+  if(t.amount!=null && t.amount!=="" && isFinite(Number(t.amount))){
+    chips+='<span class="badge" style="background:var(--surface);color:'+cfg.color+'">'+benMoney(t.amount)+(t.frequency&&BEN_FREQ[t.frequency]?(' · '+esc(BEN_FREQ[t.frequency].toLowerCase())):'')+'</span>';
+  }
+  if(t.expiry_date){
+    var du=daysUntil(t.expiry_date);
+    var col=(du==null?"var(--muted)":(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)")));
+    chips+='<span class="badge" style="background:var(--surface);color:'+col+'">'+ic('clock',11)+' '+(du<0?("VENCIDO "+benDate(t.expiry_date)):("Vence "+benDate(t.expiry_date)+" · "+du+"d"))+'</span>';
+  }
+  var loan="";
+  if(t.type==="prestamos"){
+    var lb=benLoan(t);
+    loan='<div style="margin-top:8px">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:4px"><span>Cuota '+lb.paid+' de '+lb.total+(lb.each?(' · '+benMoney(lb.each)+' c/u'):'')+'</span><span style="color:'+(lb.saldo>0?'var(--brick)':'var(--green)')+';font-weight:700">Saldo '+benMoney(lb.saldo)+'</span></div>' +
+      '<div style="height:7px;border-radius:99px;background:var(--surface);overflow:hidden"><div style="height:100%;width:'+lb.pct+'%;background:'+(lb.pct>=100?'var(--green)':cfg.color)+'"></div></div>' +
+      '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
+        '<button class="btn btn-ghost btn-sm" data-action="ben-inst" data-id="'+esc(t.id)+'" data-d="1" style="font-size:11px;padding:5px 9px">'+ic('plus',12)+' Registrar cuota</button>' +
+        (lb.paid>0?('<button class="btn btn-ghost btn-sm" data-action="ben-inst" data-id="'+esc(t.id)+'" data-d="-1" style="font-size:11px;padding:5px 9px">Deshacer cuota</button>'):'') +
+      '</div></div>';
+  }
+  var fileRow = t.file_url ? ('<div style="margin-top:8px"><a href="'+esc(t.file_url)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--teal);text-decoration:none;background:var(--surface);border-radius:8px;padding:6px 10px">'+ic('file',13)+' Ver comprobante'+(t.file_name?(' ('+esc(t.file_name)+')'):'')+'</a></div>') : '';
+  var actions='<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">' +
+    Object.keys(BEN_STATUS).map(function(k){ return '<button class="btn btn-sm '+((t.status||"activo")===k?'btn-teal':'btn-ghost')+'" data-action="ben-status" data-id="'+esc(t.id)+'" data-s="'+k+'" style="font-size:11px;padding:5px 9px">'+esc(BEN_STATUS[k].label)+'</button>'; }).join('') +
+    '<label class="dl-audio" style="display:inline-flex;align-items:center;gap:5px;color:var(--teal);cursor:pointer;font-size:11px">'+ic('file',12)+' '+(t.file_url?"Reemplazar":"Adjuntar")+'<input type="file" accept=".pdf,application/pdf,image/*" data-benfile="'+esc(t.id)+'" style="display:none"></label>' +
+    '<button class="dl-audio" data-action="ben-del" data-id="'+esc(t.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;margin-left:auto">'+ic('trash',12)+' eliminar</button></div>';
+  return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px;border-left:3px solid '+cfg.color+'">' +
+    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><b style="font-size:13px;color:var(--ink)">'+esc(name)+'</b>'+(meta.length?(' <span style="font-size:12px;color:var(--muted)">· '+meta.join(" · ")+'</span>'):'')+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+chips+'</div></div>' +
+    (t.detail?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(t.detail)+'</p>'):'') +
+    loan + fileRow + actions +
+    (ui.msg?('<p style="font-size:12px;color:var(--brick);margin:8px 0 0">'+esc(ui.msg)+'</p>'):'') +
+  '</div>';
+}
+
+/* Resumen de la carpeta del empleado: costo mensual y vencimientos. */
+function benResumen(items){
+  var monthly=0;
+  items.forEach(function(t){
+    if((t.status||"activo")!=="activo") return;
+    if(t.type==="prestamos"){ var lb=benLoan(t); if(lb.saldo>0) monthly+=lb.each||0; return; }
+    var n=Number(t.amount); if(!isFinite(n)||t.amount==null||t.amount==="") return;
+    if((t.type==="bonificaciones"||t.type==="corporativos") && (t.frequency||"mensual")!=="mensual") return;
+    monthly+=n;
+  });
+  var act=items.filter(function(t){ return (t.status||"activo")==="activo"; }).length;
+  var venc=items.filter(function(t){ return t.expiry_date; }).sort(function(a,b){ return new Date(a.expiry_date)-new Date(b.expiry_date); });
+  var h='<div style="margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px">';
+  h+='<div style="padding:12px 14px;background:var(--surface-2);border-radius:12px"><p style="margin:0;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)">Costo mensual estimado</p><p style="margin:4px 0 0;font-size:20px;font-weight:800;color:var(--teal)">'+benMoney(monthly)+'</p><p style="margin:2px 0 0;font-size:11.5px;color:var(--muted)">Beneficios activos con importe mensual, más la cuota de los préstamos vigentes.</p></div>';
+  h+='<div style="padding:12px 14px;background:var(--surface-2);border-radius:12px"><p style="margin:0;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)">Registros</p><p style="margin:4px 0 0;font-size:20px;font-weight:800;color:var(--ink)">'+items.length+'</p><p style="margin:2px 0 0;font-size:11.5px;color:var(--muted)">'+act+' activo'+(act===1?'':'s')+' en las 5 subcarpetas.</p></div>';
+  h+='</div>';
+  h+='<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:var(--brick);margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">Vencimientos ('+venc.length+')</p>';
+  if(!venc.length){ h+='<div style="padding:8px 10px;color:var(--muted);font-size:13px">— sin vencimientos cargados</div>'; }
+  else {
+    h+='<div style="display:grid;gap:6px">'+venc.map(function(t){
+      var du=daysUntil(t.expiry_date); var col=(du<0?"var(--brick)":(du<=30?"var(--amber)":"var(--green)"));
+      var c=BEN_FOLDERS[t.type]||{label:t.type};
+      return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:var(--surface-2);border-radius:9px;font-size:13px"><span style="flex:1;min-width:120px;color:var(--ink)"><b>'+esc((t.title||"").trim()||(t.provider||"").trim()||c.label)+'</b> <span style="color:var(--muted);font-size:12px">· '+esc(c.label)+'</span></span><span style="color:'+col+';font-weight:700;white-space:nowrap">'+(du<0?("Vencido "+benDate(t.expiry_date)):("Vence "+benDate(t.expiry_date)+" · "+du+"d"))+'</span></div>';
+    }).join('')+'</div>';
+  }
+  return h+'</div>';
+}
+
 /* ---- Firma pública del legajo (empleado) ---- */
 Screens["sign-legajo"] = function(){
   var s=state.sign||{};
@@ -3390,6 +3583,7 @@ function mod2SideNav(active){
     { key:'capacitacion',  action:'go-capacitacion',    icon:'users',  label:'Capacitación' },
     { key:'salud',         action:'go-salud',           icon:'shield', label:'Salud y seguridad' },
     { key:'documentacion', action:'go-documentacion',   icon:'copy',   label:'Documentación' },
+    { key:'beneficios',    action:'go-beneficios',      icon:'sparkle',label:'Beneficios' },
     { spacer:true }
   ], sideFooterCommon());
 }
@@ -5528,7 +5722,7 @@ function hsAttachExisting(id, file){
 }
 
 /* ---- Lectura de PDF con IA para autocompletar el formulario ---- */
-function autofillStateFor(domain){ return domain==="salud"?state.hs:(domain==="documentacion"?state.doc:state.cap); }
+function autofillStateFor(domain){ return domain==="salud"?state.hs:(domain==="documentacion"?state.doc:(domain==="beneficios"?state.ben:state.cap)); }
 function autofillFromFile(file, domain, applyFn){
   var isPdf = /pdf/i.test(file.type||"") || /\.pdf$/i.test(file.name||"");
   var st = autofillStateFor(domain); var form = st.form;
@@ -5648,6 +5842,174 @@ function docApplyFields(fx){
   if(fx.signed===true) f.signed=true;
 }
 function docFormFile(file){ if(!file) return; docFormUpload(file); autofillFromFile(file, "documentacion", docApplyFields); }
+
+/* ---- Módulo 2 · Beneficios ---- */
+var BEN_STATUS = {
+  activo:     { label:"Activo",     color:"var(--green)"  },
+  pendiente:  { label:"Pendiente",  color:"var(--amber)"  },
+  suspendido: { label:"Suspendido", color:"var(--purple)" },
+  finalizado: { label:"Finalizado", color:"var(--muted)"  }
+};
+var BEN_FREQ = { mensual:"Mensual", trimestral:"Trimestral", semestral:"Semestral", anual:"Anual", unica:"Única vez" };
+var BEN_ORDER = ["obra_social","prepaga","bonificaciones","corporativos","prestamos"];
+var BEN_FOLDERS = {
+  obra_social: {
+    label:"Obra social", icon:"shield", color:"var(--teal)",
+    desc:"Entidad, plan, N° de afiliado, aporte y credencial.",
+    titleLabel:"Descripción (opcional)", titlePh:"Ej: Titular + grupo familiar",
+    providerLabel:"Obra social", providerPh:"Ej: OSECAC, OSDE, OSPE…",
+    memberLabel:"N° de afiliado", amountLabel:"Aporte mensual",
+    startLabel:"Alta / vigencia desde", expiryLabel:"Vencimiento de credencial (opcional)",
+    fields:["provider","plan","member_id","amount","start_date","expiry_date"]
+  },
+  prepaga: {
+    label:"Prepaga", icon:"check", color:"var(--blue)",
+    desc:"Medicina prepaga, plan, cuota y credencial.",
+    titleLabel:"Descripción (opcional)", titlePh:"Ej: Plan familiar con desregulación",
+    providerLabel:"Prepaga", providerPh:"Ej: Swiss Medical, OSDE, Galeno…",
+    memberLabel:"N° de socio", amountLabel:"Cuota mensual",
+    startLabel:"Alta / vigencia desde", expiryLabel:"Vencimiento de credencial (opcional)",
+    fields:["provider","plan","member_id","amount","start_date","expiry_date"]
+  },
+  bonificaciones: {
+    label:"Bonificaciones", icon:"trophy", color:"var(--purple)",
+    desc:"Bonos, premios y adicionales asignados.",
+    titleLabel:"Concepto", titlePh:"Ej: Bono por objetivos, presentismo…",
+    amountLabel:"Monto",
+    startLabel:"Fecha de otorgamiento", endLabel:"Vigente hasta (opcional)",
+    fields:["amount","frequency","start_date","end_date"]
+  },
+  corporativos: {
+    label:"Beneficios corporativos", icon:"building", color:"var(--amber)",
+    desc:"Gimnasio, guardería, almuerzo, convenios y descuentos.",
+    titleLabel:"Beneficio", titlePh:"Ej: Gimnasio, guardería, almuerzo…",
+    providerLabel:"Proveedor / convenio", providerPh:"Ej: SportClub, club de beneficios…",
+    amountLabel:"Valor / tope",
+    startLabel:"Vigente desde", endLabel:"Vigente hasta (opcional)",
+    fields:["provider","amount","frequency","start_date","end_date"]
+  },
+  prestamos: {
+    label:"Préstamos", icon:"briefcase", color:"var(--brick)",
+    desc:"Adelantos y préstamos con su plan de cuotas y saldo.",
+    titleLabel:"Motivo / concepto", titlePh:"Ej: Adelanto de sueldo, préstamo personal",
+    amountLabel:"Monto total otorgado",
+    startLabel:"Fecha de otorgamiento",
+    fields:["amount","installments","installment_amount","installments_paid","start_date"]
+  }
+};
+function benEmpItems(empId){ return (state.ben.items||[]).filter(function(t){ return t.employee_id===empId; }); }
+function benDate(str){ var d=parseYMD(String(str||"").slice(0,10)); if(!d||isNaN(d.getTime())) return "—"; return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }
+function benMoney(v){
+  var n=Number(v); if(v==null||v===""||!isFinite(n)) return "—";
+  var s=Math.round(Math.abs(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return (n<0?"-$":"$")+s;
+}
+/* Estado de un préstamo: cuotas pagadas, valor de cuota y saldo pendiente. */
+function benLoan(t){
+  var total=parseInt(t.installments,10)||0;
+  var paid=parseInt(t.installments_paid,10)||0;
+  if(paid<0) paid=0;
+  if(total && paid>total) paid=total;
+  var each=Number(t.installment_amount);
+  var amount=Number(t.amount);
+  if(!isFinite(amount)) amount=0;
+  if(!isFinite(each)||!each) each = total ? (amount/total) : 0;
+  if(!amount && each && total) amount=each*total;
+  var saldo=Math.max(0, amount - paid*each);
+  var pct = total ? Math.min(100, Math.round(paid*100/total)) : (saldo>0?0:100);
+  return { total:total, paid:paid, each:each, amount:amount, saldo:saldo, pct:pct };
+}
+function goBeneficios(){ state.error=null; state.ben.msg=""; state.ben.error=null; state.ben.emp=null; state.ben.folder=null; state.ben.form=null; state.ben.ui={}; state.screen="mod2-beneficios"; render(); loadBeneficios(); }
+function loadBeneficios(){
+  if(!(supaConfigured() && isLoggedIn())){ state.ben.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
+  state.ben.loading=true; state.ben.error=null; render();
+  Promise.all([ (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()), dbListBenefits() ])
+    .then(function(res){ state.emp.items=res[0]||[]; state.ben.items=res[1]||[]; state.ben.loading=false; render(); })
+    .catch(function(){ state.ben.loading=false; state.ben.error="No pude cargar los beneficios."; render(); });
+}
+function benNewForm(){
+  var folder=state.ben.folder||"obra_social";
+  state.ben.form={ type:folder, title:"", provider:"", plan:"", member_id:"", amount:"", installment_amount:"", installments:"", installments_paid:"", frequency:"mensual", status:"activo", start_date:"", end_date:"", expiry_date:"", detail:"", file_url:"", file_name:"" };
+  render();
+}
+function benSave(empId){
+  var f=state.ben.form, folder=state.ben.folder;
+  if(!f||!folder) return;
+  var cfg=BEN_FOLDERS[folder]; if(!cfg) return;
+  var has=function(k){ return cfg.fields.indexOf(k)>=0; };
+  var num=function(v){ return (v===""||v==null||!isFinite(Number(v))) ? null : Number(v); };
+  if(!(f.title||"").trim() && !(f.provider||"").trim() && !f.file_url){ state.ben.msg="Cargá al menos una descripción o el proveedor."; render(); return; }
+  var row={ employee_id:empId, type:folder, title:(f.title||"").trim(), detail:(f.detail||"").trim(), status:f.status||"activo" };
+  if(has("provider")) row.provider=(f.provider||"").trim();
+  if(has("plan")) row.plan=(f.plan||"").trim();
+  if(has("member_id")) row.member_id=(f.member_id||"").trim();
+  if(has("amount") && num(f.amount)!=null) row.amount=num(f.amount);
+  if(has("installment_amount") && num(f.installment_amount)!=null) row.installment_amount=num(f.installment_amount);
+  if(has("installments")) row.installments=parseInt(f.installments,10)||0;
+  if(has("installments_paid")) row.installments_paid=parseInt(f.installments_paid,10)||0;
+  if(has("frequency")) row.frequency=f.frequency||"mensual";
+  if(has("start_date") && f.start_date) row.start_date=f.start_date;
+  if(has("end_date") && f.end_date) row.end_date=f.end_date;
+  if(has("expiry_date") && f.expiry_date) row.expiry_date=f.expiry_date;
+  if(f.file_url){ row.file_url=f.file_url; row.file_name=f.file_name||""; }
+  state.ben.saving=true; render();
+  dbCreateBenefit(row).then(function(){ state.ben.form=null; state.ben.saving=false; state.ben.msg="Guardado."; return dbListBenefits().then(function(l){ state.ben.items=l||[]; render(); }); })
+    .catch(function(){ state.ben.saving=false; state.ben.msg="No pude guardar (¿corriste el SQL de beneficios, sql_beneficios.sql?)."; render(); });
+}
+function benSetStatus(id, status){
+  if(!BEN_STATUS[status]) return;
+  dbUpdateBenefit(id, { status:status }).then(function(){ return dbListBenefits(); })
+    .then(function(l){ state.ben.items=l||[]; render(); })
+    .catch(function(){ state.ben.ui[id]={ msg:"No pude actualizar el estado." }; render(); });
+}
+/* Suma o resta una cuota descontada de un préstamo. */
+function benAddInstallment(id, delta){
+  var t=(state.ben.items||[]).filter(function(x){ return x.id===id; })[0];
+  if(!t) return;
+  var lb=benLoan(t);
+  var next=lb.paid+(delta>0?1:-1);
+  if(next<0) next=0;
+  if(lb.total && next>lb.total) next=lb.total;
+  var patch={ installments_paid:next };
+  if(lb.total && next>=lb.total) patch.status="finalizado";
+  else if((t.status||"activo")==="finalizado") patch.status="activo";
+  dbUpdateBenefit(id, patch).then(function(){ return dbListBenefits(); })
+    .then(function(l){ state.ben.items=l||[]; render(); })
+    .catch(function(){ state.ben.ui[id]={ msg:"No pude registrar la cuota." }; render(); });
+}
+function benDelete(id){
+  if(!confirm("¿Eliminar este registro? No se puede deshacer.")) return;
+  dbDeleteBenefit(id).then(function(){ return dbListBenefits(); })
+    .then(function(l){ state.ben.items=l||[]; state.ben.msg="Registro eliminado."; render(); });
+}
+function benFormUpload(file){
+  var f=state.ben.form; if(!f||!file) return;
+  if(file.size>10*1024*1024){ state.ben.msg="El archivo supera los 10 MB."; render(); return; }
+  if(!audioUploadConfigured()){ state.ben.msg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
+  f.uploading=true; state.ben.msg=""; render();
+  var uid="ben_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  uploadAudioToCloudinary(file, "beneficios/"+uid).then(function(url){ f.file_url=url; f.file_name=file.name; f.uploading=false; render(); })
+    .catch(function(){ f.uploading=false; state.ben.msg="No pude subir el archivo."; render(); });
+}
+function benAttachExisting(id, file){
+  if(!file) return;
+  if(file.size>10*1024*1024){ state.ben.msg="El archivo supera los 10 MB."; render(); return; }
+  if(!audioUploadConfigured()){ state.ben.msg="Para adjuntar archivos hay que configurar Cloudinary."; render(); return; }
+  state.ben.msg="Subiendo "+file.name+"…"; render();
+  var uid="ben_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  uploadAudioToCloudinary(file, "beneficios/"+uid).then(function(url){ return dbUpdateBenefit(id, { file_url:url, file_name:file.name }); })
+    .then(function(){ return dbListBenefits(); }).then(function(l){ state.ben.items=l||[]; state.ben.msg="Archivo adjuntado."; render(); })
+    .catch(function(){ state.ben.msg="No pude adjuntar el archivo."; render(); });
+}
+function benApplyFields(fx){
+  var f=state.ben.form; if(!f||!fx) return;
+  ["title","provider","plan","member_id","detail"].forEach(function(k){ if(fx[k] && !(f[k]||"").trim()) f[k]=String(fx[k]); });
+  ["amount","installment_amount"].forEach(function(k){ if(fx[k]!=null && fx[k]!=="" && isFinite(Number(fx[k])) && !f[k]) f[k]=Number(fx[k]); });
+  if(fx.installments && parseInt(fx.installments,10) && !f.installments) f.installments=parseInt(fx.installments,10);
+  if(fx.frequency && BEN_FREQ[fx.frequency]) f.frequency=fx.frequency;
+  ["start_date","end_date","expiry_date"].forEach(function(k){ if(fx[k] && /^\d{4}-\d{2}-\d{2}$/.test(fx[k]) && !f[k]) f[k]=fx[k]; });
+}
+function benFormFile(file){ if(!file) return; benFormUpload(file); autofillFromFile(file, "beneficios", benApplyFields); }
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -6841,6 +7203,17 @@ function bind(){
       else if (act === "doc-save"){ docSave(el.getAttribute("data-e")); }
       else if (act === "doc-sign"){ docSetSigned(el.getAttribute("data-id"), el.getAttribute("data-v")==="1"); }
       else if (act === "doc-del"){ docDelete(el.getAttribute("data-id")); }
+      else if (act === "go-beneficios") goBeneficios();
+      else if (act === "ben-emp"){ state.ben.emp=el.getAttribute("data-e")||null; state.ben.folder=null; state.ben.form=null; state.ben.msg=""; render(); }
+      else if (act === "ben-emp-back"){ state.ben.emp=null; state.ben.folder=null; state.ben.form=null; render(); }
+      else if (act === "ben-folder"){ state.ben.folder=el.getAttribute("data-f")||null; state.ben.form=null; state.ben.msg=""; render(); }
+      else if (act === "ben-folder-back"){ state.ben.folder=null; state.ben.form=null; render(); }
+      else if (act === "ben-new"){ benNewForm(); }
+      else if (act === "ben-cancel"){ state.ben.form=null; render(); }
+      else if (act === "ben-save"){ benSave(el.getAttribute("data-e")); }
+      else if (act === "ben-status"){ benSetStatus(el.getAttribute("data-id"), el.getAttribute("data-s")); }
+      else if (act === "ben-inst"){ benAddInstallment(el.getAttribute("data-id"), parseInt(el.getAttribute("data-d"),10)||1); }
+      else if (act === "ben-del"){ benDelete(el.getAttribute("data-id")); }
       else if (act === "perf-new"){ perfNewForm(); }
       else if (act === "perf-cancel"){ state.perf.form=null; render(); }
       else if (act === "perf-save"){ perfSave(el.getAttribute("data-e")); }
@@ -7183,6 +7556,16 @@ function bind(){
   if ((f=document.getElementById("f_doc_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) docFormFile(file); });
   wireDropzone("f_doc_drop", docFormFile);
   document.querySelectorAll("input[data-docfile]").forEach(function(el){ el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) docAttachExisting(el.getAttribute("data-docfile"), file); }); });
+  // ---- Beneficios ----
+  var benBind=function(id, key){ var el=document.getElementById(id); if(el) el.addEventListener("input", function(ev){ if(state.ben.form) state.ben.form[key]=ev.target.value; }); };
+  benBind("f_ben_title","title"); benBind("f_ben_provider","provider"); benBind("f_ben_plan","plan"); benBind("f_ben_member","member_id");
+  benBind("f_ben_amount","amount"); benBind("f_ben_inst","installments"); benBind("f_ben_instamt","installment_amount"); benBind("f_ben_instpaid","installments_paid");
+  benBind("f_ben_start","start_date"); benBind("f_ben_end","end_date"); benBind("f_ben_exp","expiry_date"); benBind("f_ben_detail","detail");
+  if ((f=document.getElementById("f_ben_freq"))) f.addEventListener("change", function(e){ if(state.ben.form) state.ben.form.frequency=e.target.value; });
+  if ((f=document.getElementById("f_ben_status"))) f.addEventListener("change", function(e){ if(state.ben.form) state.ben.form.status=e.target.value; });
+  if ((f=document.getElementById("f_ben_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) benFormFile(file); });
+  wireDropzone("f_ben_drop", benFormFile);
+  document.querySelectorAll("input[data-benfile]").forEach(function(el){ el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) benAttachExisting(el.getAttribute("data-benfile"), file); }); });
   // ---- Fichador público (empleado) ----
   if ((f=document.getElementById("f_fi_first"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.first=e.target.value; });
   if ((f=document.getElementById("f_fi_last"))) f.addEventListener("input", function(e){ if(state.fichador) state.fichador.last=e.target.value; });
