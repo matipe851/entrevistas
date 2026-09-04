@@ -123,7 +123,32 @@ button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-act
 .mono{ font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; }
 .wrap{ max-width:760px; margin:0 auto; padding:40px 20px 64px; }
 @media (min-width:640px){ .wrap{ padding:56px 32px 80px; } }
-@media (max-width:640px){ .rec-side{ flex-basis:100% !important; } }
+/* Panel de accesos lateral (Módulos 1, 2 y 3) — en pantallas chicas pasa a ser una tira horizontal desplazable en vez de un bloque alto y fijo */
+@media (max-width:860px){
+  .mod-side{
+    position:static !important;
+    flex:1 1 100% !important;
+    flex-basis:100% !important;
+    min-height:0 !important;
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
+    align-items:stretch !important;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    gap:8px !important;
+    padding:10px !important;
+    scrollbar-width:thin;
+  }
+  .mod-side .side-label{ display:none !important; }
+  .mod-side .side-spacer{ display:none !important; }
+  .mod-side > button, .mod-side > .side-item{
+    width:auto !important;
+    flex:0 0 auto !important;
+    white-space:nowrap;
+  }
+  .mod-shell-row{ gap:12px !important; }
+  .mod-shell-main{ min-width:0 !important; }
+}
 
 /* header */
 .hdr{ display:flex; align-items:center; gap:14px; margin-bottom:36px; }
@@ -1699,15 +1724,19 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 var REC_SHELL_SCREENS = { "rec-home":"dash", "cv-home":"cvs", "jobs-home":"jobs", "config":"config" };
+var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion" };
 function render(){
   var out = Screens[state.screen]();
-  var k = REC_SHELL_SCREENS[state.screen];
-  if (k && supaConfigured() && isLoggedIn()) out = recShellWrap(k, out);
+  if (supaConfigured() && isLoggedIn()){
+    if (REC_SHELL_SCREENS[state.screen]) out = recShellWrap(REC_SHELL_SCREENS[state.screen], out);
+    else if (MOD2_SHELL_SCREENS[state.screen]) out = mod2ShellWrap(MOD2_SHELL_SCREENS[state.screen], out);
+    else if (state.screen === "mod3-home") out = mod3ShellWrap("home", out);
+  }
   app.innerHTML = out; bind();
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v34.5-r100";
+var APP_VERSION = "v34.6-r101";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -3303,33 +3332,82 @@ Screens["admin"] = function(){
 };
 
 function guideHidden(){ try{ return lget("voz_guide")==="off"; }catch(e){ return false; } }
-/* Barra lateral persistente del Módulo 1 (Reclutamiento). Se inyecta desde render() en todas sus secciones. */
-function recSideNav(active){
-  var item=function(key, action, icon, label){
-    var on=(key===active);
-    return '<button class="btn btn-sm" data-action="'+action+'" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;font-weight:'+(on?'700':'600')+';'+
-      (on?'background:#2563EB;color:#fff;border:1px solid #2563EB;box-shadow:0 6px 16px rgba(37,99,235,.35)':'background:transparent;color:var(--ink);border:1px solid var(--border)')+'">'+ic(icon,16)+' <span>'+label+'</span></button>';
-  };
-  return '<aside class="rec-side" style="flex:0 0 236px;align-self:flex-start;position:sticky;top:14px;display:flex;flex-direction:column;gap:9px;min-height:430px;background:rgba(15,23,42,.5);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(37,99,235,.30);border-radius:18px;padding:16px;box-shadow:0 18px 44px rgba(0,0,0,.35),0 0 24px rgba(37,99,235,.14)">'+
-    '<span style="font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:2px 4px 8px">Accesos</span>'+
-    item('jobs','go-jobs','briefcase','Portal de búsquedas')+
-    item('config','go-config','sparkle','Nueva entrevista')+
-    item('cvs','go-cvhome','trophy','Screening de CVs')+
-    item('dash','go-dash','eye','Entrevistas realizadas')+
-    '<div style="flex:1;min-height:14px"></div>'+
-    item('guide','go-guide','info','¿Cómo funciona?')+
-    '<button class="btn btn-sm" data-action="go-hub" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;background:transparent;color:var(--ink);border:1px solid var(--border)">'+ic('back',16)+' Volver a áreas</button>'+
-    '<button class="btn btn-sm" data-action="logout" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;background:transparent;color:var(--muted);border:1px solid var(--border)">'+ic('lock',16)+' Salir</button>'+
-  '</aside>';
+/* ---- Panel de accesos lateral persistente (compartido por Módulos 1, 2 y 3) ---- */
+/* Un ítem del panel. soon=true lo muestra deshabilitado ("Próximamente"). */
+function _sideItem(on, action, icon, label, soon){
+  if (soon){
+    return '<div class="side-item" style="width:100%;display:inline-flex;align-items:center;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;font-weight:600;font-size:13px;background:transparent;color:var(--muted);border:1px dashed var(--border);opacity:.62;cursor:default">'+ic(icon,16)+' <span>'+label+'</span></div>';
+  }
+  return '<button class="btn btn-sm" data-action="'+action+'" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;font-weight:'+(on?'700':'600')+';'+
+    (on?'background:#2563EB;color:#fff;border:1px solid #2563EB;box-shadow:0 6px 16px rgba(37,99,235,.35)':'background:transparent;color:var(--ink);border:1px solid var(--border)')+'">'+ic(icon,16)+' <span>'+label+'</span></button>';
 }
-/* Envuelve una pantalla del Módulo 1 con la barra lateral, a todo el ancho. */
-function recShellWrap(active, screenHtml){
+/* Arma el <aside> con título, ítems (cada uno {key,action,icon,label,soon} o {spacer:true}) y pie (botones extra). */
+function sideNavShell(title, active, items, footerHtml){
+  var h='<aside class="rec-side mod-side" style="flex:0 0 236px;align-self:flex-start;position:sticky;top:14px;display:flex;flex-direction:column;gap:9px;min-height:430px;background:rgba(15,23,42,.5);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(37,99,235,.30);border-radius:18px;padding:16px;box-shadow:0 18px 44px rgba(0,0,0,.35),0 0 24px rgba(37,99,235,.14)">';
+  h+='<span class="side-label" style="font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:2px 4px 8px">'+title+'</span>';
+  for (var i=0;i<items.length;i++){
+    var it=items[i];
+    if (it.spacer){ h+='<div class="side-spacer" style="flex:1;min-height:14px"></div>'; continue; }
+    h+=_sideItem(it.key===active, it.action, it.icon, it.label, it.soon);
+  }
+  h+=(footerHtml||'')+'</aside>';
+  return h;
+}
+/* Botones de pie comunes: volver a las áreas + salir. */
+function sideFooterCommon(){
+  return '<button class="btn btn-sm" data-action="go-hub" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;background:transparent;color:var(--ink);border:1px solid var(--border)">'+ic('back',16)+' Volver a áreas</button>'+
+    '<button class="btn btn-sm" data-action="logout" style="width:100%;justify-content:flex-start;gap:10px;padding:11px 13px;border-radius:12px;background:transparent;color:var(--muted);border:1px solid var(--border)">'+ic('lock',16)+' Salir</button>';
+}
+/* Envuelve cualquier pantalla con su panel lateral, a todo el ancho. */
+function moduleShellWrap(asideHtml, screenHtml){
   return '<div style="position:relative;width:100vw;margin-left:50%;transform:translateX(-50%);padding:0 clamp(16px,3vw,40px);box-sizing:border-box">'+
-    '<div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;max-width:1480px;margin:0 auto">'+
-      recSideNav(active)+
-      '<div style="flex:1;min-width:290px">'+screenHtml+'</div>'+
+    '<div class="mod-shell-row" style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;max-width:1480px;margin:0 auto">'+
+      asideHtml+
+      '<div class="mod-shell-main" style="flex:1;min-width:290px">'+screenHtml+'</div>'+
     '</div></div>';
 }
+/* Módulo 1 (Reclutamiento) */
+function recSideNav(active){
+  return sideNavShell('Accesos', active, [
+    { key:'jobs',   action:'go-jobs',   icon:'briefcase', label:'Portal de búsquedas' },
+    { key:'config', action:'go-config', icon:'sparkle',   label:'Nueva entrevista' },
+    { key:'cvs',    action:'go-cvhome', icon:'trophy',    label:'Screening de CVs' },
+    { key:'dash',   action:'go-dash',   icon:'eye',       label:'Entrevistas realizadas' },
+    { spacer:true },
+    { key:'guide',  action:'go-guide',  icon:'info',      label:'¿Cómo funciona?' }
+  ], sideFooterCommon());
+}
+function recShellWrap(active, screenHtml){ return moduleShellWrap(recSideNav(active), screenHtml); }
+/* Módulo 2 (Administración de personal) */
+function mod2SideNav(active){
+  return sideNavShell('Accesos', active, [
+    { key:'home',          action:'go-module-admin-hr', icon:'users',  label:'Panel del módulo' },
+    { key:'legajo',        action:'go-legajo',          icon:'file',   label:'Legajo del empleado' },
+    { key:'abm',           action:'go-abm',             icon:'plus',   label:'Altas, bajas y modif.' },
+    { key:'asistencia',    action:'go-asistencia',      icon:'clock',  label:'Asistencia y horarios' },
+    { key:'licencias',     action:'go-licencias',       icon:'home',   label:'Vacaciones y licencias' },
+    { key:'desempeno',     action:'go-desempeno',       icon:'eye',    label:'Evaluación de desempeño' },
+    { key:'capacitacion',  action:'go-capacitacion',    icon:'users',  label:'Capacitación' },
+    { key:'salud',         action:'go-salud',           icon:'shield', label:'Salud y seguridad' },
+    { key:'documentacion', action:'go-documentacion',   icon:'copy',   label:'Documentación' },
+    { spacer:true }
+  ], sideFooterCommon());
+}
+function mod2ShellWrap(active, screenHtml){ return moduleShellWrap(mod2SideNav(active), screenHtml); }
+/* Módulo 3 (Clima y Cultura) — todavía sin áreas activas: se muestran como próximamente */
+function mod3SideNav(active){
+  return sideNavShell('Accesos', active, [
+    { key:'home',   action:'go-module-clima', icon:'globe',  label:'Panel del módulo' },
+    { icon:'list',   label:'Encuestas de clima',      soon:true },
+    { icon:'eye',    label:'eNPS y satisfacción',     soon:true },
+    { icon:'msg',    label:'Feedback y reconocim.',   soon:true },
+    { icon:'trophy', label:'Valores y cultura',       soon:true },
+    { icon:'square', label:'Planes de acción',        soon:true },
+    { icon:'send',   label:'Comunicación interna',    soon:true },
+    { spacer:true }
+  ], sideFooterCommon());
+}
+function mod3ShellWrap(active, screenHtml){ return moduleShellWrap(mod3SideNav(active), screenHtml); }
 function GuideCard(){
   if (guideHidden()){
     return '<div style="margin-bottom:16px"><button class="btn btn-ghost btn-sm" data-action="show-guide">'+ic('info',14)+' ¿Cómo funciona? Ver la guía</button></div>';
