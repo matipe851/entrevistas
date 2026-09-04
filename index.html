@@ -1697,7 +1697,7 @@ var app = document.getElementById("app");
 function render(){ app.innerHTML = Screens[state.screen](); bind(); }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v33.5-r90";
+var APP_VERSION = "v33.6-r91";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1945,30 +1945,46 @@ function areaCards(areas){ return areas.map(areaTile).join(""); }
 
 Screens["hub"] = function(){
   var u = currentUser();
-  var areas = [
-    { active:true,  action:"go-module-recruit", icon:"sparkle",   tag:"Módulo 1",
-      title:"Reclutamiento y selección",
-      desc:"Entrevistas por audio con preguntas a medida, evaluación automática y screening de CVs." },
-    { active:true,  action:"go-module-admin-hr", icon:"users",    tag:"Módulo 2",
-      title:"Administración de personal",
-      desc:"Legajos, altas y bajas, asistencia, vacaciones, sueldos, capacitación, reportes y más." }
-  ];
-  var cards = areaCards(areas);
-  // Acceso a Administración: SOLO para la cuenta admin.
   var adminBtn = isAdminUser()
-    ? '<button class="btn btn-ghost btn-sm" data-action="go-admin" style="color:var(--teal)">'+ic('shield',14)+' Administración</button>'
+    ? '<button class="btn btn-sm" data-action="go-admin" style="color:#fff;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.10)">'+ic('shield',14)+' Administración</button>'
     : '';
-  return Header() +
-    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap">' +
-      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('briefcase',20)+'<h2 style="font-size:18px;color:var(--ink)">Áreas de RR.&nbsp;HH.</h2></div>' +
-      '<div style="display:flex;gap:8px;align-items:center">' +
-        adminBtn +
-        '<span style="font-size:12px;color:var(--muted)">'+esc(u&&u.email||'')+'</span>' +
-        '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
+  var card = function(o){
+    return '<div style="flex:1 1 300px;min-width:270px;max-width:430px;background:rgba(15,23,42,.55);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);border:1px solid rgba(255,255,255,.14);border-radius:22px;padding:28px 26px;display:flex;flex-direction:column;text-align:left">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">' +
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:14px;background:rgba(94,234,212,.16);color:#5eead4">'+ic(o.icon,24)+'</span>' +
+        '<span style="font-size:11px;font-weight:800;letter-spacing:.09em;color:rgba(255,255,255,.5)">'+esc(o.tag)+'</span>' +
+      '</div>' +
+      '<h3 style="margin:0 0 9px;font-size:22px;color:#fff;font-family:\'Fraunces\',Georgia,serif;font-weight:600">'+esc(o.title)+'</h3>' +
+      '<p style="margin:0 0 22px;font-size:13.5px;line-height:1.55;color:rgba(255,255,255,.72);flex:1">'+esc(o.desc)+'</p>' +
+      '<button class="btn" data-action="'+o.action+'" style="width:100%;background:#f8fafc;color:#0f172a;font-weight:700;border:none;padding:13px;border-radius:13px;font-size:14px">'+esc(o.btn)+'</button>' +
+    '</div>';
+  };
+  return '<div style="position:fixed;inset:0;overflow:auto;color:#fff;'+
+      'background:linear-gradient(rgba(9,16,33,.62),rgba(9,16,33,.82)),url(\'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1600&q=80\') center/cover no-repeat,#0b1220">' +
+    '<div style="min-height:100%;display:flex;flex-direction:column">' +
+      // Barra superior
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:20px 28px">' +
+        '<div style="display:flex;align-items:center;gap:12px">' +
+          '<span style="display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:12px;background:rgba(94,234,212,.16);color:#5eead4">'+ic('users',20)+'</span>' +
+          '<div><div style="font-size:17px;font-weight:800;color:#fff">Talent<span style="color:#5eead4">IA</span></div>'+
+            '<div style="font-size:11px;color:rgba(255,255,255,.6)">Consultora de RR.HH. con IA <span style="opacity:.5;font-size:10px;margin-left:2px">'+APP_VERSION+'</span></div></div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' + adminBtn +
+          '<span style="font-size:12.5px;color:rgba(255,255,255,.78)">'+esc(u&&u.email||'')+'</span>' +
+          '<button class="btn btn-sm" data-action="logout" style="color:#fff;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.10)">Salir</button>' +
+        '</div>' +
+      '</div>' +
+      // Hero central
+      '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;max-width:980px;margin:0 auto;width:100%;padding:5vh 24px 48px">' +
+        '<h1 style="margin:0 0 14px;font-size:clamp(30px,5.2vw,52px);line-height:1.08;font-weight:600;color:#fff;font-family:\'Fraunces\',Georgia,serif">Potencia tu talento con la IA</h1>' +
+        '<p style="margin:0 0 42px;font-size:16px;color:rgba(255,255,255,.82)">Elige un módulo para comenzar</p>' +
+        '<div style="display:flex;gap:22px;flex-wrap:wrap;justify-content:center;width:100%">' +
+          card({ icon:"sparkle", tag:"MÓDULO 1", title:"Reclutamiento y Selección", desc:"Entrevistas por audio con preguntas a medida, evaluación automática y screening de CVs.", action:"go-module-recruit", btn:"Comenzar ahora" }) +
+          card({ icon:"users", tag:"MÓDULO 2", title:"Administración de personal", desc:"Legajo, altas y bajas, asistencia, vacaciones, sueldos, capacitación, reportes y más.", action:"go-module-admin-hr", btn:"Gestionar equipo" }) +
+        '</div>' +
       '</div>' +
     '</div>' +
-    '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Elegí el módulo con el que querés trabajar. Cada uno agrupa sus propias herramientas.</p>' +
-    '<div class="grid2">' + cards + '</div>';
+  '</div>';
 };
 
 /* ===================== MÓDULO 2: ADMINISTRACIÓN DE PERSONAL ===================== */
