@@ -23,34 +23,34 @@
 
 <style>
 :root{
-  /* Un solo tema oscuro, plano y sobrio. Superficies sólidas, bordes de un píxel,
-     sin desenfoques ni degradados de color: la jerarquía la dan el espacio y el peso
-     tipográfico, no los efectos. color-scheme:dark hace que los date pickers y los
-     select nativos salgan oscuros en vez de blancos. */
-  color-scheme: dark;
-  --bg:#0A0E15;
-  --bg-2:#0E131C;
-  --surface:#111722;
-  --surface-2:#161D2A;
-  --surface-solid:#111722;
-  --ink:#E8EDF5;
-  --muted:#8794A8;
-  --faint:#5F6C80;
-  --border:#1F2634;
-  --border-soft:#171E2A;
-  --teal:#4C8DF6;
-  --teal-strong:#84B0FA;
-  --teal-tint:#141E30;
-  --brick:#E8776D;   --brick-tint:#25181A;
-  --amber:#D9A550;   --amber-tint:#241E17;
-  --purple:#9C97E8;  --purple-tint:#1C1B2B;
-  --blue:#6BA3E0;    --blue-tint:#141D29;
-  --green:#4FB78D;   --green-tint:#122320;
+  /* Tema claro: fondo azul muy claro, tarjetas blancas y un azul de acento.
+     Superficies sólidas, bordes de un píxel y nada de degradados: la jerarquía
+     la dan el espacio y el peso tipográfico. */
+  color-scheme: light;
+  --bg:#F1F6FD;
+  --bg-2:#FFFFFF;
+  --surface:#FFFFFF;
+  --surface-2:#EAF2FD;
+  --surface-solid:#FFFFFF;
+  --ink:#152438;
+  --muted:#57677E;
+  --faint:#5E6C86;
+  --border:#D8E4F4;
+  --border-soft:#E7EFF9;
+  --teal:#2563EB;
+  --teal-strong:#1B4ED1;
+  --teal-tint:#E6EFFD;
+  --brick:#C4453B;   --brick-tint:#FBECEB;
+  --amber:#9A6B12;   --amber-tint:#FBF3E3;
+  --purple:#5B57C4;  --purple-tint:#EDECFA;
+  --blue:#2F73C7;    --blue-tint:#E7F0FB;
+  --green:#1A7E5A;   --green-tint:#E4F3EC;
   --cta-bg:#2563EB;  --cta-fg:#FFFFFF;
-  --shadow:none;
-  --ring:rgba(76,141,246,.26);
-  --ch-1:#3B82F6; --ch-pos:#38A87A; --ch-neg:#D06A5F; --ch-grid:#1F2634;
-  --r:10px;   /* radio chico y parejo en toda la app */
+  --shadow:0 1px 2px rgba(21,36,56,.05);
+  --ring:rgba(37,99,235,.18);
+  /* Marcas de los gráficos de Reportes, validadas sobre superficie blanca. */
+  --ch-1:#2361C4; --ch-pos:#1A7E5A; --ch-neg:#C4453B; --ch-grid:#D8E4F4;
+  --r:10px;
   --r-lg:14px;
 }
 *{box-sizing:border-box}
@@ -105,7 +105,7 @@ button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-act
 .hdr-home:hover{ color:var(--ink); border-color:var(--muted); }
 
 /* Superficies */
-.card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:22px; }
+.card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:22px; box-shadow:var(--shadow); }
 @media (min-width:640px){ .card{ padding:26px; } }
 .grid2{ display:grid; gap:14px; }
 @media (min-width:640px){ .grid2{ grid-template-columns:1fr 1fr; } }
@@ -113,10 +113,10 @@ button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-act
 @media (min-width:520px){ .grid3{ grid-template-columns:1fr 1fr 1fr; } }
 
 .tile{ display:flex; flex-direction:column; align-items:flex-start; gap:9px; border-radius:var(--r-lg); padding:20px; text-align:left; cursor:pointer; background:var(--surface); border:1px solid var(--border); transition:border-color .12s, background .12s; }
-.tile:hover{ border-color:#2C3648; background:var(--surface-2); }
+.tile:hover{ border-color:var(--teal); background:var(--surface); box-shadow:0 2px 10px rgba(37,99,235,.10); }
 .tile:active{ background:var(--surface); }
 .tile-dark, .tile-light{ background:var(--surface); border:1px solid var(--border); color:var(--ink); }
-.tile-dark:hover, .tile-light:hover{ border-color:#2C3648; }
+.tile-dark:hover, .tile-light:hover{ border-color:var(--teal); }
 .tile h3{ font-size:15px; font-weight:600; }
 .tile p{ margin:0; font-size:13px; color:var(--muted); line-height:1.55; }
 
@@ -133,7 +133,7 @@ button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-act
 label.field{ display:block; }
 .field-label{ display:block; font-size:12px; font-weight:500; color:var(--muted); margin-bottom:6px; }
 .field-hint{ display:block; font-size:11.5px; color:var(--faint); margin-top:5px; }
-.input-row{ display:flex; align-items:center; gap:9px; background:var(--bg-2); border:1px solid var(--border); border-radius:var(--r); padding:9px 12px; transition:border-color .12s, box-shadow .12s; }
+.input-row{ display:flex; align-items:center; gap:9px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:9px 12px; transition:border-color .12s, box-shadow .12s; }
 .input-row:focus-within{ border-color:var(--teal); box-shadow:0 0 0 3px var(--ring); }
 .input-row textarea{ resize:vertical; }
 .input-row input, .input-row select, .input-row textarea{
@@ -4352,7 +4352,6 @@ Screens["job-public"] = function(){
     return html;
   }
   html += '<div class="card" style="max-width:640px;margin:0 auto">' +
-    '<span style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--teal)">Búsqueda laboral</span>' +
     '<h1 style="font-size:22px;margin:6px 0 2px;color:var(--ink)">'+esc(job.position)+'</h1>' +
     (job.company?'<p style="margin:0 0 4px;font-size:14px;color:var(--muted)">'+esc(job.company)+'</p>':'') +
     (job.salary?'<p style="margin:8px 0 0;font-size:14px;color:var(--green);font-weight:700">'+ic('briefcase',14)+' '+esc(job.salary)+'</p>':'') +
@@ -4384,7 +4383,7 @@ function PublicHeader(job){
   var logo = (job && job.brandLogo) || "";
   return '<div style="display:flex;align-items:center;gap:10px;padding:14px 4px 20px;max-width:640px;margin:0 auto">' +
     (logo?'<img src="'+esc(logo)+'" alt="" style="height:40px;max-width:140px;object-fit:contain;border-radius:8px;background:var(--surface);padding:3px">':ic('briefcase',24,'','var(--teal)')) +
-    '<span style="font-weight:800;font-size:16px;color:var(--ink)">'+(name?esc(name):'Búsqueda laboral')+'</span>' +
+    '<span style="font-weight:600;font-size:15px;color:var(--ink)">'+(name?esc(name):'Búsqueda laboral')+'</span>' +
   '</div>';
 }
 
@@ -5216,7 +5215,7 @@ Screens.report = function(){
     '<div class="report-eyebrow">'+(r.ai?'Análisis con IA (entrevistador senior)':'Evaluación por reglas')+' · '+esc(c.position)+' · solo visible para vos</div>' +
     '<div style="display:flex;align-items:flex-end;gap:14px;margin-top:8px;flex-wrap:wrap">' +
       '<div class="report-score">'+r.score+'<span style="font-size:20px;opacity:.6">/10</span></div>' +
-      '<span class="rec-tag" style="background:rgba(255,255,255,.14);color:inherit;border:1px solid rgba(255,255,255,.25)">'+esc(r.recommendation)+'</span>' +
+      '<span class="rec-tag" style="background:var(--surface-2);color:var(--ink);border:1px solid var(--border)">'+esc(r.recommendation)+'</span>' +
     '</div>' +
     '<p style="margin-top:14px;font-size:13.5px;opacity:.85;line-height:1.6">'+esc(r.overall)+'</p>' +
     '<p style="margin-top:10px;font-size:11.5px;opacity:.55">'+(r.ai?'Análisis realizado por IA (Gemini) con criterio de entrevistador senior, sobre las respuestas transcriptas. Escuchá los audios para tu valoración final.':'Mide completitud, desarrollo y fluidez de cada respuesta (por reglas, no interpreta el significado). Para la decisión final, escuchá los audios.')+'</p>' +
