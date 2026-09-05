@@ -47,6 +47,8 @@
   --cta-fg:#F4F7FC;
   --shadow: 0 1px 2px rgba(18,35,59,.05), 0 10px 28px -14px rgba(18,35,59,.18);
   --ring: rgba(35,97,196,.30);
+  /* Marcas de los gráficos de Reportes (validadas contra la superficie de cada tema). */
+  --ch-1:#2361C4; --ch-pos:#1F8A63; --ch-neg:#C4453B; --ch-grid:#DCE6F2;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -74,6 +76,7 @@
     --cta-fg:#FFFFFF;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
     --ring: rgba(59,130,246,.35);
+    --ch-1:#3B82F6; --ch-pos:#38A87A; --ch-neg:#D06A5F; --ch-grid:#26394F;
   }
 }
 :root[data-theme="dark"]{
@@ -101,6 +104,7 @@
   --cta-fg:#FFFFFF;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
   --ring: rgba(59,130,246,.35);
+  --ch-1:#3B82F6; --ch-pos:#38A87A; --ch-neg:#D06A5F; --ch-grid:#26394F;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -806,6 +810,22 @@ function dbUpdateBenefit(id, patch){
 }
 function dbDeleteBenefit(id){
   return supaFetch("/rest/v1/benefits?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+/* ----- Off boarding ----- */
+function dbListOffboarding(){
+  return supaFetch("/rest/v1/offboarding?select=*&order=created_at.desc").then(function(r){ return r.json(); })
+    .then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; });
+}
+function dbCreateOffboarding(row){
+  return supaFetch("/rest/v1/offboarding", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateOffboarding(id, patch){
+  return supaFetch("/rest/v1/offboarding?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeleteOffboarding(id){
+  return supaFetch("/rest/v1/offboarding?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
 }
 /* ----- Banco de preguntas reutilizables ----- */
 function dbListQuestionBank(){
@@ -1718,6 +1738,8 @@ var state = {
   doc: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ui:{} },
   ben: { loading:false, items:null, error:null, msg:"", emp:null, folder:null, form:null, ui:{} },
   empPick: "", empPickInactive: false,
+  rep: { loading:false, error:null, year:null },
+  offb: { loading:false, items:null, error:null, msg:"", emp:null, form:null, saving:false },
   fichador: null,
   sign: null,
   brand: { name:"", logo:"" },
@@ -1742,7 +1764,7 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 var REC_SHELL_SCREENS = { "rec-home":"dash", "cv-home":"cvs", "jobs-home":"jobs", "config":"config" };
-var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion", "mod2-beneficios":"beneficios" };
+var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion", "mod2-beneficios":"beneficios", "mod2-reportes":"reportes", "mod2-offboarding":"offboarding" };
 function render(){
   var out = Screens[state.screen]();
   if (supaConfigured() && isLoggedIn()){
@@ -2059,8 +2081,8 @@ Screens["mod2-home"] = function(){
     { active:true, action:"go-salud", icon:"shield", tag:"Activo", title:"8 · Salud y seguridad", desc:"Por empleado: exámenes preocupacionales, periódicos, ART, accidentes, entrega de EPP y aptos médicos, con adjuntos y vencimientos." },
     { active:true, action:"go-documentacion", icon:"copy", tag:"Activo", title:"9 · Documentación", desc:"Por empleado: contratos, recibos, certificados, constancias, firmas digitales y vencimientos, con lectura de PDF por IA." },
     { active:true, action:"go-beneficios", icon:"sparkle", tag:"Activo", title:"10 · Beneficios", desc:"Por empleado, en subcarpetas: obra social, prepaga, bonificaciones, beneficios corporativos y préstamos, con adjuntos y vencimientos." },
-    { icon:"list",     tag:"Próximamente", title:"11 · Reportes",                   desc:"Indicadores de headcount, rotación, ausentismo y costos." },
-    { icon:"back",     tag:"Próximamente", title:"12 · Off boarding",               desc:"Proceso de egreso: liquidación final, entrega y documentación." }
+    { active:true, action:"go-reportes", icon:"list", tag:"Activo", title:"11 · Reportes", desc:"Dotación, rotación, ausentismo y costos del personal, con gráficos por mes y exportación a CSV." },
+    { active:true, action:"go-offboarding", icon:"back", tag:"Activo", title:"12 · Off boarding", desc:"Proceso de egreso completo: checklist por área, liquidación final estimada, entrevista de salida y cierre del legajo." }
   ];
   return Header() +
     backlink("go-hub","Volver a áreas") +
@@ -3336,6 +3358,429 @@ function benResumen(items){
   return h+'</div>';
 }
 
+
+/* ---- Gráficos: SVG inline, sin librerías, con tooltip nativo y etiquetas directas ---- */
+function chartEmpty(msg){
+  return '<div style="padding:26px 12px;text-align:center;color:var(--muted);font-size:13px;background:var(--surface-2);border-radius:12px">'+esc(msg)+'</div>';
+}
+/* Barras verticales de una sola serie (dotación mes a mes). Una serie = sin leyenda. */
+function chartBars(rows, opts){
+  opts=opts||{};
+  if(!rows.length) return chartEmpty(opts.empty||"Sin datos para este período.");
+  var W=Math.max(320, rows.length*54), H=190, PAD_B=26, PAD_T=22;
+  var max=Math.max.apply(null, rows.map(function(r){ return r.v; })); if(max<=0) max=1;
+  var bw=Math.min(34, (W/rows.length)-10);
+  var body=rows.map(function(r,i){
+    var x=(i+0.5)*(W/rows.length)-bw/2;
+    var h=Math.max(r.v>0?3:0, Math.round((H-PAD_B-PAD_T)*(r.v/max)));
+    var y=H-PAD_B-h;
+    return '<g><title>'+esc(r.label+": "+r.v+(opts.unit?(" "+opts.unit):""))+'</title>' +
+      '<rect x="'+x.toFixed(1)+'" y="'+y+'" width="'+bw.toFixed(1)+'" height="'+h+'" rx="4" fill="var(--ch-1)"/>' +
+      (r.v?('<text x="'+(x+bw/2).toFixed(1)+'" y="'+(y-6)+'" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">'+r.v+'</text>'):'') +
+      '<text x="'+(x+bw/2).toFixed(1)+'" y="'+(H-9)+'" text-anchor="middle" font-size="10.5" fill="var(--muted)">'+esc(r.label)+'</text></g>';
+  }).join("");
+  return '<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" preserveAspectRatio="xMinYMid meet" role="img" aria-label="'+esc(opts.aria||"Gráfico de barras")+'" style="min-width:'+W+'px;max-width:100%">' +
+    '<line x1="0" y1="'+(H-PAD_B)+'" x2="'+W+'" y2="'+(H-PAD_B)+'" stroke="var(--ch-grid)" stroke-width="1"/>'+body+'</svg></div>';
+}
+/* Barras divergentes alrededor del cero: altas para arriba, bajas para abajo.
+   La distinción la lleva la POSICIÓN (y el número al lado de cada barra); el color
+   sólo la refuerza, y las bajas van tramadas para que se lean también en blanco y
+   negro o con daltonismo rojo-verde. */
+function chartDiverging(rows, opts){
+  opts=opts||{};
+  if(!rows.length) return chartEmpty(opts.empty||"Sin datos para este período.");
+  var W=Math.max(320, rows.length*54), H=210, MID=100, MAXH=66;
+  var max=Math.max(1, Math.max.apply(null, rows.map(function(r){ return Math.max(r.pos, r.neg); })));
+  var bw=Math.min(28, (W/rows.length)-12);
+  var body=rows.map(function(r,i){
+    var cx=(i+0.5)*(W/rows.length), x=cx-bw/2, out="";
+    if(r.pos>0){
+      var h=Math.max(3, Math.round(MAXH*(r.pos/max)));
+      out+='<g><title>'+esc(r.label+": "+r.pos+" alta"+(r.pos===1?"":"s"))+'</title>' +
+        '<rect x="'+x.toFixed(1)+'" y="'+(MID-2-h)+'" width="'+bw.toFixed(1)+'" height="'+h+'" rx="4" fill="var(--ch-pos)"/>' +
+        '<text x="'+cx.toFixed(1)+'" y="'+(MID-6-h)+'" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">'+r.pos+'</text></g>';
+    }
+    if(r.neg>0){
+      var h2=Math.max(3, Math.round(MAXH*(r.neg/max)));
+      out+='<g><title>'+esc(r.label+": "+r.neg+" baja"+(r.neg===1?"":"s"))+'</title>' +
+        '<rect x="'+x.toFixed(1)+'" y="'+(MID+2)+'" width="'+bw.toFixed(1)+'" height="'+h2+'" rx="4" fill="var(--ch-neg)"/>' +
+        '<rect x="'+x.toFixed(1)+'" y="'+(MID+2)+'" width="'+bw.toFixed(1)+'" height="'+h2+'" rx="4" fill="url(#repHatch)"/>' +
+        '<text x="'+cx.toFixed(1)+'" y="'+(MID+2+h2+13)+'" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">'+r.neg+'</text></g>';
+    }
+    out+='<text x="'+cx.toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10.5" fill="var(--muted)">'+esc(r.label)+'</text>';
+    return out;
+  }).join("");
+  return '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:12px;color:var(--muted)">' +
+      '<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:11px;height:11px;border-radius:3px;background:var(--ch-pos);display:inline-block"></span> Altas (arriba)</span>' +
+      '<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:11px;height:11px;border-radius:3px;background:var(--ch-neg);display:inline-block"></span> Bajas (abajo, tramado)</span>' +
+    '</div>' +
+    '<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" preserveAspectRatio="xMinYMid meet" role="img" aria-label="'+esc(opts.aria||"Altas y bajas por mes")+'" style="min-width:'+W+'px;max-width:100%">' +
+    '<defs><pattern id="repHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
+      '<line x1="0" y1="0" x2="0" y2="6" stroke="var(--surface)" stroke-width="2" opacity=".55"/></pattern></defs>' +
+    '<line x1="0" y1="'+MID+'" x2="'+W+'" y2="'+MID+'" stroke="var(--ch-grid)" stroke-width="1"/>'+body+'</svg></div>';
+}
+/* Barras horizontales de magnitud: un solo tono, cada barra rotulada con su nombre. */
+function chartHBars(rows, opts){
+  opts=opts||{};
+  rows=(rows||[]).filter(function(r){ return r.v>0; }).sort(function(a,b){ return b.v-a.v; });
+  if(!rows.length) return chartEmpty(opts.empty||"Sin datos para este período.");
+  var max=Math.max.apply(null, rows.map(function(r){ return r.v; }));
+  var fmt=opts.fmt||function(v){ return String(v)+(opts.unit?(" "+opts.unit):""); };
+  return '<div style="display:grid;gap:7px">'+rows.map(function(r){
+    var pct=Math.max(2, Math.round(r.v/max*100));
+    return '<div title="'+esc(r.label+": "+fmt(r.v))+'">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;margin-bottom:3px">' +
+        '<span style="color:var(--ink)">'+esc(r.label)+'</span>' +
+        '<span style="color:var(--muted);font-weight:700;white-space:nowrap">'+esc(fmt(r.v))+(r.extra?(' <span style="font-weight:400">· '+esc(r.extra)+'</span>'):'')+'</span></div>' +
+      '<div style="height:9px;border-radius:99px;background:var(--surface);overflow:hidden">' +
+        '<div style="height:100%;width:'+pct+'%;background:'+(opts.color||"var(--ch-1)")+';border-radius:99px"></div></div></div>';
+  }).join("")+'</div>';
+}
+/* Tarjeta de indicador. */
+function statTile(label, value, hint, color){
+  return '<div style="padding:13px 15px;background:var(--surface-2);border-radius:12px">' +
+    '<p style="margin:0;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">'+esc(label)+'</p>' +
+    '<p style="margin:5px 0 0;font-size:23px;font-weight:800;line-height:1.1;color:'+(color||"var(--ink)")+'">'+value+'</p>' +
+    (hint?('<p style="margin:3px 0 0;font-size:11.5px;color:var(--muted)">'+hint+'</p>'):'') + '</div>';
+}
+function repSection(title, subtitle, body){
+  return '<div style="margin-top:22px">' +
+    '<h3 style="font-size:15px;color:var(--ink);margin:0 0 2px">'+esc(title)+'</h3>' +
+    (subtitle?('<p style="font-size:12px;color:var(--muted);margin:0 0 10px">'+esc(subtitle)+'</p>'):'<div style="height:10px"></div>') +
+    body + '</div>';
+}
+
+/* ---- Módulo 2 · Reportes ---- */
+Screens["mod2-reportes"] = function(){
+  var s=state.rep;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('list',20)+'<h2 style="font-size:18px;color:var(--ink)">Reportes</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">Indicadores de dotación, rotación, ausentismo y costos, calculados con los legajos, las licencias, la asistencia y los beneficios ya cargados.</p>';
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.loading){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Calculando…</p></div>'; return html; }
+
+  var emps=state.emp.items||[];
+  if(!emps.length){ html += Note("info","Todavía no hay empleados cargados. Los reportes se arman a partir del legajo."); return html; }
+
+  var years=repAvailableYears();
+  var year=s.year||new Date().getFullYear();
+  var d=repCompute(year);
+  var asis=repAsistencia(year);
+
+  html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
+    '<label class="field" style="margin:0"><span class="field-label">Período</span>' +
+      '<select class="bare" id="f_rep_year" style="min-width:120px">'+years.map(function(y){ return '<option value="'+y+'"'+(y===year?' selected':'')+'>'+y+'</option>'; }).join('')+'</select></label>' +
+    '<button class="btn btn-ghost btn-sm" data-action="rep-csv" style="margin-left:auto">'+ic('download',14)+' Descargar CSV</button>' +
+  '</div>';
+
+  if(d.sinIngreso){
+    html += Note("warn", esc(d.sinIngreso+" empleado"+(d.sinIngreso===1?"":"s")+" sin fecha de ingreso en el legajo: no entra"+(d.sinIngreso===1?"":"n")+" en la evolución de dotación ni en la rotación. Cargá la fecha para que los indicadores queden completos."));
+  }
+  if(!d.serie.length){ html += Note("info","El año "+year+" todavía no empezó."); return html; }
+
+  /* ---------- Dotación ---------- */
+  var ult=d.serie[d.serie.length-1];
+  html += repSection("Dotación", "Personal activo al cierre de cada mes de "+year+".",
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">' +
+      statTile("Dotación actual", String(d.headcount), "empleados activos hoy", "var(--teal)") +
+      statTile("Altas "+year, String(d.altas), "ingresos en el período", "var(--green)") +
+      statTile("Bajas "+year, String(d.bajas), "egresos en el período", "var(--brick)") +
+      statTile("Antigüedad promedio", d.antiguedad!=null?(d.antiguedad.toFixed(1).replace(".",",")+" años"):"—", "sobre los activos con fecha de ingreso") +
+    '</div>' +
+    chartBars(d.serie.map(function(x){ return { label:x.label, v:x.headcount }; }), { aria:"Dotación al cierre de cada mes de "+year, unit:"empleados" }) +
+    '<p style="font-size:11.5px;color:var(--muted);margin:8px 0 0">Cierre de '+esc(monthLabel(ult.mk))+': <b style="color:var(--ink)">'+ult.headcount+'</b> empleados.</p>');
+
+  /* ---------- Rotación ---------- */
+  var rotHint=(d.avgHead>0)?(d.bajas+" bajas ÷ "+d.avgHead.toFixed(1).replace(".",",")+" de dotación promedio"):"sin dotación promedio para calcular";
+  html += repSection("Rotación", "Índice de rotación = bajas del período sobre la dotación promedio.",
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">' +
+      statTile("Índice de rotación", d.rotacion!=null?repPct(d.rotacion):"—", esc(rotHint), d.rotacion!=null&&d.rotacion>=20?"var(--brick)":"var(--teal)") +
+      statTile("Dotación promedio", d.avgHead?d.avgHead.toFixed(1).replace(".",","):"—", "promedio de los meses transcurridos") +
+      statTile("Saldo del período", (d.altas-d.bajas>=0?"+":"")+String(d.altas-d.bajas), "altas menos bajas", (d.altas-d.bajas)<0?"var(--brick)":"var(--green)") +
+    '</div>' +
+    chartDiverging(d.serie.map(function(x){ return { label:x.label, pos:x.altas, neg:x.bajas }; }), { aria:"Altas y bajas por mes de "+year }) +
+    '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em">Motivos de baja</p>' +
+      chartHBars(Object.keys(d.motivos).map(function(k){ return { label:k, v:d.motivos[k] }; }), { unit:"baja(s)", color:"var(--ch-neg)", empty:"No hubo bajas en "+year+"." }) + '</div>' +
+    '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em">Dotación por puesto</p>' +
+      chartHBars(Object.keys(d.puestos).map(function(k){ return { label:k, v:d.puestos[k] }; }), { unit:"", empty:"Sin puestos cargados en los legajos." }) + '</div>');
+
+  /* ---------- Ausentismo ---------- */
+  var ausHint=(d.tasaAus!=null)?(d.diasAus+" días ÷ ("+d.avgHead.toFixed(1).replace(".",",")+" × "+d.habiles+" días hábiles)"):"faltan datos para calcular";
+  var tipos=Object.keys(d.porTipo).map(function(k){ return { label:(LEAVE_TYPES[k]||{label:k}).label, v:d.porTipo[k] }; });
+  var topEmp=Object.keys(d.porEmp).map(function(id){
+    var e=(emps.filter(function(x){ return x.id===id; })[0]);
+    return { label:e?empFullName(e):"(empleado eliminado)", v:d.porEmp[id] };
+  }).sort(function(a,b){ return b.v-a.v; }).slice(0,8);
+  html += repSection("Ausentismo", "Días de licencia aprobada sobre los días hábiles trabajables. Las vacaciones se cuentan aparte: son un derecho gozado, no ausentismo.",
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">' +
+      statTile("Tasa de ausentismo", d.tasaAus!=null?repPct(d.tasaAus,2):"—", esc(ausHint), d.tasaAus!=null&&d.tasaAus>=5?"var(--brick)":"var(--teal)") +
+      statTile("Días de licencia", String(d.diasAus), "sin contar vacaciones") +
+      statTile("Días de vacaciones", String(d.diasVac), "gozados en el período") +
+      (asis?statTile("Llegadas tarde", String(asis.tarde), asis.ausencias+" ausencias sin fichar · "+asis.extra+" días con horas extra"):
+            statTile("Llegadas tarde", "—", "sin fichadas cargadas en el período")) +
+    '</div>' +
+    '<div><p style="font-size:12.5px;font-weight:800;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em">Días por tipo de licencia (incluye vacaciones)</p>' +
+      chartHBars(tipos, { unit:"días", empty:"No hay licencias aprobadas en "+year+"." }) + '</div>' +
+    '<div style="margin-top:16px"><p style="font-size:12.5px;font-weight:800;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em">Quiénes acumulan más días (sin vacaciones)</p>' +
+      chartHBars(topEmp, { unit:"días", empty:"Sin licencias registradas." }) + '</div>');
+
+  /* ---------- Costos ---------- */
+  var costoTotal=d.masa+d.benef;
+  html += repSection("Costos", "Costo mensual del personal activo: masa salarial del legajo más los beneficios vigentes.",
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">' +
+      statTile("Masa salarial", repMoney(d.masa), "mensual, "+(d.activos.length-d.sinSalario)+" de "+d.activos.length+" legajos con salario", "var(--teal)") +
+      statTile("Beneficios", repMoney(d.benef), "mensual, del área 10") +
+      statTile("Costo total", repMoney(costoTotal), "salarios + beneficios") +
+      statTile("Costo por empleado", d.activos.length?repMoney(costoTotal/d.activos.length):"—", "promedio mensual") +
+    '</div>' +
+    (d.sinSalario?Note("warn", esc(d.sinSalario+" legajo"+(d.sinSalario===1?"":"s")+" activo"+(d.sinSalario===1?"":"s")+" sin salario cargado (o con un valor que no pude leer): la masa salarial está subestimada.")):"") +
+    '<div><p style="font-size:12.5px;font-weight:800;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em">Masa salarial por puesto</p>' +
+      chartHBars(repSalaryByPosition(d), { empty:"Sin salarios cargados en los legajos.", fmt:repMoney }) + '</div>');
+
+  return html;
+};
+/* Años con datos (ingresos, egresos o licencias) + el actual. */
+function repAvailableYears(){
+  var set={}, now=new Date().getFullYear();
+  set[now]=true;
+  (state.emp.items||[]).forEach(function(e){
+    var h=String(e.hire_date||"").slice(0,4); if(/^\d{4}$/.test(h)) set[parseInt(h,10)]=true;
+    var t=String(e.termination_date||"").slice(0,4); if(/^\d{4}$/.test(t)) set[parseInt(t,10)]=true;
+  });
+  (state.lic.items||[]).forEach(function(l){ var y=String(l.start_date||"").slice(0,4); if(/^\d{4}$/.test(y)) set[parseInt(y,10)]=true; });
+  return Object.keys(set).map(Number).sort(function(a,b){ return b-a; });
+}
+/* Masa salarial agrupada por puesto (con el importe ya formateado en la etiqueta). */
+function repSalaryByPosition(d){
+  var by={};
+  d.activos.forEach(function(e){
+    var n=parseMoneyAR(e.salary); if(n==null) return;
+    var p=(e.position||"Sin puesto asignado").trim()||"Sin puesto asignado";
+    if(!by[p]) by[p]={ total:0, n:0 };
+    by[p].total+=n; by[p].n++;
+  });
+  return Object.keys(by).map(function(p){
+    return { label:p, v:Math.round(by[p].total), extra:by[p].n+" pers." };
+  }).map(function(r){ return { label:r.label, v:r.v, extra:r.extra }; });
+}
+function goReportes(){ state.error=null; state.rep.error=null; state.screen="mod2-reportes"; render(); loadReportes(); }
+function loadReportes(){
+  if(!(supaConfigured() && isLoggedIn())){ if(state.emp.items===null) state.emp.items=[]; render(); return; }
+  state.rep.loading=true; state.rep.error=null; render();
+  Promise.all([
+    (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()),
+    (state.lic.items!==null?Promise.resolve(state.lic.items):dbListLeaves()),
+    (state.ben.items!==null?Promise.resolve(state.ben.items):dbListBenefits()),
+    (state.asist.items!==null?Promise.resolve(state.asist.items):dbListAttendance())
+  ]).then(function(r){
+    state.emp.items=r[0]||[]; state.lic.items=r[1]||[]; state.ben.items=r[2]||[]; state.asist.items=r[3]||[];
+    state.rep.loading=false; render();
+  }).catch(function(){ state.rep.loading=false; state.rep.error="No pude cargar los datos para los reportes."; render(); });
+}
+/* Exporta el resumen del período a CSV (se abre en Excel o en Sheets). */
+function repDownloadCSV(){
+  var year=state.rep.year||new Date().getFullYear();
+  var d=repCompute(year), asis=repAsistencia(year);
+  var out=[["Reportes de personal — "+year],[],["Indicador","Valor","Detalle"]];
+  out.push(["Dotación actual", d.headcount, "empleados activos"]);
+  out.push(["Altas del período", d.altas, ""]);
+  out.push(["Bajas del período", d.bajas, ""]);
+  out.push(["Dotación promedio", d.avgHead.toFixed(2), "meses transcurridos: "+d.serie.length]);
+  out.push(["Índice de rotación (%)", d.rotacion!=null?d.rotacion.toFixed(2):"", "bajas / dotación promedio"]);
+  out.push(["Antigüedad promedio (años)", d.antiguedad!=null?d.antiguedad.toFixed(2):"", "activos con fecha de ingreso"]);
+  out.push(["Días de licencia (sin vacaciones)", d.diasAus, ""]);
+  out.push(["Días de vacaciones", d.diasVac, ""]);
+  out.push(["Días hábiles del período", d.habiles, ""]);
+  out.push(["Tasa de ausentismo (%)", d.tasaAus!=null?d.tasaAus.toFixed(2):"", "días / (dotación promedio × días hábiles)"]);
+  if(asis){ out.push(["Llegadas tarde", asis.tarde, ""]); out.push(["Ausencias sin fichar", asis.ausencias, ""]); }
+  out.push(["Masa salarial mensual", Math.round(d.masa), (d.activos.length-d.sinSalario)+" de "+d.activos.length+" legajos con salario"]);
+  out.push(["Costo mensual de beneficios", Math.round(d.benef), ""]);
+  out.push(["Costo mensual total", Math.round(d.masa+d.benef), ""]);
+  out.push([]); out.push(["Mes","Dotación al cierre","Altas","Bajas"]);
+  d.serie.forEach(function(x){ out.push([monthLabel(x.mk), x.headcount, x.altas, x.bajas]); });
+  out.push([]); out.push(["Motivo de baja","Cantidad"]);
+  Object.keys(d.motivos).forEach(function(k){ out.push([k, d.motivos[k]]); });
+  out.push([]); out.push(["Tipo de licencia","Días"]);
+  Object.keys(d.porTipo).forEach(function(k){ out.push([(LEAVE_TYPES[k]||{label:k}).label, d.porTipo[k]]); });
+  out.push([]); out.push(["Puesto","Empleados activos"]);
+  Object.keys(d.puestos).forEach(function(k){ out.push([k, d.puestos[k]]); });
+  try{
+    var csv="﻿"+toCSV(out);
+    var blob=new Blob([csv], { type:"text/csv;charset=utf-8" });
+    var url=URL.createObjectURL(blob);
+    plainBrowserDownload(url, "reportes_personal_"+year+".csv");
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  }catch(e){}
+}
+/* Filas → CSV con comillas donde hagan falta. */
+function toCSV(rows){
+  return rows.map(function(r){
+    return (r||[]).map(function(c){ var v=String(c==null?"":c); return /[",\n;]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }).join(",");
+  }).join("\r\n");
+}
+
+/* ---- Módulo 2 · Off boarding ---- */
+Screens["mod2-offboarding"] = function(){
+  var s=state.offb;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--teal)">'+ic('back',20)+'<h2 style="font-size:18px;color:var(--ink)">Off boarding</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">El proceso de egreso de punta a punta: datos de la baja, checklist por área, liquidación final, entrevista de salida y cierre del legajo.</p>';
+  if(s.msg) html += Note("ok", esc(s.msg));
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
+
+  var all=(state.emp.items||[]);
+  if(!all.length){ html += Note("info","No hay empleados cargados. Cargalos en «Legajo del empleado»."); return html; }
+
+  /* 1) Elegir a quién se está desvinculando. Acá los inactivos son los protagonistas,
+        así que se listan todos y se ordena por proceso abierto. */
+  if(!s.emp){
+    var abiertos=(s.items||[]).filter(function(p){ return p.status!=="completado"; }).length;
+    var cerrados=(s.items||[]).filter(function(p){ return p.status==="completado"; }).length;
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">' +
+      statTile("Procesos abiertos", String(abiertos), "egresos en curso", abiertos?"var(--amber)":"var(--ink)") +
+      statTile("Procesos cerrados", String(cerrados), "egresos completados") +
+      statTile("Bajas registradas", String(all.filter(function(e){ return (e.status||"activo")!=="activo"; }).length), "empleados inactivos en el legajo") +
+    '</div>';
+    html += empPicker(all, "offb-emp", function(e){
+      var p=offbFor(e.id);
+      if(!p) return ((e.status||"activo")!=="activo") ? '<span style="color:var(--amber);font-weight:700">Sin proceso abierto</span>' : "Iniciar egreso";
+      var pr=offbProgress(p);
+      var col=(p.status==="completado")?"var(--green)":(pr.pct>=100?"var(--green)":"var(--amber)");
+      return '<span style="color:'+col+';font-weight:700">'+(p.status==="completado"?"Completado":(pr.done+" de "+pr.total+" tareas"))+'</span>';
+    }, { hideInactiveToggle:true });
+    return html;
+  }
+
+  var e=all.filter(function(x){ return x.id===s.emp; })[0];
+  if(!e){ html += Note("err","No encontré a este empleado."); return html; }
+  var proc=offbFor(e.id);
+  var draft=s.form || proc || offbBlank(e);
+  var pr=offbProgress(draft);
+  var activo=((e.status||"activo")==="activo");
+
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">' +
+    '<button class="btn btn-ghost btn-sm" data-action="offb-emp-back">'+ic('back',14)+' Empleados</button>' +
+    '<span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span>' +
+    (e.position?('<span style="font-size:12.5px;color:var(--muted)">'+esc(e.position)+'</span>'):'') +
+  '</div>';
+
+  if(activo){
+    html += Note("warn","Esta persona todavía figura ACTIVA en el legajo. Podés preparar el proceso igual, pero la baja formal se registra en «Altas, bajas y modificaciones» — ahí queda el movimiento y se marca el legajo como inactivo.");
+  }
+
+  /* Progreso */
+  var hire=repHireDate(e);
+  var fin=parseYMD(String(draft.termination_date||"").slice(0,10));
+  html += '<div class="card" style="margin-bottom:14px;padding:18px">' +
+    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
+      '<h3 style="font-size:14px;color:var(--teal);margin:0">Avance del proceso</h3>' +
+      '<span style="font-size:13px;font-weight:800;color:'+(pr.pct>=100?"var(--green)":"var(--amber)")+'">'+pr.done+' de '+pr.total+' tareas · '+pr.pct+'%</span>' +
+    '</div>' +
+    '<div style="height:9px;border-radius:99px;background:var(--surface-2);overflow:hidden"><div style="height:100%;width:'+pr.pct+'%;background:'+(pr.pct>=100?"var(--green)":"var(--teal)")+'"></div></div>' +
+    '<p style="font-size:12px;color:var(--muted);margin:10px 0 0">' +
+      (hire?('Ingreso '+fDMY(e.hire_date)):'Sin fecha de ingreso') +
+      (hire&&fin?(' · antigüedad al egreso: '+antigText(hire, fin)):'') +
+      (draft.status==="completado"?' · <b style="color:var(--green)">proceso cerrado</b>':'') + '</p>' +
+  '</div>';
+
+  /* 2) Datos del egreso */
+  html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:14px;color:var(--teal);margin:0 0 10px">Datos del egreso</h3>' +
+    '<div class="grid2" style="gap:12px">' +
+      '<label class="field"><span class="field-label">Motivo</span><select class="bare" id="f_offb_reason">'+BAJA_REASONS.map(function(r){ return '<option value="'+esc(r)+'"'+(draft.reason===r?' selected':'')+'>'+esc(r)+'</option>'; }).join('')+'</select></label>' +
+      '<label class="field"><span class="field-label">Fecha de egreso</span><div class="input-row"><input id="f_offb_term" type="date" value="'+esc(String(draft.termination_date||"").slice(0,10))+'"></div></label>' +
+      '<label class="field"><span class="field-label">Último día trabajado</span><div class="input-row"><input id="f_offb_last" type="date" value="'+esc(String(draft.last_day||"").slice(0,10))+'"></div></label>' +
+      '<label class="field"><span class="field-label">Preaviso notificado el</span><div class="input-row"><input id="f_offb_notice" type="date" value="'+esc(String(draft.notice_date||"").slice(0,10))+'"></div></label>' +
+    '</div>' +
+    '<label class="field" style="margin-top:12px"><span class="field-label">Notas del proceso</span><div class="input-row" style="align-items:flex-start"><textarea id="f_offb_notes" rows="2" placeholder="Contexto, acuerdos, pendientes…">'+esc(draft.notes||"")+'</textarea></div></label>' +
+  '</div>';
+
+  /* 3) Checklist por área */
+  html += '<h3 style="font-size:15px;color:var(--ink);margin:20px 0 8px">Checklist de egreso</h3>';
+  OFFB_GROUPS.forEach(function(g){
+    var items=OFFB_TASKS.filter(function(t){ return t.group===g.key; });
+    var hechas=items.filter(function(t){ return (draft.tasks||{})[t.key] && draft.tasks[t.key].done; }).length;
+    html += '<div style="margin-bottom:14px">' +
+      '<p style="font-size:12.5px;font-weight:800;color:'+g.color+';margin:0 0 6px;text-transform:uppercase;letter-spacing:.03em">'+esc(g.label)+' ('+hechas+'/'+items.length+')</p>' +
+      '<div style="display:grid;gap:6px">' + items.map(function(t){
+        var st=(draft.tasks||{})[t.key]||{};
+        return '<div style="padding:9px 11px;background:var(--surface-2);border-radius:10px;border-left:3px solid '+(st.done?g.color:"transparent")+'">' +
+          '<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">' +
+            '<input type="checkbox" data-offbtask="'+esc(t.key)+'"'+(st.done?' checked':'')+' style="margin-top:2px">' +
+            '<span style="flex:1;font-size:13px;color:var(--ink)'+(st.done?';opacity:.7':'')+'">'+esc(t.label)+
+              (st.done&&st.date?('<span style="font-size:11.5px;color:var(--muted)"> · '+esc(fDMY(st.date))+'</span>'):'')+'</span>' +
+          '</label>' +
+          (st.done?('<div class="input-row" style="margin-top:7px"><input data-offbnote="'+esc(t.key)+'" value="'+esc(st.note||"")+'" placeholder="Responsable u observación (opcional)" style="font-size:12.5px"></div>'):'') +
+        '</div>';
+      }).join('') + '</div></div>';
+  });
+
+  /* 4) Liquidación final */
+  var sug=offbSuggest(e, draft);
+  var despido=offbIsDespido(draft.reason);
+  var conceptos=OFFB_CONCEPTS.filter(function(c){ return !c.soloDespido || despido; });
+  var total=0;
+  conceptos.forEach(function(c){
+    var v=(draft.settlement||{})[c.key];
+    var n=(v!=null&&v!=="")?Number(v):((sug.items[c.key]||{}).amount);
+    if(isFinite(n)) total+=n;
+  });
+  html += '<h3 style="font-size:15px;color:var(--ink);margin:20px 0 4px">Liquidación final</h3>';
+  html += '<p style="font-size:12px;color:var(--muted);margin:0 0 10px">Los importes se sugieren a partir del salario del legajo, la antigüedad y el saldo de vacaciones. Son orientativos para armar el borrador: revisalos con quien liquida sueldos antes de pagar, y ajustá el convenio que corresponda.</p>';
+  if(sug.base==null){
+    html += Note("warn","No pude leer un salario en el legajo de esta persona, así que no hay importes sugeridos. Cargá el salario en «Legajo del empleado» o completá cada concepto a mano.");
+  }
+  html += '<div style="display:grid;gap:7px">' + conceptos.map(function(c){
+    var sg=sug.items[c.key]||{};
+    var v=(draft.settlement||{})[c.key];
+    var shown=(v!=null&&v!=="")?v:(sg.amount!=null?sg.amount:"");
+    var editado=(v!=null&&v!=="" && sg.amount!=null && Number(v)!==Number(sg.amount));
+    return '<div style="padding:10px 12px;background:var(--surface-2);border-radius:10px">' +
+      '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+        '<span style="flex:1;min-width:180px;font-size:13px;color:var(--ink)">'+esc(c.label)+
+          (editado?' <span style="font-size:11px;color:var(--amber);font-weight:700">· ajustado a mano</span>':'')+'</span>' +
+        '<div class="input-row" style="max-width:170px"><input data-offbconcept="'+esc(c.key)+'" type="number" step="1" value="'+esc(String(shown))+'" placeholder="0"></div>' +
+        '<span style="min-width:110px;text-align:right;font-size:13px;font-weight:700;color:var(--ink)">'+repMoney(shown===""?0:Number(shown))+'</span>' +
+      '</div>' +
+      (sg.formula?('<p style="margin:6px 0 0;font-size:11.5px;color:var(--muted)">'+esc(sg.formula)+(sg.nota?(' · '+esc(sg.nota)):'')+'</p>'):'') +
+    '</div>';
+  }).join('') + '</div>';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding:12px 14px;background:var(--teal-tint);border-radius:12px">' +
+    '<span style="font-size:13px;font-weight:800;color:var(--teal)">Total de la liquidación</span>' +
+    '<span style="font-size:20px;font-weight:800;color:var(--teal)">'+repMoney(total)+'</span></div>';
+  if(!despido){
+    html += '<p style="font-size:11.5px;color:var(--muted);margin:8px 0 0">'+ic('info',12)+' Con motivo «'+esc(draft.reason||"")+'» no se muestran indemnización, preaviso ni integración. Si corresponde incluirlos, cambiá el motivo a «Despido sin causa».</p>';
+  }
+
+  /* 5) Entrevista de salida */
+  var ei=draft.exit_interview||{};
+  html += '<h3 style="font-size:15px;color:var(--ink);margin:20px 0 8px">Entrevista de salida</h3>';
+  html += '<div class="card">' +
+    '<div class="grid2" style="gap:12px">' +
+      '<label class="field"><span class="field-label">Fecha de la entrevista</span><div class="input-row"><input id="f_offb_ei_date" type="date" value="'+esc(String(ei.date||"").slice(0,10))+'"></div></label>' +
+      '<label class="field"><span class="field-label">¿Recomendaría la empresa?</span><select class="bare" id="f_offb_ei_rec">' +
+        ['','Sí','Tal vez','No'].map(function(o){ return '<option value="'+esc(o)+'"'+(String(ei.recommend||"")===o?' selected':'')+'>'+esc(o||"— sin responder")+'</option>'; }).join('') +
+      '</select></label>' +
+    '</div>' +
+    '<label class="field" style="margin-top:12px"><span class="field-label">Motivo real de la salida (según la persona)</span><div class="input-row"><input id="f_offb_ei_reason" value="'+esc(ei.real_reason||"")+'" placeholder="Ej: mejor oferta económica, clima del equipo, mudanza…"></div></label>' +
+    '<label class="field" style="margin-top:12px"><span class="field-label">Comentarios y sugerencias</span><div class="input-row" style="align-items:flex-start"><textarea id="f_offb_ei_comments" rows="3" placeholder="Qué mejoraría, qué rescata, qué le faltó…">'+esc(ei.comments||"")+'</textarea></div></label>' +
+  '</div>';
+
+  /* 6) Guardar y cerrar */
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;align-items:center">' +
+    '<button class="btn btn-primary btn-sm" data-action="offb-save" data-e="'+esc(e.id)+'"'+(s.saving?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):(ic('check',14)+' Guardar proceso'))+'</button>' +
+    (draft.status==="completado"
+      ? '<button class="btn btn-ghost btn-sm" data-action="offb-reopen" data-e="'+esc(e.id)+'">'+ic('rotate',13)+' Reabrir proceso</button>'
+      : '<button class="btn btn-teal btn-sm" data-action="offb-close" data-e="'+esc(e.id)+'">'+ic('check',14)+' Cerrar proceso</button>') +
+    '<button class="btn btn-ghost btn-sm" data-action="offb-csv" data-e="'+esc(e.id)+'">'+ic('download',13)+' Descargar resumen</button>' +
+    (proc?'<button class="dl-audio" data-action="offb-del" data-e="'+esc(e.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11.5px;margin-left:auto">'+ic('trash',12)+' eliminar proceso</button>':'') +
+  '</div>';
+  if(pr.done<pr.total && draft.status!=="completado"){
+    html += '<p style="font-size:11.5px;color:var(--muted);margin:8px 0 0">Quedan '+(pr.total-pr.done)+' tarea(s) sin marcar. Podés cerrar igual: el proceso queda registrado con lo que hayas completado.</p>';
+  }
+  return html;
+};
+
 /* ---- Firma pública del legajo (empleado) ---- */
 Screens["sign-legajo"] = function(){
   var s=state.sign||{};
@@ -3529,6 +3974,8 @@ function mod2SideNav(active){
     { key:'salud',         action:'go-salud',           icon:'shield', label:'Salud y seguridad' },
     { key:'documentacion', action:'go-documentacion',   icon:'copy',   label:'Documentación' },
     { key:'beneficios',    action:'go-beneficios',      icon:'sparkle',label:'Beneficios' },
+    { key:'reportes',      action:'go-reportes',        icon:'list',   label:'Reportes' },
+    { key:'offboarding',   action:'go-offboarding',     icon:'back',   label:'Off boarding' },
     { spacer:true }
   ], sideFooterCommon());
 }
@@ -5425,7 +5872,8 @@ function moduleEmployees(){
 function hasInactiveEmployees(){ return (state.emp.items||[]).some(function(e){ return (e.status||"activo")!=="activo"; }); }
 /* Selector de empleado compartido por las áreas del módulo 2.
    Con 6 o más empleados agrega un buscador que filtra en el DOM (sin re-render, no se pierde el foco). */
-function empPicker(emps, action, metaFn){
+function empPicker(emps, action, metaFn, opts){
+  opts=opts||{};
   var list=emps.slice().sort(function(a,b){ return empFullName(a).localeCompare(empFullName(b), "es"); });
   var html="";
   var tools=[];
@@ -5433,7 +5881,7 @@ function empPicker(emps, action, metaFn){
     tools.push('<div class="input-row" style="flex:1;min-width:220px"><span style="color:var(--muted)">'+ic('eye',14)+'</span>' +
       '<input id="f_pick_search" type="text" placeholder="Buscar por nombre, N° de legajo, DNI o puesto…" value="'+esc(state.empPick||"")+'" autocomplete="off"></div>');
   }
-  if(hasInactiveEmployees()){
+  if(hasInactiveEmployees() && !opts.hideInactiveToggle){
     tools.push('<label style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap">' +
       '<input type="checkbox" id="f_pick_inactive"'+(state.empPickInactive?' checked':'')+'> Incluir inactivos</label>');
   }
@@ -5453,13 +5901,13 @@ function empPicker(emps, action, metaFn){
   return html;
 }
 /* Saldo de vacaciones del año en curso: asignados (automático o manual), gozados y disponibles. */
-function licVacBalance(e){
-  var year=new Date().getFullYear();
+function licVacBalance(e, year){
+  year=year||new Date().getFullYear();
   var vac=vacationEntitlement(e, year);
   var override=(e.vacation_override!=null && e.vacation_override!=="")?parseInt(e.vacation_override,10):null;
   if(override!=null && isNaN(override)) override=null;
   var entitlement=(override!=null)?override:vac.auto;
-  var used=licVacUsed(e.id);
+  var used=licVacUsed(e.id, year);
   return { year:year, vac:vac, override:override, entitlement:entitlement, used:used, avail:entitlement-used };
 }
 /* Valida el legajo antes de guardar. Devuelve "" si está todo bien. */
@@ -5479,7 +5927,7 @@ function empValidate(f){
 }
 function leaveRangeLabel(l){ function f(d){ if(!d) return "—"; var p=String(d).slice(0,10).split("-"); return p[2]+"/"+p[1]+"/"+p[0]; } return f(l.start_date)+" → "+f(l.end_date); }
 function licEmpLeaves(empId){ return (state.lic.items||[]).filter(function(l){ return l.employee_id===empId; }); }
-function licVacUsed(empId){ var y=new Date().getFullYear(); return licEmpLeaves(empId).filter(function(l){ var sd=parseYMD(String(l.start_date||"").slice(0,10)); return l.type==="vacaciones" && l.status==="aprobada" && sd && sd.getFullYear()===y; }).reduce(function(a,l){ return a+(parseInt(l.days,10)||leaveDays(l.start_date,l.end_date)); },0); }
+function licVacUsed(empId, year){ var y=year||new Date().getFullYear(); return licEmpLeaves(empId).filter(function(l){ var sd=parseYMD(String(l.start_date||"").slice(0,10)); return l.type==="vacaciones" && l.status==="aprobada" && sd && sd.getFullYear()===y; }).reduce(function(a,l){ return a+(parseInt(l.days,10)||leaveDays(l.start_date,l.end_date)); },0); }
 function goLicencias(){ state.error=null; state.empPick=""; state.empPickInactive=false; state.lic.msg=""; state.lic.error=null; state.lic.emp=null; state.lic.form=null; state.screen="mod2-licencias"; render(); loadLicencias(); }
 function loadLicencias(){
   if(!(supaConfigured() && isLoggedIn())){ state.lic.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
@@ -6051,6 +6499,378 @@ function benApplyFields(fx){
   ["start_date","end_date","expiry_date"].forEach(function(k){ if(fx[k] && /^\d{4}-\d{2}-\d{2}$/.test(fx[k]) && !f[k]) f[k]=fx[k]; });
 }
 function benFormFile(file){ if(!file) return; benFormUpload(file); autofillFromFile(file, "beneficios", benApplyFields); }
+
+/* ===================== MÓDULO 2 · 11 · REPORTES ===================== */
+/* Los indicadores se calculan en el navegador con lo que ya está cargado:
+   legajos (ingresos y egresos), licencias, asistencia, beneficios y movimientos. */
+
+/* Importes que en el legajo se cargan como texto libre ("$ 1.250.000", "1.250.000,50"). */
+function parseMoneyAR(v){
+  if(v==null || v==="") return null;
+  if(typeof v==="number") return isFinite(v)?v:null;
+  var s=String(v).replace(/[^\d.,-]/g,"");
+  if(!s) return null;
+  if(s.indexOf(",")>=0){ s=s.replace(/\./g,"").replace(",", "."); }
+  else { var p=s.split("."); if(p.length>1 && p[p.length-1].length===3) s=s.replace(/\./g,""); }
+  var n=parseFloat(s);
+  return isFinite(n)?n:null;
+}
+function repMoney(v){
+  var n=Number(v);
+  if(v==null || v==="" || !isFinite(n)) return "—";
+  return (n<0?"-$":"$")+Math.round(Math.abs(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+function repPct(v, dec){ var n=Number(v); if(!isFinite(n)) return "—"; return n.toFixed(dec==null?1:dec).replace(".",",")+"%"; }
+function repMonthsOf(year){ var o=[]; for(var m=1;m<=12;m++) o.push(year+"-"+("0"+m).slice(-2)); return o; }
+function repMonthEnd(mk){ var p=mk.split("-"); return new Date(parseInt(p[0],10), parseInt(p[1],10), 0); }
+function repMonthShort(mk){ return (MONTH_NAMES[parseInt(mk.slice(5,7),10)-1]||"").slice(0,3); }
+/* Meses del año que ya transcurrieron (para no diluir los índices con meses futuros). */
+function repElapsedMonths(year){
+  var all=repMonthsOf(year), now=new Date();
+  if(year<now.getFullYear()) return all;
+  if(year>now.getFullYear()) return [];
+  return all.slice(0, now.getMonth()+1);
+}
+function repHireDate(e){ var d=parseYMD(String(e.hire_date||"").slice(0,10)); return (d&&!isNaN(d.getTime()))?d:null; }
+function repTermDate(e){ var d=e.termination_date?parseYMD(String(e.termination_date).slice(0,10)):null; return (d&&!isNaN(d.getTime()))?d:null; }
+/* Dotación a una fecha: ingresó antes y todavía no egresó. */
+function repHeadcountAt(emps, d){
+  return emps.filter(function(e){
+    var h=repHireDate(e); if(!h || h>d) return false;
+    var t=repTermDate(e); if(t && t<=d) return false;
+    return true;
+  }).length;
+}
+function repHiresIn(emps, mk){ return emps.filter(function(e){ return String(e.hire_date||"").slice(0,7)===mk; }).length; }
+function repExitsIn(emps, mk){ return emps.filter(function(e){ return String(e.termination_date||"").slice(0,7)===mk; }).length; }
+/* Antigüedad promedio de los activos, en años. */
+function repAvgSeniority(emps){
+  var hoy=new Date(), n=0, sum=0;
+  emps.forEach(function(e){
+    if((e.status||"activo")!=="activo") return;
+    var h=repHireDate(e); if(!h) return;
+    sum+=(hoy-h)/(365.25*24*3600*1000); n++;
+  });
+  return n?(sum/n):null;
+}
+/* Días de una licencia que caen dentro del año pedido. */
+function repLeaveDaysInYear(l, year){
+  var a=parseYMD(String(l.start_date||"").slice(0,10)), b=parseYMD(String(l.end_date||"").slice(0,10));
+  if(!a||!b||isNaN(a.getTime())||isNaN(b.getTime())) return 0;
+  var y0=new Date(year,0,1), y1=new Date(year,11,31);
+  var s=(a>y0?a:y0), e=(b<y1?b:y1);
+  if(e<s) return 0;
+  return Math.floor((e-s)/(24*3600*1000))+1;
+}
+/* Costo mensual de beneficios activos (mismo criterio que el área 10). */
+function repBenefitsMonthly(items, empIds){
+  var total=0;
+  (items||[]).forEach(function(t){
+    if(empIds && !empIds[t.employee_id]) return;
+    if((t.status||"activo")!=="activo") return;
+    if(t.type==="prestamos"){ var lb=benLoan(t); if(lb.saldo>0) total+=lb.each||0; return; }
+    var n=Number(t.amount); if(!isFinite(n) || t.amount==null || t.amount==="") return;
+    if((t.type==="bonificaciones"||t.type==="corporativos") && (t.frequency||"mensual")!=="mensual") return;
+    total+=n;
+  });
+  return total;
+}
+/* Todos los indicadores del año, de una sola pasada. */
+function repCompute(year){
+  var emps=(state.emp.items||[]);
+  var months=repMonthsOf(year), elapsed=repElapsedMonths(year);
+  var serie=elapsed.map(function(mk){
+    return { mk:mk, label:repMonthShort(mk), headcount:repHeadcountAt(emps, repMonthEnd(mk)),
+             altas:repHiresIn(emps, mk), bajas:repExitsIn(emps, mk) };
+  });
+  var altas=serie.reduce(function(a,x){ return a+x.altas; },0);
+  var bajas=serie.reduce(function(a,x){ return a+x.bajas; },0);
+  var avgHead=serie.length?(serie.reduce(function(a,x){ return a+x.headcount; },0)/serie.length):0;
+  var activos=emps.filter(function(e){ return (e.status||"activo")==="activo"; });
+
+  /* Ausentismo: días de licencia aprobada. Las vacaciones son un derecho gozado,
+     no ausentismo, así que se cuentan aparte. */
+  var porTipo={}, porEmp={}, diasAus=0, diasVac=0;
+  (state.lic.items||[]).forEach(function(l){
+    if(l.status!=="aprobada") return;
+    var d=repLeaveDaysInYear(l, year); if(!d) return;
+    porTipo[l.type]=(porTipo[l.type]||0)+d;
+    if(l.type==="vacaciones"){ diasVac+=d; return; }
+    diasAus+=d;
+    porEmp[l.employee_id]=(porEmp[l.employee_id]||0)+d;
+  });
+  var hasta=elapsed.length?repMonthEnd(elapsed[elapsed.length-1]):new Date(year,0,1);
+  var habiles=elapsed.length?countBusinessDays(new Date(year,0,1), hasta):0;
+  var tasaAus=(avgHead>0 && habiles>0)?(diasAus/(avgHead*habiles)*100):null;
+
+  /* Costos: la masa salarial sale del campo "Salario" del legajo, que es texto libre. */
+  var masa=0, sinSalario=0;
+  activos.forEach(function(e){ var n=parseMoneyAR(e.salary); if(n==null){ sinSalario++; return; } masa+=n; });
+  var idsActivos={}; activos.forEach(function(e){ idsActivos[e.id]=true; });
+  var benef=repBenefitsMonthly(state.ben.items, idsActivos);
+
+  /* Motivos de baja del período. */
+  var motivos={};
+  emps.forEach(function(e){
+    if(String(e.termination_date||"").slice(0,4)!==String(year)) return;
+    var m=(e.termination_reason||"Sin especificar").trim()||"Sin especificar";
+    motivos[m]=(motivos[m]||0)+1;
+  });
+
+  /* Dotación por puesto (activos). */
+  var puestos={};
+  activos.forEach(function(e){ var p=(e.position||"Sin puesto asignado").trim()||"Sin puesto asignado"; puestos[p]=(puestos[p]||0)+1; });
+
+  var sinIngreso=emps.filter(function(e){ return !repHireDate(e); }).length;
+  return {
+    year:year, months:months, serie:serie, emps:emps, activos:activos,
+    headcount:activos.length, altas:altas, bajas:bajas, avgHead:avgHead,
+    rotacion:(avgHead>0)?(bajas/avgHead*100):null,
+    antiguedad:repAvgSeniority(emps),
+    porTipo:porTipo, porEmp:porEmp, diasAus:diasAus, diasVac:diasVac,
+    habiles:habiles, tasaAus:tasaAus,
+    masa:masa, sinSalario:sinSalario, benef:benef,
+    motivos:motivos, puestos:puestos, sinIngreso:sinIngreso
+  };
+}
+/* Tardanzas y ausencias del año, reusando el control de asistencia mes a mes. */
+function repAsistencia(year){
+  var out={ tarde:0, ausencias:0, extra:0, meses:0 };
+  if(!(state.asist.items||[]).length) return null;
+  repElapsedMonths(year).forEach(function(mk){
+    var list=[]; try{ list=asistMonthControl(mk)||[]; }catch(e){ return; }
+    if(!list.length) return;
+    out.meses++;
+    list.forEach(function(s){
+      out.tarde+=(s.late||[]).length;
+      out.ausencias+=(s.absent||[]).length;
+      out.extra+=(s.extra||[]).length;
+    });
+  });
+  return out.meses?out:null;
+}
+
+/* ===================== MÓDULO 2 · 12 · OFF BOARDING ===================== */
+/* Un proceso de egreso por empleado. El checklist, la liquidación y la entrevista
+   viajan como JSON dentro de la misma fila para no multiplicar tablas. */
+var OFFB_GROUPS = [
+  { key:"rrhh",   label:"Recursos Humanos",        color:"var(--teal)"   },
+  { key:"admin",  label:"Administración y liquidación", color:"var(--amber)" },
+  { key:"accesos",label:"Accesos y equipamiento",   color:"var(--purple)" },
+  { key:"legajo", label:"Legajo y archivo",         color:"var(--blue)"   }
+];
+var OFFB_TASKS = [
+  { key:"notificacion",  group:"rrhh",    label:"Notificar la desvinculación (telegrama o nota firmada)" },
+  { key:"comunicar",     group:"rrhh",    label:"Avisar al responsable directo y al equipo" },
+  { key:"reemplazo",     group:"rrhh",    label:"Definir reemplazo o redistribución de tareas" },
+  { key:"traspaso",      group:"rrhh",    label:"Traspaso de tareas y documentación de procesos" },
+  { key:"entrevista",    group:"rrhh",    label:"Entrevista de salida realizada" },
+  { key:"liq_calc",      group:"admin",   label:"Liquidación final calculada" },
+  { key:"liq_firmada",   group:"admin",   label:"Liquidación final firmada por el empleado" },
+  { key:"pago",          group:"admin",   label:"Pago de la liquidación depositado" },
+  { key:"cert_trabajo",  group:"admin",   label:"Certificado de trabajo (art. 80 LCT) entregado" },
+  { key:"cert_servicios",group:"admin",   label:"Certificación de servicios y remuneraciones (ANSES)" },
+  { key:"baja_afip",     group:"admin",   label:"Baja en AFIP / Mi Simplificación" },
+  { key:"baja_os",       group:"admin",   label:"Baja de obra social y prepaga" },
+  { key:"baja_art",      group:"admin",   label:"Baja en la ART" },
+  { key:"credencial",    group:"accesos", label:"Devolución de credencial y llaves" },
+  { key:"equipos",       group:"accesos", label:"Devolución de notebook, celular y herramientas" },
+  { key:"epp",           group:"accesos", label:"Devolución de ropa de trabajo y EPP" },
+  { key:"sistemas",      group:"accesos", label:"Baja de usuarios y accesos a sistemas" },
+  { key:"fichador",      group:"accesos", label:"Baja del fichador de asistencia" },
+  { key:"doc_archivada", group:"legajo",  label:"Documentación de egreso archivada en el legajo" },
+  { key:"legajo_baja",   group:"legajo",  label:"Legajo marcado como inactivo" },
+  { key:"encuesta_archivo", group:"legajo", label:"Resultado de la entrevista de salida archivado" }
+];
+/* Conceptos de la liquidación final. "auto" indica si se sugiere un importe. */
+var OFFB_CONCEPTS = [
+  { key:"dias_trabajados", label:"Días trabajados del mes de egreso" },
+  { key:"sac_prop",        label:"SAC proporcional" },
+  { key:"vac_no_gozadas",  label:"Vacaciones no gozadas" },
+  { key:"sac_vac",         label:"SAC sobre vacaciones no gozadas" },
+  { key:"indem_antig",     label:"Indemnización por antigüedad (art. 245 LCT)", soloDespido:true },
+  { key:"preaviso",        label:"Preaviso (art. 231/232 LCT)",                  soloDespido:true },
+  { key:"sac_preaviso",    label:"SAC sobre preaviso",                           soloDespido:true },
+  { key:"integracion",     label:"Integración mes de despido (art. 233 LCT)",    soloDespido:true },
+  { key:"otros",           label:"Otros conceptos / descuentos" }
+];
+function offbIsDespido(reason){ return /despido sin causa|mutuo acuerdo/i.test(String(reason||"")); }
+/* Años de antigüedad para el art. 245: años completos, más uno si la fracción supera 3 meses. */
+function offbSeniorityYears(hire, hasta){
+  if(!hire||!hasta) return 0;
+  var meses=(hasta.getFullYear()-hire.getFullYear())*12+(hasta.getMonth()-hire.getMonth());
+  if(hasta.getDate()<hire.getDate()) meses--;
+  if(meses<0) meses=0;
+  var anios=Math.floor(meses/12), resto=meses%12;
+  return anios+(resto>3?1:0);
+}
+/* Importes sugeridos para la liquidación. Son orientativos: la pantalla lo aclara
+   y cada renglón se puede editar a mano. */
+function offbSuggest(emp, proc){
+  var base=parseMoneyAR(emp && emp.salary);
+  var out={};
+  if(base==null || !isFinite(base) || base<=0) return { base:null, items:out };
+  var fin=parseYMD(String((proc&&proc.termination_date)||emp.termination_date||todayISO()||"").slice(0,10));
+  if(!fin || isNaN(fin.getTime())) fin=new Date();
+  var hire=repHireDate(emp);
+  var anios=offbSeniorityYears(hire, fin);
+  var mesesTot=hire?((fin.getFullYear()-hire.getFullYear())*12+(fin.getMonth()-hire.getMonth())):0;
+  var diaMes=base/30, diaVac=base/25;
+  var dim=new Date(fin.getFullYear(), fin.getMonth()+1, 0).getDate();
+
+  out.dias_trabajados={ amount:Math.round(diaMes*fin.getDate()), formula:fin.getDate()+" días × ("+repMoney(base)+" ÷ 30)" };
+  var semestreIni=new Date(fin.getFullYear(), fin.getMonth()<6?0:6, 1);
+  var diasSem=Math.floor((fin-semestreIni)/(24*3600*1000))+1;
+  out.sac_prop={ amount:Math.round((base/2)*(diasSem/182)), formula:"(sueldo ÷ 2) × "+diasSem+" días del semestre ÷ 182" };
+  var bal=null; try{ bal=licVacBalance(emp, fin.getFullYear()); }catch(e){}
+  var vacDias=bal?Math.max(0, bal.avail):0;
+  out.vac_no_gozadas={ amount:Math.round(diaVac*vacDias), formula:vacDias+" días × ("+repMoney(base)+" ÷ 25)", nota:bal?("saldo "+bal.year+": "+bal.avail+" días"):"" };
+  out.sac_vac={ amount:Math.round(diaVac*vacDias/12), formula:"vacaciones no gozadas ÷ 12" };
+  if(offbIsDespido(proc&&proc.reason)){
+    out.indem_antig={ amount:Math.round(base*Math.max(1,anios)), formula:Math.max(1,anios)+" período(s) × "+repMoney(base)+" (1 sueldo por año o fracción mayor a 3 meses)" };
+    var mesesPre=(mesesTot<3)?0.5:(anios>=5?2:1);
+    out.preaviso={ amount:Math.round(base*mesesPre), formula:(mesesPre===0.5?"15 días":(mesesPre+" mes(es)"))+" según antigüedad ("+mesesTot+" meses)" };
+    out.sac_preaviso={ amount:Math.round(base*mesesPre/12), formula:"preaviso ÷ 12" };
+    out.integracion={ amount:Math.round(diaMes*(dim-fin.getDate())), formula:(dim-fin.getDate())+" días hasta fin de mes × ("+repMoney(base)+" ÷ 30)" };
+  }
+  return { base:base, anios:anios, mesesTot:mesesTot, vacDias:vacDias, items:out };
+}
+/* Proceso guardado de un empleado (o null si todavía no se abrió). */
+function offbFor(empId){ return (state.offb.items||[]).filter(function(p){ return p.employee_id===empId; })[0] || null; }
+/* Estado del proceso: tareas hechas sobre el total. */
+function offbProgress(proc){
+  var tasks=(proc && proc.tasks) || {};
+  var done=OFFB_TASKS.filter(function(t){ return tasks[t.key] && tasks[t.key].done; }).length;
+  return { done:done, total:OFFB_TASKS.length, pct:Math.round(done*100/OFFB_TASKS.length) };
+}
+/* Fila nueva, con el motivo y las fechas que ya están en el legajo. */
+function offbBlank(emp){
+  return { employee_id:emp.id, status:"en_curso",
+    reason:(emp.termination_reason||BAJA_REASONS[0]),
+    termination_date:(emp.termination_date||todayISO()||""),
+    last_day:(emp.termination_date||todayISO()||""), notice_date:"",
+    tasks:{}, settlement:{}, exit_interview:{}, notes:"" };
+}
+
+function goOffboarding(){ state.error=null; state.offb.msg=""; state.offb.error=null; state.offb.emp=null; state.offb.form=null; state.empPick=""; state.empPickInactive=false; state.screen="mod2-offboarding"; render(); loadOffboarding(); }
+function loadOffboarding(){
+  if(!(supaConfigured() && isLoggedIn())){ state.offb.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
+  state.offb.loading=true; state.offb.error=null; render();
+  Promise.all([
+    (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()),
+    dbListOffboarding(),
+    (state.lic.items!==null?Promise.resolve(state.lic.items):dbListLeaves())
+  ]).then(function(r){
+    state.emp.items=r[0]||[]; state.offb.items=r[1]||[]; state.lic.items=r[2]||[];
+    state.offb.loading=false; render();
+  }).catch(function(){ state.offb.loading=false; state.offb.error="No pude cargar los procesos de egreso."; render(); });
+}
+/* Abre el empleado y arranca el borrador con lo que ya esté guardado (o con el legajo). */
+function offbOpen(empId){
+  var e=(state.emp.items||[]).filter(function(x){ return x.id===empId; })[0];
+  if(!e) return;
+  var p=offbFor(empId);
+  state.offb.emp=empId; state.offb.msg="";
+  state.offb.form=p ? JSON.parse(JSON.stringify(p)) : offbBlank(e);
+  if(!state.offb.form.tasks) state.offb.form.tasks={};
+  if(!state.offb.form.settlement) state.offb.form.settlement={};
+  if(!state.offb.form.exit_interview) state.offb.form.exit_interview={};
+  render();
+}
+function offbForm(){
+  if(!state.offb.form) return null;
+  if(!state.offb.form.tasks) state.offb.form.tasks={};
+  if(!state.offb.form.settlement) state.offb.form.settlement={};
+  if(!state.offb.form.exit_interview) state.offb.form.exit_interview={};
+  return state.offb.form;
+}
+function offbToggleTask(key, done){
+  var f=offbForm(); if(!f) return;
+  var prev=f.tasks[key]||{};
+  f.tasks[key]=done ? { done:true, date:(prev.date||todayISO()||""), note:prev.note||"" } : { done:false, date:prev.date||"", note:prev.note||"" };
+  render();
+}
+function offbSave(empId, extra){
+  var f=offbForm(); if(!f) return;
+  var e=(state.emp.items||[]).filter(function(x){ return x.id===empId; })[0];
+  if(!e) return;
+  if(f.termination_date && f.last_day && f.last_day>f.termination_date){
+    state.offb.msg=""; state.offb.error="El último día trabajado no puede ser posterior a la fecha de egreso."; render(); return;
+  }
+  var row={ employee_id:empId, status:(extra&&extra.status)||f.status||"en_curso",
+    reason:f.reason||"", termination_date:f.termination_date||null, last_day:f.last_day||null,
+    notice_date:f.notice_date||null, tasks:f.tasks||{}, settlement:f.settlement||{},
+    exit_interview:f.exit_interview||{}, notes:(f.notes||"").trim() };
+  var existing=offbFor(empId);
+  state.offb.saving=true; state.offb.error=null; render();
+  var op=existing ? dbUpdateOffboarding(existing.id, row) : dbCreateOffboarding(row);
+  op.then(function(){ return dbListOffboarding(); })
+    .then(function(l){
+      state.offb.items=l||[]; state.offb.saving=false;
+      var p=offbFor(empId); if(p) state.offb.form=JSON.parse(JSON.stringify(p));
+      state.offb.msg=(extra&&extra.msg)||"Proceso guardado.";
+      render();
+    })
+    .catch(function(){ state.offb.saving=false; state.offb.error="No pude guardar (¿corriste el SQL de off boarding, sql_offboarding.sql?)."; render(); });
+}
+function offbSetStatus(empId, status){
+  var f=offbForm(); if(!f) return;
+  f.status=status;
+  offbSave(empId, { status:status, msg:(status==="completado"?"Proceso de egreso cerrado.":"Proceso reabierto.") });
+}
+function offbDelete(empId){
+  var p=offbFor(empId); if(!p) return;
+  if(!confirm("¿Eliminar el proceso de egreso de esta persona? Se pierden el checklist, la liquidación y la entrevista. No se puede deshacer.")) return;
+  dbDeleteOffboarding(p.id).then(function(){ return dbListOffboarding(); })
+    .then(function(l){ state.offb.items=l||[]; state.offb.form=null; state.offb.emp=null; state.offb.msg="Proceso eliminado."; render(); })
+    .catch(function(){ state.offb.error="No pude eliminar el proceso."; render(); });
+}
+/* Resumen del egreso en CSV, para adjuntar al legajo o pasarle a quien liquida. */
+function offbDownloadCSV(empId){
+  var e=(state.emp.items||[]).filter(function(x){ return x.id===empId; })[0];
+  var f=offbForm(); if(!e||!f) return;
+  var sug=offbSuggest(e, f), despido=offbIsDespido(f.reason);
+  var out=[["Proceso de egreso — "+empFullName(e)],[]];
+  out.push(["Legajo", e.legajo_number||""]);
+  out.push(["Puesto", e.position||""]);
+  out.push(["Fecha de ingreso", fDMY(e.hire_date)]);
+  out.push(["Motivo", f.reason||""]);
+  out.push(["Fecha de egreso", fDMY(f.termination_date)]);
+  out.push(["Último día trabajado", fDMY(f.last_day)]);
+  out.push(["Preaviso notificado", fDMY(f.notice_date)]);
+  out.push(["Estado del proceso", f.status==="completado"?"Completado":"En curso"]);
+  out.push([]); out.push(["Área","Tarea","Estado","Fecha","Observación"]);
+  OFFB_GROUPS.forEach(function(g){
+    OFFB_TASKS.filter(function(t){ return t.group===g.key; }).forEach(function(t){
+      var st=(f.tasks||{})[t.key]||{};
+      out.push([g.label, t.label, st.done?"Hecho":"Pendiente", st.done?fDMY(st.date):"", st.note||""]);
+    });
+  });
+  out.push([]); out.push(["Concepto","Importe","Cálculo sugerido"]);
+  var total=0;
+  OFFB_CONCEPTS.filter(function(c){ return !c.soloDespido || despido; }).forEach(function(c){
+    var sg=sug.items[c.key]||{}; var v=(f.settlement||{})[c.key];
+    var n=(v!=null&&v!=="")?Number(v):(sg.amount!=null?sg.amount:0);
+    if(isFinite(n)) total+=n;
+    out.push([c.label, isFinite(n)?Math.round(n):"", sg.formula||""]);
+  });
+  out.push(["TOTAL", Math.round(total), ""]);
+  var ei=f.exit_interview||{};
+  out.push([]); out.push(["Entrevista de salida"]);
+  out.push(["Fecha", fDMY(ei.date)]);
+  out.push(["¿Recomendaría la empresa?", ei.recommend||""]);
+  out.push(["Motivo real", ei.real_reason||""]);
+  out.push(["Comentarios", ei.comments||""]);
+  if((f.notes||"").trim()){ out.push([]); out.push(["Notas del proceso", f.notes]); }
+  try{
+    var csv="﻿"+toCSV(out);
+    var blob=new Blob([csv], { type:"text/csv;charset=utf-8" });
+    var url=URL.createObjectURL(blob);
+    plainBrowserDownload(url, "egreso_"+(empFullName(e).replace(/[^\w]+/g,"_"))+".csv");
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(x){} }, 4000);
+  }catch(x){}
+}
+
 function fichadorLink(){ var c=state.asist.config; if(!c||!c.code) return ""; var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?fichar="+encodeURIComponent(c.code); }
 /* Elimina una fichada. */
 function deleteAttendance(id){
@@ -7255,6 +8075,16 @@ function bind(){
       else if (act === "ben-status"){ benSetStatus(el.getAttribute("data-id"), el.getAttribute("data-s")); }
       else if (act === "ben-inst"){ benAddInstallment(el.getAttribute("data-id"), parseInt(el.getAttribute("data-d"),10)||1); }
       else if (act === "ben-del"){ benDelete(el.getAttribute("data-id")); }
+      else if (act === "go-reportes") goReportes();
+      else if (act === "rep-csv"){ repDownloadCSV(); }
+      else if (act === "go-offboarding") goOffboarding();
+      else if (act === "offb-emp"){ offbOpen(el.getAttribute("data-e")); }
+      else if (act === "offb-emp-back"){ state.offb.emp=null; state.offb.form=null; state.offb.msg=""; state.offb.error=null; render(); }
+      else if (act === "offb-save"){ offbSave(el.getAttribute("data-e")); }
+      else if (act === "offb-close"){ offbSetStatus(el.getAttribute("data-e"), "completado"); }
+      else if (act === "offb-reopen"){ offbSetStatus(el.getAttribute("data-e"), "en_curso"); }
+      else if (act === "offb-del"){ offbDelete(el.getAttribute("data-e")); }
+      else if (act === "offb-csv"){ offbDownloadCSV(el.getAttribute("data-e")); }
       else if (act === "perf-new"){ perfNewForm(); }
       else if (act === "perf-cancel"){ state.perf.form=null; render(); }
       else if (act === "perf-save"){ perfSave(el.getAttribute("data-e")); }
@@ -7495,6 +8325,19 @@ function bind(){
     f.addEventListener("input", function(e){ state.emp.search=e.target.value; applyEmpFilter(); });
     applyEmpFilter();
   }
+  // ---- Reportes ----
+  if ((f=document.getElementById("f_rep_year"))) f.addEventListener("change", function(e){ state.rep.year=parseInt(e.target.value,10)||null; render(); });
+  // ---- Off boarding ----
+  var offbBind=function(id, key){ var el=document.getElementById(id); if(el) el.addEventListener("input", function(ev){ var fo=offbForm(); if(fo) fo[key]=ev.target.value; }); };
+  offbBind("f_offb_term","termination_date"); offbBind("f_offb_last","last_day");
+  offbBind("f_offb_notice","notice_date"); offbBind("f_offb_notes","notes");
+  if ((f=document.getElementById("f_offb_reason"))) f.addEventListener("change", function(e){ var fo=offbForm(); if(fo){ fo.reason=e.target.value; render(); } });
+  var eiBind=function(id, key){ var el=document.getElementById(id); if(el) el.addEventListener("input", function(ev){ var fo=offbForm(); if(fo) fo.exit_interview[key]=ev.target.value; }); };
+  eiBind("f_offb_ei_date","date"); eiBind("f_offb_ei_reason","real_reason"); eiBind("f_offb_ei_comments","comments");
+  if ((f=document.getElementById("f_offb_ei_rec"))) f.addEventListener("change", function(e){ var fo=offbForm(); if(fo) fo.exit_interview.recommend=e.target.value; });
+  document.querySelectorAll("input[data-offbtask]").forEach(function(el){ el.addEventListener("change", function(e){ offbToggleTask(el.getAttribute("data-offbtask"), e.target.checked); }); });
+  document.querySelectorAll("input[data-offbnote]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo && fo.tasks[el.getAttribute("data-offbnote")]) fo.tasks[el.getAttribute("data-offbnote")].note=e.target.value; }); });
+  document.querySelectorAll("input[data-offbconcept]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo) fo.settlement[el.getAttribute("data-offbconcept")]=e.target.value; }); });
   // ---- Selector de empleado de las áreas del módulo 2 ----
   if ((f=document.getElementById("f_pick_search"))){
     var applyPickFilter=function(){
