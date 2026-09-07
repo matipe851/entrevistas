@@ -505,8 +505,8 @@ function gmailSend(to, subject, message){
   if(!g || !g.access_token) return Promise.resolve({ ok:false, error:"no_google" });
   var u = currentUser();
   var payload = { action:"send", accessToken:g.access_token, to:to, subject:subject, message:message,
-                  fromName:(state.brand && state.brand.name) ? state.brand.name : "",
-                  fromEmail:(u && u.email) ? u.email : "" };
+                  fromName:brandName(), fromEmail:(u && u.email) ? u.email : "",
+                  brandName:brandName(), brandLogo:brandLogoUrl() };
   return gmailPost("/api/gmail", payload).then(function(r){
     if (r && r.ok) return r;
     if (r && (r.error==="unauthorized" || r.__status===401 || r.status===401) && g.refresh_token){
@@ -912,7 +912,7 @@ function saveNewJob(){
     code:code, position:pos, company:(nj.company||"").trim(), focus:(nj.focus||"").trim(),
     description:(nj.description||"").trim(), must_have:(nj.must||"").trim(), nice_to_have:(nj.nice||"").trim(),
     benefits:(nj.benefits||"").trim(), salary:(nj.salary||"").trim(), language:nj.language||"es",
-    brand_name:state.brand.name||"", brand_logo:state.brand.logo||"", active:true
+    brand_name:brandName(), brand_logo:brandLogoUrl(), active:true
   };
   dbCreateJob(row).then(function(saved){
     state.jobs.saving=false;
@@ -1689,7 +1689,8 @@ var state = {
   encp: null,
   fichador: null,
   sign: null,
-  brand: { name:"", logo:"" },
+  brand: { id:null, name:"", logo:"" },
+  brandpick: null,
   myApproved: null,
   admin: { loading:false, items:null, error:null },
   audioOmitted: false, recording:false, qTiming:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
@@ -1722,9 +1723,9 @@ function render(){
   }
   app.innerHTML = out; bind();
 }
-try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
+try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v35.1-r103";
+var APP_VERSION = "v36.0-r104";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1735,6 +1736,7 @@ function Header(){
       '<h1 class="hdr-title">Talent<span class="dot">IA</span></h1>' +
       '<p class="hdr-sub">Consultora de RR.HH.</p>' +
     '</div>' +
+    (function(){ var chip=BrandChip(); return chip ? '<span style="margin-left:auto;display:flex;align-items:center;gap:8px">'+chip+'</span>' : ''; })() +
     (showHome ? '<button class="hdr-home" data-action="home">'+ic('home',14)+' Inicio</button>' : '') +
   '</div>';
 }
@@ -1984,7 +1986,7 @@ Screens["hub"] = function(){
       areas:"12 áreas · Legajo · Asistencia · Licencias · Reportes" },
     { n:"03", icon:"globe", title:"Clima y cultura", action:"go-module-clima",
       desc:"Encuestas de clima, eNPS, feedback y planes de acción.",
-      areas:"6 áreas · en preparación" }
+      areas:"6 áreas · Encuestas de clima activas" }
   ];
   var card = function(o){
     return '<button class="tile" data-action="'+o.action+'" style="width:100%;height:100%;gap:0;padding:24px;align-items:stretch">' +
@@ -2005,7 +2007,7 @@ Screens["hub"] = function(){
       '<div class="hdr-mark">'+ic('users',16)+'</div>' +
       '<div><h1 class="hdr-title">Talent<span class="dot">IA</span></h1>' +
         '<p class="hdr-sub">Consultora de RR.HH.</p></div>' +
-      '<div style="margin-left:auto;display:flex;align-items:center;gap:9px;flex-wrap:wrap">' + admin +
+      '<div style="margin-left:auto;display:flex;align-items:center;gap:9px;flex-wrap:wrap">' + BrandChip() + admin +
         (u&&u.email?('<span style="font-size:12px;color:var(--faint)">'+esc(u.email)+'</span>'):'') +
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
       '</div>' +
@@ -2353,7 +2355,7 @@ function encCreate(){
     questions: JSON.parse(JSON.stringify(t.questions)),
     scale:5, anonymous:f.anonymous!==false, ask_area:f.ask_area!==false,
     status:"borrador", frequency:f.frequency||"unica", auto_send:false,
-    recipients:[], brand_name:(state.brand&&state.brand.name)?state.brand.name:null
+    recipients:[], brand_name:brandName()||null, brand_logo:brandLogoUrl()||null
   };
   f.saving=true; state.clima.error=null; render();
   dbCreateSurvey(row).then(function(s){
@@ -5467,10 +5469,13 @@ Screens.config = function(){
         '<span class="field-hint">La IA lo lee y adapta algunas preguntas a la experiencia real del candidato. Máx. 10 MB. Requiere la IA activada.</span>' +
         '<span id="cvStatus" style="display:block;font-size:12px;color:var(--teal);margin-top:4px">'+((rt.cvText&&rt.cvText.length>40)?('CV cargado'+(rt.cvName?(': '+esc(rt.cvName)):'')+' — las preguntas se adaptarán a él.'):'')+'</span>' +
       '</label>' +
-      '<div class="field" style="background:var(--surface-2);border-radius:14px;padding:14px 16px"><span class="field-label" style="margin-bottom:8px;display:block">Tu marca en las invitaciones (opcional)</span>' +
-        '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">'+(state.brand.logo?'<img src="'+esc(state.brand.logo)+'" alt="logo" style="height:38px;max-width:120px;object-fit:contain;border-radius:6px;background:var(--surface);padding:2px">':'')+
-        '<input id="f_brandname" placeholder="Nombre de tu empresa/marca" value="'+esc(state.brand.name||"")+'" style="flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--ink);font-family:inherit;font-size:14px"></div>' +
-        '<input id="f_brandlogo" type="file" accept="image/*" style="width:100%;font-size:12.5px;color:var(--muted)"><span class="field-hint">Logo (opcional). Se muestra a los candidatos en la invitación. Requiere Cloudinary configurado.</span><span id="brandStatus" style="display:block;font-size:12px;color:var(--teal);margin-top:4px"></span>' +
+      '<div class="field" style="background:var(--surface-2);border-radius:14px;padding:14px 16px"><span class="field-label" style="margin-bottom:8px;display:block">Tu marca en las invitaciones</span>' +
+        '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+          (brandLogoUrl()?'<img src="'+esc(brandLogoUrl())+'" alt="logo" style="height:38px;max-width:120px;object-fit:contain;border-radius:6px;background:var(--surface);padding:2px">':'') +
+          '<span style="flex:1;min-width:120px;font-size:13.5px;color:var(--ink);font-weight:600">'+(brandName()?esc(brandName()):'<span style="color:var(--muted);font-weight:400">Sin marca: los mails salen sin logo ni nombre de empresa.</span>')+'</span>' +
+          '<button class="btn btn-ghost btn-sm" data-action="brand-change">'+ic('rotate',13)+' Cambiar empresa</button>' +
+        '</div>' +
+        '<span class="field-hint" style="margin-top:8px;display:block">Es la empresa que elegiste al entrar. Se muestra al candidato en la invitación y en el mail.</span>' +
       '</div>' +
       '<div class="grid3">' +
         '<label class="field"><span class="field-label">Seniority</span><select class="bare" id="f_level">' + LEVELS.map(function(l){return '<option'+(l===c.level?' selected':'')+'>'+l+'</option>';}).join('') + '</select></label>' +
@@ -5927,12 +5932,12 @@ function sendResultsAuto(){
   return fetch("/api/notify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    body: JSON.stringify(Object.assign({
       to: to,
       subject: resultsSubject(),
       message: buildResultsMessage(),
       replyTo: state.candidateEmail || ""
-    })
+    }, brandMailFields()))
   }).then(function(r){ return r.json(); }).then(function(j){
     if (j && j.ok) return true;
     throw { message: (j && (j.detail || j.error)) || "El servicio de envío rechazó el mensaje." };
@@ -6366,7 +6371,7 @@ function buildSignLink(token){ var base=(pageBaseUrl()||PROD_BASE).replace(/[?#]
 /* Envía el mail de firma al empleado (Brevo vía /api/notify). Resuelve con el JSON de respuesta; nunca rechaza. */
 function notifySignEmail(email, nom, link){
   var msg="Hola "+(nom||"")+",\n\nNecesitamos tu firma en tu legajo. Por favor firmalo desde este link:\n"+link+"\n\nVas a poder ver todos tus datos y elegir el estilo de tu firma. Gracias.";
-  return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:email, subject:"Firmá tu legajo", message:msg }) })
+  return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({ to:email, subject:"Firmá tu legajo", message:msg }, brandMailFields())) })
     .then(function(r){ return r.json().catch(function(){ return {}; }); })
     .catch(function(){ return { ok:false, error:"network" }; });
 }
@@ -6406,7 +6411,7 @@ function sendLegajoForSign(){
 function buildDocLink(token){ var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?firmar_doc="+encodeURIComponent(token); }
 function notifyDocEmail(email, nom, link, label){
   var msg="Hola "+(nom||"")+",\n\nNecesitamos tu firma en un documento ("+(label||"documento")+"). Por favor firmalo desde este link:\n"+link+"\n\nVas a poder verlo y elegir el estilo de tu firma. Gracias.";
-  return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:email, subject:"Firmá tu documento: "+(label||"documento"), message:msg }) })
+  return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({ to:email, subject:"Firmá tu documento: "+(label||"documento"), message:msg }, brandMailFields())) })
     .then(function(r){ return r.json().catch(function(){ return {}; }); })
     .catch(function(){ return { ok:false, error:"network" }; });
 }
@@ -6471,7 +6476,7 @@ function doSignDoc(){
 function buildEppLink(token){ var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, ""); return base+"?firmar_entrega="+encodeURIComponent(token); }
 function notifyEppEmail(email, nom, link, label){
   var msg="Hola "+(nom||"")+",\n\nNecesitamos tu firma por la entrega de "+(label||"un elemento")+". Por favor firmá la constancia desde este link:\n"+link+"\n\nVas a poder verla y elegir el estilo de tu firma. Gracias.";
-  return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ to:email, subject:"Firmá la entrega: "+(label||"elemento"), message:msg }) })
+  return fetch("/api/notify", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(Object.assign({ to:email, subject:"Firmá la entrega: "+(label||"elemento"), message:msg }, brandMailFields())) })
     .then(function(r){ return r.json().catch(function(){ return {}; }); })
     .catch(function(){ return { ok:false, error:"network" }; });
 }
@@ -8252,7 +8257,7 @@ function doSignup(email, password, captchaToken){
     render();
   }).catch(function(){ state.busy=false; state.error="No pude conectar. Revisá tu conexión."; render(); });
 }
-function doLogout(){ supaLogout(); state.dash={loading:false,items:null,error:null,detail:null}; state.admin={loading:false,items:null,error:null}; state.myApproved=null; state.screen="home"; render(); }
+function doLogout(){ supaLogout(); clearBrandSession(); state.dash={loading:false,items:null,error:null,detail:null}; state.admin={loading:false,items:null,error:null}; state.myApproved=null; state.screen="home"; render(); }
 function loadDashboard(){
   if(!supaConfigured() || !isLoggedIn()) return;
   state.dash.loading=true; state.dash.error=null; render();
@@ -8261,11 +8266,14 @@ function loadDashboard(){
 }
 function routeAfterAuth(){
   state.myApproved = null;
+  loadBrandForUser();
+  // Una vez por sesión se elige con qué empresa se trabaja (nombre + logo de los mails).
+  var entrar = function(){ if (brandSessionDone()) { state.screen="hub"; render(); loadDashboard(); } else { goBrandPick(); loadDashboard(); } };
   // El admin siempre puede entrar (para poder aprobar, incluso a sí mismo).
-  if (isAdminUser()){ state.myApproved = true; state.screen="hub"; render(); loadDashboard(); loadAdminList(); return; }
+  if (isAdminUser()){ state.myApproved = true; entrar(); loadAdminList(); return; }
   loadProfile().then(function(approved){
     state.myApproved = !!approved;
-    if (approved){ state.screen="hub"; render(); loadDashboard(); }
+    if (approved){ entrar(); }
     else { state.screen="rec-pending"; render(); }
   });
 }
@@ -8413,7 +8421,7 @@ function createBulkInterviewRow(code, name, email, qs){
 function sendInviteEmail(to, subject, message){
   return fetch("/api/notify", {
     method: "POST", headers: { "Content-Type":"application/json" },
-    body: JSON.stringify({ to: to, subject: subject, message: message })
+    body: JSON.stringify(Object.assign({ to: to, subject: subject, message: message }, brandMailFields()))
   }).then(function(r){ return r.json(); }).catch(function(){ return { ok:false, error:"network" }; });
 }
 /* Envío "inteligente": si iniciaste sesión con Google, sale desde tu Gmail;
@@ -8948,6 +8956,13 @@ function bind(){
       else if (act === "go-module-recruit") goRecruiterHome();
       else if (act === "go-module-admin-hr") goMod2();
       else if (act === "go-module-clima") goMod3();
+      else if (act === "brand-change"){ goBrandPick(true); }
+      else if (act === "brand-use"){ brandUse(el.getAttribute("data-id")); }
+      else if (act === "brand-new"){ brandNewForm(); }
+      else if (act === "brand-save"){ brandSaveNew(); }
+      else if (act === "brand-cancel"){ brandCancelForm(); }
+      else if (act === "brand-del"){ brandDelete(el.getAttribute("data-id")); }
+      else if (act === "brand-skip"){ brandSkip(); }
       else if (act === "go-encuestas") goEncuestas();
       else if (act === "enc-new") encNewForm();
       else if (act === "enc-tpl"){ encPickTemplate(el.getAttribute("data-k")); }
@@ -9244,16 +9259,7 @@ function bind(){
   if ((f=document.getElementById("f_company"))) f.addEventListener("input", function(e){ state.config.company=e.target.value; syncGenBtn(); });
   if ((f=document.getElementById("f_focus"))) f.addEventListener("input", function(e){ state.config.focus=e.target.value; });
   if ((f=document.getElementById("f_companyurl"))) f.addEventListener("input", function(e){ state.config.companyUrl=e.target.value; });
-  if ((f=document.getElementById("f_brandname"))) f.addEventListener("input", function(e){ state.brand.name=e.target.value; saveBrand(); });
-  if ((f=document.getElementById("f_brandlogo"))) f.addEventListener("change", function(e){
-    var file = e.target.files && e.target.files[0]; var st=document.getElementById("brandStatus");
-    if(!file) return;
-    if(!audioUploadConfigured()){ if(st){ st.style.color="var(--brick)"; st.textContent="Para subir logo necesitás Cloudinary configurado."; } return; }
-    if(file.size > 3*1024*1024){ if(st){ st.style.color="var(--brick)"; st.textContent="El logo supera los 3 MB."; } return; }
-    if(st){ st.style.color="var(--muted)"; st.textContent="Subiendo logo…"; }
-    uploadAudioToCloudinary(file).then(function(url){ state.brand.logo=url; saveBrand(); if(st){ st.style.color="var(--teal)"; st.textContent="Logo cargado."; } render(); })
-      .catch(function(){ if(st){ st.style.color="var(--brick)"; st.textContent="No pude subir el logo."; } });
-  });
+  /* (la marca ya no se edita acá: se elige al entrar, en la pantalla "brand-pick") */
   /* screening de CVs */
   if ((f=document.getElementById("f_searchtitle"))) f.addEventListener("input", function(e){ state.newsearch.title=e.target.value; });
   if ((f=document.getElementById("f_searchdesc"))) f.addEventListener("input", function(e){ state.newsearch.description=e.target.value; });
@@ -9295,6 +9301,14 @@ function bind(){
   document.querySelectorAll("input[data-offbtask]").forEach(function(el){ el.addEventListener("change", function(e){ offbToggleTask(el.getAttribute("data-offbtask"), e.target.checked); }); });
   document.querySelectorAll("input[data-offbnote]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo && fo.tasks[el.getAttribute("data-offbnote")]) fo.tasks[el.getAttribute("data-offbnote")].note=e.target.value; }); });
   document.querySelectorAll("input[data-offbconcept]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo) fo.settlement[el.getAttribute("data-offbconcept")]=e.target.value; }); });
+
+  /* elegir la empresa de la sesión */
+  if ((f=document.getElementById("f_brand_name"))){
+    f.addEventListener("input", function(e){ if(state.brandpick&&state.brandpick.form) state.brandpick.form.name=e.target.value; });
+    f.addEventListener("keydown", function(e){ if(e.key==="Enter") brandSaveNew(); });
+    if(!(state.brandpick&&state.brandpick.form&&state.brandpick.form.name)) f.focus();
+  }
+  if ((f=document.getElementById("f_brand_logo"))) f.addEventListener("change", function(e){ if(e.target.files&&e.target.files[0]) brandUploadLogo(e.target.files[0]); });
 
   /* encuestas de clima — alta */
   if ((f=document.getElementById("f_enc_title"))) f.addEventListener("input", function(e){ if(state.clima.form) state.clima.form.title=e.target.value; });
@@ -9745,9 +9759,229 @@ function bind(){
   }
 }
 
-/* ---- marca (white-label) guardada en este navegador ---- */
-(function loadBrand(){ try{ var b=lget("voz_brand"); if(b&&(b.name||b.logo)){ state.brand={ name:b.name||"", logo:b.logo||"" }; } }catch(e){} })();
-function saveBrand(){ try{ lset("voz_brand", { name:state.brand.name||"", logo:state.brand.logo||"" }); }catch(e){} }
+/* ===================== MARCA DE LA EMPRESA (white-label por usuario) =====================
+   Cada usuario carga las empresas con las que trabaja (nombre + logo) y elige una al
+   iniciar sesión. La marca activa se usa en la app y viaja en TODOS los mails que se
+   mandan desde adentro: el remitente sale con el nombre de la empresa y el mail lleva
+   el logo arriba. */
+
+function brandStoreKey(){ var u=currentUser(); return "voz_brand_"+((u&&u.id)||"anon"); }
+/* La marca elegida queda guardada para este usuario (sobrevive a un F5). */
+function saveBrand(){
+  try{ lset(brandStoreKey(), { id:state.brand.id||null, name:state.brand.name||"", logo:state.brand.logo||"" }); }catch(e){}
+}
+function loadBrandForUser(){
+  try{
+    var b=lget(brandStoreKey());
+    state.brand = { id:(b&&b.id)||null, name:(b&&b.name)||"", logo:(b&&b.logo)||"" };
+  }catch(e){ state.brand={ id:null, name:"", logo:"" }; }
+}
+/* ¿Ya eligió empresa en ESTA sesión del navegador? (se pregunta una vez por sesión) */
+function brandSessionDone(){
+  try{
+    var u=currentUser(), raw=sessionStorage.getItem("voz_brand_session");
+    if(!raw) return false;
+    var v=JSON.parse(raw);
+    return !!(v && u && v.uid===u.id);
+  }catch(e){ return false; }
+}
+function markBrandSession(){
+  try{ var u=currentUser(); sessionStorage.setItem("voz_brand_session", JSON.stringify({ uid:(u&&u.id)||"", at:Date.now() })); }catch(e){}
+}
+function clearBrandSession(){ try{ sessionStorage.removeItem("voz_brand_session"); }catch(e){} }
+
+function brandName(){ return (state.brand && state.brand.name) ? String(state.brand.name).trim() : ""; }
+function brandLogoUrl(){ return (state.brand && state.brand.logo) ? String(state.brand.logo).trim() : ""; }
+/* Campos de marca que se le suman a cada envío de mail. En el lado del candidato
+   no hay sesión ni marca activa, así que ahí se usa la marca que viajó en la invitación. */
+function brandMailFields(){
+  var n=brandName(), l=brandLogoUrl();
+  if(!n && !l){
+    var inv=state.invite||{};
+    n=inv.brandName||inv.brand_name||"";
+    l=inv.brandLogo||inv.brand_logo||"";
+  }
+  return { brandName:n||"", brandLogo:l||"" };
+}
+
+/* ---- Base de datos ---- */
+function dbListBrands(){
+  return supaFetch("/rest/v1/brands?select=*&order=last_used_at.desc")
+    .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); }).catch(function(){ return []; });
+}
+function dbCreateBrand(row){
+  return supaFetch("/rest/v1/brands", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateBrand(id, patch){
+  return supaFetch("/rest/v1/brands?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ return (Array.isArray(j)&&j[0])||null; }); }).catch(function(){ return null; });
+}
+function dbDeleteBrand(id){
+  return supaFetch("/rest/v1/brands?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+
+/* ---- Pantalla: elegir la empresa de la sesión ---- */
+function goBrandPick(fromHeader){
+  state.brandpick = { loading:true, items:null, error:null, form:null, saving:false, msg:"", fromHeader:!!fromHeader };
+  state.error=null; state.screen="brand-pick"; render();
+  loadBrands();
+}
+function loadBrands(){
+  if(!(supaConfigured() && isLoggedIn())){ state.brandpick.loading=false; state.brandpick.items=[]; render(); return; }
+  dbListBrands().then(function(items){
+    state.brandpick.loading=false;
+    state.brandpick.items=items||[];
+    // Si todavía no cargó ninguna empresa, abrimos derecho el formulario.
+    if(!state.brandpick.items.length && !state.brandpick.form) state.brandpick.form={ name:"", logo:"", uploading:false };
+    if(state.screen==="brand-pick") render();
+  }).catch(function(){
+    state.brandpick.loading=false; state.brandpick.items=[];
+    state.brandpick.error="No pude leer tus empresas (¿corriste el SQL de marca?).";
+    render();
+  });
+}
+/* Entra a la app con la marca elegida. */
+function brandUse(id){
+  var b=(state.brandpick.items||[]).filter(function(x){ return x.id===id; })[0];
+  if(!b) return;
+  state.brand={ id:b.id, name:b.name||"", logo:b.logo_url||"" };
+  saveBrand(); markBrandSession();
+  dbUpdateBrand(b.id, { last_used_at:new Date().toISOString() });
+  goHub();
+}
+function brandNewForm(){ state.brandpick.form={ name:"", logo:"", uploading:false }; state.brandpick.msg=""; render(); }
+function brandCancelForm(){ state.brandpick.form=null; state.brandpick.msg=""; render(); }
+function brandUploadLogo(file){
+  var f=state.brandpick.form; if(!f||!file) return;
+  if(file.size>4*1024*1024){ state.brandpick.msg="El logo supera los 4 MB."; render(); return; }
+  if(!audioUploadConfigured()){ state.brandpick.msg="Para subir el logo hay que tener Cloudinary configurado. Podés seguir sólo con el nombre."; render(); return; }
+  f.uploading=true; state.brandpick.msg=""; render();
+  var uid="marca_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+  uploadAudioToCloudinary(file, "marcas/"+uid).then(function(url){
+    f.logo=url; f.uploading=false; state.brandpick.msg="Logo cargado."; render();
+  }).catch(function(){ f.uploading=false; state.brandpick.msg="No pude subir el logo. Probá con otra imagen."; render(); });
+}
+function brandSaveNew(){
+  var f=state.brandpick.form; if(!f||state.brandpick.saving) return;
+  var name=(f.name||"").trim();
+  if(!name){ state.brandpick.msg="Escribí el nombre de la empresa."; render(); return; }
+  state.brandpick.saving=true; state.brandpick.error=null; render();
+  dbCreateBrand({ name:name, logo_url:f.logo||null }).then(function(b){
+    state.brandpick.saving=false; state.brandpick.form=null;
+    state.brandpick.items=[b].concat(state.brandpick.items||[]);
+    state.brand={ id:b.id, name:b.name||"", logo:b.logo_url||"" };
+    saveBrand(); markBrandSession();
+    goHub();
+  }).catch(function(){
+    state.brandpick.saving=false;
+    state.brandpick.error="No pude guardar la empresa. ¿Corriste sql_marca.sql en Supabase?";
+    render();
+  });
+}
+function brandDelete(id){
+  if(!confirm("¿Sacar esta empresa de tu lista? Los trabajos ya enviados no se tocan.")) return;
+  dbDeleteBrand(id).then(function(){
+    state.brandpick.items=(state.brandpick.items||[]).filter(function(x){ return x.id!==id; });
+    if(state.brand && state.brand.id===id){ state.brand={ id:null, name:"", logo:"" }; saveBrand(); }
+    render();
+  });
+}
+/* Entrar sin marca: los mails salen sin logo ni nombre de empresa. */
+function brandSkip(){
+  state.brand={ id:null, name:"", logo:"" };
+  saveBrand(); markBrandSession();
+  goHub();
+}
+Screens["brand-pick"] = function(){
+  var s=state.brandpick||{};
+  var u=currentUser();
+  var html='<div style="max-width:720px;margin:0 auto">';
+  html+='<div class="hdr">' +
+    '<div class="hdr-mark">'+ic('users',16)+'</div>' +
+    '<div><h1 class="hdr-title">Talent<span class="dot">IA</span></h1><p class="hdr-sub">Consultora de RR.HH.</p></div>' +
+    '<div style="margin-left:auto;display:flex;align-items:center;gap:9px">' +
+      ((u&&u.email)?('<span style="font-size:12px;color:var(--faint)">'+esc(u.email)+'</span>'):'') +
+      '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
+    '</div></div>';
+  html+='<div style="margin-bottom:20px">' +
+    '<span class="eyebrow">Tu marca</span>' +
+    '<h2 style="font-size:22px;font-weight:600;margin:6px 0 5px;letter-spacing:-.02em">¿Con qué empresa vas a trabajar?</h2>' +
+    '<p style="margin:0;font-size:13.5px;color:var(--muted);max-width:560px">El nombre y el logo que elijas acá salen en todos los mails que mandes durante esta sesión: invitaciones a entrevistas, pedidos de firma, encuestas de clima y avisos del portal.</p>' +
+  '</div>';
+  if (s.error) html+=Note("err", esc(s.error));
+  if (s.msg) html+=Note("ok", esc(s.msg));
+  if (s.loading){ html+='<div class="center-block">'+ic('loader',26,'spin')+'<p>Buscando tus empresas…</p></div></div>'; return html; }
+
+  if (s.form){
+    var f=s.form;
+    html+='<div class="card">' +
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">'+((s.items&&s.items.length)?'Agregar otra empresa':'Cargá tu empresa')+'</h3>' +
+      '<p style="margin:0 0 14px;font-size:12.5px;color:var(--muted)">Queda guardada en tu cuenta: la próxima vez la elegís con un clic.</p>' +
+      '<label class="field"><span class="field-label">Nombre de la empresa</span><div class="input-row"><input id="f_brand_name" value="'+esc(f.name||"")+'" placeholder="Ej: Panadería del Sur S.R.L." autocomplete="organization"></div></label>' +
+      '<div class="field" style="margin-top:12px"><span class="field-label">Logo (opcional)</span>' +
+        (f.logo?('<div style="margin:6px 0 10px"><img src="'+esc(f.logo)+'" alt="logo" style="height:52px;max-width:180px;object-fit:contain;background:var(--surface-2);border-radius:8px;padding:6px"></div>'):'') +
+        '<input id="f_brand_logo" type="file" accept="image/*" style="width:100%;font-size:12.5px;color:var(--muted)">' +
+        '<span class="field-hint">'+(f.uploading?'Subiendo…':'PNG o JPG, hasta 4 MB. Se ve arriba de todo en los mails.')+'</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">' +
+        '<button class="btn btn-primary btn-sm" data-action="brand-save" '+(s.saving?'disabled':'')+'>'+(s.saving?ic('loader',15,'spin'):ic('check',15))+' Guardar y entrar</button>' +
+        ((s.items&&s.items.length)?'<button class="btn btn-ghost btn-sm" data-action="brand-cancel">Volver a la lista</button>':'') +
+      '</div>' +
+    '</div>';
+  } else {
+    html+='<div class="grid2" style="gap:12px">';
+    (s.items||[]).forEach(function(b){
+      html+='<div class="tile" style="text-align:left;height:100%;align-items:stretch;position:relative;cursor:pointer" data-action="brand-use" data-id="'+esc(b.id)+'">' +
+        '<div style="display:flex;align-items:center;gap:12px">' +
+          (b.logo_url
+            ? '<img src="'+esc(b.logo_url)+'" alt="" style="height:44px;width:44px;object-fit:contain;background:var(--surface-2);border-radius:10px;padding:4px;flex-shrink:0">'
+            : '<span style="flex-shrink:0;width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal);font-weight:800;font-size:17px">'+esc((b.name||"?")[0].toUpperCase())+'</span>') +
+          '<div style="flex:1;min-width:0">' +
+            '<p style="margin:0;font-weight:600;font-size:14.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis">'+esc(b.name||"")+'</p>' +
+            '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">'+(b.logo_url?'Con logo':'Sin logo')+'</p>' +
+          '</div>' +
+          '<span style="color:var(--muted)">'+ic('chevron',16)+'</span>' +
+        '</div>' +
+        '<button class="btn btn-ghost btn-sm" data-action="brand-del" data-id="'+esc(b.id)+'" title="Sacar de la lista" style="position:absolute;top:8px;right:8px;padding:4px 6px;color:var(--faint)">'+ic('trash',13)+'</button>' +
+      '</div>';
+    });
+    html+='<button class="tile" data-action="brand-new" style="text-align:left;height:100%;align-items:stretch;border-style:dashed">' +
+      '<div style="display:flex;align-items:center;gap:12px">' +
+        '<span style="flex-shrink:0;width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);color:var(--teal)">'+ic('plus',18)+'</span>' +
+        '<div><p style="margin:0;font-weight:600;font-size:14.5px;color:var(--ink)">Agregar empresa</p>' +
+        '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">Nombre y logo</p></div>' +
+      '</div></button>';
+    html+='</div>';
+    html+='<div style="margin-top:18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">' +
+      '<button class="btn btn-ghost btn-sm" data-action="brand-skip">Seguir sin marca</button>' +
+      '<span style="font-size:12px;color:var(--faint)">Los mails van a salir sin logo ni nombre de empresa.</span>' +
+    '</div>';
+  }
+  html+='</div>';
+  return html;
+};
+/* Chip de la marca activa, para el encabezado. */
+/* Pantallas que ve alguien de afuera (candidato, empleado que firma o responde):
+   ahí nunca va el chip, aunque el reclutador tenga la sesión abierta en el mismo navegador. */
+var BRAND_PUBLIC_SCREENS = {
+  "home":1, "loading":1, "invite-landing":1, "invite-error":1, "interview":1,
+  "cand-code":1, "job-public":1, "fichador":1, "sign-legajo":1, "sign-doc":1, "encuesta-public":1,
+  "rec-login":1, "rec-signup":1, "rec-pending":1, "brand-pick":1
+};
+function BrandChip(){
+  if (!(supaConfigured() && isLoggedIn())) return "";
+  if (BRAND_PUBLIC_SCREENS[state.screen]) return "";
+  if (state.interviewMode === "candidate" && state.screen === "report") return "";
+  var n=brandName(), l=brandLogoUrl();
+  var inner = n
+    ? ((l?'<img src="'+esc(l)+'" alt="" style="height:20px;max-width:56px;object-fit:contain;border-radius:4px">':'')+'<span style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(n)+'</span>')
+    : ('<span style="color:var(--faint)">Sin marca</span>');
+  return '<button class="btn btn-sm" data-action="brand-change" title="Cambiar la empresa de esta sesión" ' +
+    'style="gap:7px;padding:5px 10px;background:var(--surface-2);border:1px solid var(--border-soft);color:var(--muted);font-size:12px;font-weight:600">' +
+    inner + '<span style="color:var(--faint);font-weight:400">· Cambiar</span></button>';
+}
+
 
 /* ---- entrada por link de invitación ---- */
 // 1) Link autocontenido viejo (#e=...): trae todo embebido.

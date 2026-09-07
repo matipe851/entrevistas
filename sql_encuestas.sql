@@ -31,6 +31,7 @@ create table if not exists public.climate_surveys (
   current_round  text,                           -- ronda vigente, ej: "2026-09"
   recipients     jsonb not null default '[]'::jsonb, -- [{email,name}]
   brand_name     text,
+  brand_logo     text,                           -- logo de la empresa, para el mail de invitación
   created_at     timestamptz not null default now()
 );
 

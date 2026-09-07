@@ -79,13 +79,55 @@ function recipientEmails(survey) {
   });
   return out;
 }
+/* ---- Marca de la empresa en el mail ----
+   El cuerpo se escribe en texto plano; acá lo envolvemos en un HTML sobrio con el
+   logo y el nombre de la empresa arriba. El texto plano viaja igual como alternativa
+   (para quien lea con las imágenes bloqueadas o en un cliente viejo). */
+function escHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+// Convierte el texto plano en HTML: escapa, hace clickeables los links y respeta los saltos.
+function textToHtml(s) {
+  var safe = escHtml(s);
+  safe = safe.replace(/(https?:\/\/[^\s<]+)/g, function (u) {
+    return '<a href="' + u + '" style="color:#2563EB;text-decoration:underline;word-break:break-all">' + u + "</a>";
+  });
+  return safe.replace(/\r?\n/g, "<br>");
+}
+function brandedHtml(brandName, brandLogo, message) {
+  var name = String(brandName || "").trim();
+  var logo = String(brandLogo || "").trim();
+  if (!/^https:\/\//.test(logo)) logo = ""; // sólo logos servidos por https
+  var head = "";
+  if (logo || name) {
+    head =
+      '<tr><td style="padding:20px 26px;border-bottom:1px solid #eef2f8">' +
+        (logo ? '<img src="' + escHtml(logo) + '" alt="' + escHtml(name) + '" style="max-height:44px;max-width:180px;display:block;border:0">' : "") +
+        (name ? '<div style="font-size:15px;font-weight:700;color:#16233a;' + (logo ? "margin-top:10px" : "") + '">' + escHtml(name) + "</div>" : "") +
+      "</td></tr>";
+  }
+  var foot = name
+    ? '<tr><td style="padding:14px 26px;border-top:1px solid #eef2f8;font-size:11.5px;color:#5E6C86">Enviado por ' + escHtml(name) + "</td></tr>"
+    : "";
+  return '<div style="margin:0;padding:24px 12px;background:#F1F6FD">' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;width:100%;background:#ffffff;border:1px solid #e3e9f2;border-radius:14px;border-collapse:separate;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif">' +
+      head +
+      '<tr><td style="padding:24px 26px;font-size:14px;line-height:1.65;color:#16233a">' + textToHtml(message) + "</td></tr>" +
+      foot +
+    "</table></div>";
+}
+
 async function sendMail(cfg, to, subject, message) {
   try {
     var payload = {
-      sender: { email: cfg.sender, name: cfg.senderName },
+      // Sale a nombre de la empresa que armó la encuesta.
+      sender: { email: cfg.sender, name: cfg.brandName || cfg.senderName },
       to: [{ email: to }],
       subject: subject,
-      textContent: message
+      textContent: message,
+      htmlContent: brandedHtml(cfg.brandName, cfg.brandLogo, message)
     };
     if (cfg.replyTo && isEmail(cfg.replyTo)) payload.replyTo = { email: cfg.replyTo };
     var r = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -109,7 +151,7 @@ async function sendAll(cfg, list, subject, message) {
 function mailConfig() {
   var apiKey = process.env.BREVO_API_KEY, sender = process.env.BREVO_SENDER;
   if (!apiKey || !sender) return null;
-  return { apiKey: apiKey, sender: sender, senderName: process.env.BREVO_SENDER_NAME || "Encuesta de clima", replyTo: "" };
+  return { apiKey: apiKey, sender: sender, senderName: process.env.BREVO_SENDER_NAME || "Encuesta de clima", replyTo: "", brandName: "", brandLogo: "" };
 }
 async function callerUser(base, key, token) {
   try {
@@ -162,6 +204,8 @@ module.exports = async function handler(req, res) {
         var link = surveyLink(defaultBase(), s.code);
         var subject = "Encuesta de clima" + (s.brand_name ? (" · " + s.brand_name) : "");
         var out = { sent: 0, failed: 0 };
+        cfgC.brandName = s.brand_name || "";
+        cfgC.brandLogo = s.brand_logo || "";
         if (emails.length) out = await sendAll(cfgC, emails, subject, inviteMessage(s, link));
 
         var patch = {
@@ -216,6 +260,8 @@ module.exports = async function handler(req, res) {
       var smessage = String(b.message || "").slice(0, 20000) || inviteMessage(sv, slink);
       if (smessage.indexOf(slink) < 0) smessage += "\n\n" + slink;
       cfg.replyTo = isEmail(user.email) ? user.email : "";
+      cfg.brandName = sv.brand_name || "";
+      cfg.brandLogo = sv.brand_logo || "";
 
       var r2 = await sendAll(cfg, list, ssubject, smessage);
       var nowS = new Date();
