@@ -58,6 +58,46 @@ function walkParts(payload, out) {
 }
 function stripHtml(h) { return String(h || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim(); }
 
+/* ---- Marca de la empresa en el mail ----
+   El cuerpo se escribe en texto plano; acá lo envolvemos en un HTML sobrio con el
+   logo y el nombre de la empresa arriba. El texto plano viaja igual como alternativa
+   (para quien lea con las imágenes bloqueadas o en un cliente viejo). */
+function escHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+// Convierte el texto plano en HTML: escapa, hace clickeables los links y respeta los saltos.
+function textToHtml(s) {
+  var safe = escHtml(s);
+  safe = safe.replace(/(https?:\/\/[^\s<]+)/g, function (u) {
+    return '<a href="' + u + '" style="color:#2563EB;text-decoration:underline;word-break:break-all">' + u + "</a>";
+  });
+  return safe.replace(/\r?\n/g, "<br>");
+}
+function brandedHtml(brandName, brandLogo, message) {
+  var name = String(brandName || "").trim();
+  var logo = String(brandLogo || "").trim();
+  if (!/^https:\/\//.test(logo)) logo = ""; // sólo logos servidos por https
+  var head = "";
+  if (logo || name) {
+    head =
+      '<tr><td style="padding:20px 26px;border-bottom:1px solid #eef2f8">' +
+        (logo ? '<img src="' + escHtml(logo) + '" alt="' + escHtml(name) + '" style="max-height:44px;max-width:180px;display:block;border:0">' : "") +
+        (name ? '<div style="font-size:15px;font-weight:700;color:#16233a;' + (logo ? "margin-top:10px" : "") + '">' + escHtml(name) + "</div>" : "") +
+      "</td></tr>";
+  }
+  var foot = name
+    ? '<tr><td style="padding:14px 26px;border-top:1px solid #eef2f8;font-size:11.5px;color:#5E6C86">Enviado por ' + escHtml(name) + "</td></tr>"
+    : "";
+  return '<div style="margin:0;padding:24px 12px;background:#F1F6FD">' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;width:100%;background:#ffffff;border:1px solid #e3e9f2;border-radius:14px;border-collapse:separate;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif">' +
+      head +
+      '<tr><td style="padding:24px 26px;font-size:14px;line-height:1.65;color:#16233a">' + textToHtml(message) + "</td></tr>" +
+      foot +
+    "</table></div>";
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "method_not_allowed" }); return; }
   try {
@@ -151,20 +191,32 @@ module.exports = async function handler(req, res) {
       var to = String(b.to || "").trim();
       var subject = String(b.subject || "Entrevista").slice(0, 300);
       var message = String(b.message || "").slice(0, 60000);
-      var fromName = String(b.fromName || "").slice(0, 120);
+      var brandName = String(b.brandName || "").slice(0, 120).trim();
+      var brandLogo = String(b.brandLogo || "").slice(0, 1000).trim();
+      var fromName = String(b.fromName || brandName || "").slice(0, 120);
       var fromEmail = String(b.fromEmail || "").trim();
 
       if (!accessToken) { res.status(200).json({ ok: false, error: "no_token" }); return; }
       if (!isEmail(to)) { res.status(200).json({ ok: false, error: "bad_recipient" }); return; }
 
+      // multipart/alternative: el texto plano de siempre + la versión con la marca.
+      var boundary = "voz_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
       var hdrs = [];
       hdrs.push("To: " + to);
       if (fromName && isEmail(fromEmail)) hdrs.push('From: "' + encHeader(fromName).replace(/"/g, "") + '" <' + fromEmail + ">");
       hdrs.push("Subject: " + encHeader(subject));
       hdrs.push("MIME-Version: 1.0");
-      hdrs.push('Content-Type: text/plain; charset="UTF-8"');
-      hdrs.push("Content-Transfer-Encoding: base64");
-      var raw = hdrs.join("\r\n") + "\r\n\r\n" + wrap76(b64(message));
+      hdrs.push('Content-Type: multipart/alternative; boundary="' + boundary + '"');
+      var raw = hdrs.join("\r\n") + "\r\n\r\n" +
+        "--" + boundary + "\r\n" +
+        'Content-Type: text/plain; charset="UTF-8"\r\n' +
+        "Content-Transfer-Encoding: base64\r\n\r\n" +
+        wrap76(b64(message)) + "\r\n" +
+        "--" + boundary + "\r\n" +
+        'Content-Type: text/html; charset="UTF-8"\r\n' +
+        "Content-Transfer-Encoding: base64\r\n\r\n" +
+        wrap76(b64(brandedHtml(brandName, brandLogo, message))) + "\r\n" +
+        "--" + boundary + "--";
       var rawUrl = Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
       var sr = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
