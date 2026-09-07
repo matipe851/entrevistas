@@ -504,17 +504,17 @@ function gmailSend(to, subject, message){
   var g = getGoogleTokens();
   if(!g || !g.access_token) return Promise.resolve({ ok:false, error:"no_google" });
   var u = currentUser();
-  var payload = { accessToken:g.access_token, to:to, subject:subject, message:message,
+  var payload = { action:"send", accessToken:g.access_token, to:to, subject:subject, message:message,
                   fromName:(state.brand && state.brand.name) ? state.brand.name : "",
                   fromEmail:(u && u.email) ? u.email : "" };
-  return gmailPost("/api/gmail-send", payload).then(function(r){
+  return gmailPost("/api/gmail", payload).then(function(r){
     if (r && r.ok) return r;
     if (r && (r.error==="unauthorized" || r.__status===401 || r.status===401) && g.refresh_token){
-      return gmailPost("/api/google-refresh", { refreshToken:g.refresh_token }).then(function(nr){
+      return gmailPost("/api/gmail", { action:"refresh", refreshToken:g.refresh_token }).then(function(nr){
         if (nr && nr.ok && nr.access_token){
           g.access_token = nr.access_token; g.saved=Date.now(); setGoogleTokens(g);
           payload.accessToken = g.access_token;
-          return gmailPost("/api/gmail-send", payload);
+          return gmailPost("/api/gmail", payload);
         }
         return { ok:false, error:"needs_relogin" };
       });
@@ -989,11 +989,11 @@ function b64ToBlob(b64, type){
 function callGmailCvs(query){
   var g=getGoogleTokens();
   if(!g || !g.access_token) return Promise.resolve({ ok:false, error:"no_google" });
-  function attempt(tok){ return gmailPost("/api/gmail-cvs", { accessToken:tok, query:query, max:30 }); }
+  function attempt(tok){ return gmailPost("/api/gmail", { action:"cvs", accessToken:tok, query:query, max:30 }); }
   return attempt(g.access_token).then(function(r){
     if(r && r.ok) return r;
     if(r && (r.error==="unauthorized" || r.__status===401) && g.refresh_token){
-      return gmailPost("/api/google-refresh", { refreshToken:g.refresh_token }).then(function(nr){
+      return gmailPost("/api/gmail", { action:"refresh", refreshToken:g.refresh_token }).then(function(nr){
         if(nr && nr.ok && nr.access_token){ g.access_token=nr.access_token; g.saved=Date.now(); setGoogleTokens(g); return attempt(g.access_token); }
         return { ok:false, error:"needs_relogin" };
       });
@@ -1724,7 +1724,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v35.0-r102";
+var APP_VERSION = "v35.1-r103";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2180,7 +2180,7 @@ function dbListSurveyResponses(surveyId){
     .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); }).catch(function(){ return []; });
 }
 
-/* ---- Rondas y programación (misma lógica que /api/encuesta-cron) ---- */
+/* ---- Rondas y programación (misma lógica que el cron de /api/encuesta) ---- */
 function climaRoundKey(d, freq){
   var y=d.getUTCFullYear(), m=d.getUTCMonth()+1, p2=function(n){ return ("0"+n).slice(-2); };
   if (freq==="anual") return String(y);
@@ -2521,7 +2521,7 @@ function encImportEmployees(){
   state.clima.msg="Buscando empleados…"; render();
   dbListEmployees().then(function(items){ state.emp.items=items||[]; apply(state.emp.items); }).catch(function(){ state.clima.msg="No pude leer el legajo."; render(); });
 }
-/* ---- Envío masivo por mail (server-side, vía /api/encuesta-send) ---- */
+/* ---- Envío masivo por mail (server-side, vía /api/encuesta con action "send") ---- */
 function encSendNow(){
   var s=state.clima.current; if(!s) return;
   if(s.status!=="activa"){ state.clima.error="Activá la encuesta antes de enviarla."; render(); return; }
@@ -2531,9 +2531,9 @@ function encSendNow(){
   var ses=getSession();
   state.clima.send={ running:true, total:emails.length, sent:0, failed:0, done:false, error:null };
   state.clima.error=null; state.clima.msg=""; render();
-  fetch("/api/encuesta-send", {
+  fetch("/api/encuesta", {
     method:"POST", headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({ token:ses&&ses.access_token, surveyId:s.id, baseUrl:(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, "") })
+    body:JSON.stringify({ action:"send", token:ses&&ses.access_token, surveyId:s.id, baseUrl:(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, "") })
   }).then(function(r){ return r.json(); }).then(function(j){
     var sd=state.clima.send||{};
     sd.running=false; sd.done=true;

@@ -1,8 +1,25 @@
-// Función serverless (Vercel) — PÚBLICA. Encuestas de clima (Módulo 3).
-//   action "get":    devuelve la encuesta por su código (sólo si está activa).
-//   action "submit": guarda una respuesta ANÓNIMA (no guarda email ni nombre).
-// La persona que responde NO tiene sesión: se usa la SERVICE ROLE del lado del servidor.
-// Variables de entorno en Vercel: SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY.
+// Función serverless (Vercel) — TODO lo de las encuestas de clima (Módulo 3), en un
+// solo archivo. Vercel cuenta una función por archivo dentro de /api y el plan Hobby
+// admite hasta 12, así que las cuatro operaciones viajan por el mismo endpoint y se
+// eligen con "action":
+//
+//   action "get"    (público)      -> devuelve la encuesta por su código, si está activa.
+//   action "submit" (público)      -> guarda una respuesta ANÓNIMA (no guarda quién fue).
+//   action "send"   (con sesión)   -> envío masivo por mail a los destinatarios.
+//   action "cron"   (Vercel/cron)  -> manda las encuestas programadas que ya vencieron
+//                                     y deja agendado el envío siguiente.
+//
+// Quien responde NO tiene sesión: se usa la SERVICE ROLE del lado del servidor.
+// Variables de entorno en Vercel:
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  -> base de datos
+//   BREVO_API_KEY, BREVO_SENDER              -> envío de mails (igual que /api/notify)
+//   BREVO_SENDER_NAME (opcional)
+//   PUBLIC_BASE_URL   (opcional) -> base del link público
+//   CRON_SECRET       (opcional) -> si está, se exige en el header Authorization del cron
+
+var MAX_SURVEYS = 20;      // encuestas procesadas por corrida del cron
+var MAX_RECIPIENTS = 300;  // destinatarios por encuesta y por envío
+var CONCURRENCY = 8;
 
 var _rlStore = global.__voz_rl || (global.__voz_rl = {});
 function rateLimited(key, max, windowMs) {
@@ -17,58 +34,237 @@ function clientIp(req) {
   var xf = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
   return xf || req.headers["x-real-ip"] || "unknown";
 }
+function isEmail(s) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(s || "").trim()); }
+function pad2(n) { return ("0" + n).slice(-2); }
+
+/* Etiqueta de la ronda según la frecuencia: 2026-09 · 2026-T3 · 2026 */
+function roundKey(date, freq) {
+  var y = date.getUTCFullYear(), m = date.getUTCMonth() + 1;
+  if (freq === "anual") return String(y);
+  if (freq === "trimestral") return y + "-T" + Math.ceil(m / 3);
+  if (freq === "mensual") return y + "-" + pad2(m);
+  return y + "-" + pad2(m) + "-" + pad2(date.getUTCDate());
+}
+/* Próximo envío según la frecuencia (mantiene la hora del envío anterior). */
+function nextSendAt(from, freq) {
+  var d = new Date(from.getTime());
+  if (freq === "mensual") d.setUTCMonth(d.getUTCMonth() + 1);
+  else if (freq === "trimestral") d.setUTCMonth(d.getUTCMonth() + 3);
+  else if (freq === "anual") d.setUTCFullYear(d.getUTCFullYear() + 1);
+  else return null;
+  return d.toISOString();
+}
+function surveyLink(base, code) {
+  return String(base || "").replace(/[?#].*$/, "").replace(/\/*$/, "/") + "?enc=" + encodeURIComponent(code);
+}
+function defaultBase() {
+  return process.env.PUBLIC_BASE_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? ("https://" + process.env.VERCEL_PROJECT_PRODUCTION_URL) : "https://entrevistas-two.vercel.app/");
+}
+function inviteMessage(survey, link) {
+  var brand = survey.brand_name ? String(survey.brand_name).trim() : "";
+  return "Hola,\n\n" +
+    (brand ? (brand + " está haciendo su encuesta de clima laboral.\n\n") : "Estamos haciendo la encuesta de clima laboral.\n\n") +
+    "Es " + (survey.anonymous === false ? "breve" : "anónima") + " y te lleva unos pocos minutos:\n" + link + "\n\n" +
+    (survey.anonymous === false ? "" : "Nadie puede saber quién respondió qué: los resultados se ven siempre agrupados.\n\n") +
+    "Tu opinión sirve para tomar decisiones concretas. ¡Gracias por participar!";
+}
+/* Destinatarios normalizados, sin repetidos ni direcciones inválidas. */
+function recipientEmails(survey) {
+  var out = [];
+  (Array.isArray(survey && survey.recipients) ? survey.recipients : []).forEach(function (p) {
+    var em = (p && typeof p === "object") ? p.email : p;
+    em = String(em || "").trim().toLowerCase();
+    if (isEmail(em) && out.indexOf(em) < 0) out.push(em);
+  });
+  return out;
+}
+async function sendMail(cfg, to, subject, message) {
+  try {
+    var payload = {
+      sender: { email: cfg.sender, name: cfg.senderName },
+      to: [{ email: to }],
+      subject: subject,
+      textContent: message
+    };
+    if (cfg.replyTo && isEmail(cfg.replyTo)) payload.replyTo = { email: cfg.replyTo };
+    var r = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": cfg.apiKey, "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify(payload)
+    });
+    return r.status === 201 || r.ok;
+  } catch (e) { return false; }
+}
+/* Manda de a tandas para no colgar la función con listas largas. */
+async function sendAll(cfg, list, subject, message) {
+  var sent = 0, failed = 0;
+  for (var i = 0; i < list.length; i += CONCURRENCY) {
+    var chunk = list.slice(i, i + CONCURRENCY);
+    var results = await Promise.all(chunk.map(function (to) { return sendMail(cfg, to, subject, message); }));
+    results.forEach(function (ok) { if (ok) sent++; else failed++; });
+  }
+  return { sent: sent, failed: failed };
+}
+function mailConfig() {
+  var apiKey = process.env.BREVO_API_KEY, sender = process.env.BREVO_SENDER;
+  if (!apiKey || !sender) return null;
+  return { apiKey: apiKey, sender: sender, senderName: process.env.BREVO_SENDER_NAME || "Encuesta de clima", replyTo: "" };
+}
+async function callerUser(base, key, token) {
+  try {
+    var r = await fetch(base + "/auth/v1/user", { headers: { apikey: key, Authorization: "Bearer " + token } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
 
 module.exports = async function handler(req, res) {
-  if (req.method !== "POST") { res.status(405).json({ error: "method_not_allowed" }); return; }
   var url = process.env.SUPABASE_URL;
   var key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) { res.status(200).json({ ok: false, error: "no_config" }); return; }
-  if (rateLimited("enc:" + clientIp(req), 60, 5 * 60 * 1000)) { res.status(429).json({ ok: false, error: "rate_limited" }); return; }
+  var base = url.replace(/\/+$/, "");
+  var headers = { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
+
+  var b = req.body;
+  if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
+  if (!b || typeof b !== "object") b = {};
+  var action = String((req.query && req.query.action) || b.action || "").trim();
+  // El cron de Vercel entra por GET a /api/encuesta, sin cuerpo: lo reconocemos por su user-agent.
+  if (!action && req.method === "GET" && /^vercel-cron/i.test(String(req.headers["user-agent"] || ""))) action = "cron";
 
   try {
-    var b = req.body;
-    if (typeof b === "string") { try { b = JSON.parse(b); } catch (e) { b = {}; } }
-    if (!b || typeof b !== "object") b = {};
+    /* ---------- cron: envío automático de las encuestas programadas ---------- */
+    if (action === "cron") {
+      var secret = process.env.CRON_SECRET;
+      if (secret) {
+        if (String(req.headers.authorization || "") !== "Bearer " + secret) { res.status(401).json({ ok: false, error: "unauthorized" }); return; }
+      } else if (!/^vercel-cron/i.test(String(req.headers["user-agent"] || ""))) {
+        // Sin CRON_SECRET, sólo lo puede disparar el cron de Vercel.
+        res.status(401).json({ ok: false, error: "unauthorized" }); return;
+      }
+      var cfgC = mailConfig();
+      if (!cfgC) { res.status(200).json({ ok: false, error: "no_mail_config" }); return; }
 
+      var now = new Date();
+      var q = "/rest/v1/climate_surveys?select=*&status=eq.activa&auto_send=is.true" +
+        "&next_send_at=not.is.null&next_send_at=lte." + encodeURIComponent(now.toISOString()) +
+        "&order=next_send_at.asc&limit=" + MAX_SURVEYS;
+      var dueRes = await fetch(base + q, { headers: headers });
+      var due = await dueRes.json();
+      if (!Array.isArray(due)) { res.status(200).json({ ok: false, error: "query_failed" }); return; }
+
+      var report = [];
+      for (var i = 0; i < due.length; i++) {
+        var s = due[i];
+        var emails = recipientEmails(s).slice(0, MAX_RECIPIENTS);
+        var round = roundKey(now, s.frequency);
+        var link = surveyLink(defaultBase(), s.code);
+        var subject = "Encuesta de clima" + (s.brand_name ? (" · " + s.brand_name) : "");
+        var out = { sent: 0, failed: 0 };
+        if (emails.length) out = await sendAll(cfgC, emails, subject, inviteMessage(s, link));
+
+        var patch = {
+          current_round: round,
+          last_sent_at: now.toISOString(),
+          next_send_at: nextSendAt(new Date(s.next_send_at || now), s.frequency)
+        };
+        // "Única vez": se envía una sola vez y se apaga el envío automático.
+        if (!patch.next_send_at) patch.auto_send = false;
+
+        await fetch(base + "/rest/v1/climate_surveys?id=eq." + encodeURIComponent(s.id), {
+          method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify(patch)
+        });
+        report.push({ id: s.id, title: s.title, round: round, sent: out.sent, failed: out.failed, next: patch.next_send_at });
+      }
+      res.status(200).json({ ok: true, processed: report.length, surveys: report });
+      return;
+    }
+
+    if (req.method !== "POST") { res.status(405).json({ error: "method_not_allowed" }); return; }
+
+    /* ---------- send: envío masivo pedido por el reclutador ---------- */
+    if (action === "send") {
+      if (rateLimited("encsend:" + clientIp(req), 12, 10 * 60 * 1000)) { res.status(429).json({ ok: false, error: "rate_limited" }); return; }
+      var cfg = mailConfig();
+      if (!cfg) { res.status(200).json({ ok: false, error: "no_mail_config" }); return; }
+      if (!b.token) { res.status(200).json({ ok: false, error: "no_token" }); return; }
+      var surveyId = String(b.surveyId || "").trim();
+      if (!surveyId) { res.status(200).json({ ok: false, error: "no_survey" }); return; }
+
+      var user = await callerUser(base, key, b.token);
+      if (!user || !user.id) { res.status(200).json({ ok: false, error: "unauthorized" }); return; }
+
+      var sr = await fetch(base + "/rest/v1/climate_surveys?id=eq." + encodeURIComponent(surveyId) + "&select=*&limit=1", { headers: headers });
+      var srows = await sr.json();
+      if (!Array.isArray(srows) || !srows[0]) { res.status(200).json({ ok: false, error: "not_found" }); return; }
+      var sv = srows[0];
+      if (sv.owner && sv.owner !== user.id) { res.status(200).json({ ok: false, error: "not_owner" }); return; }
+      if (sv.status !== "activa") { res.status(200).json({ ok: false, error: "not_active" }); return; }
+      if (!sv.code) { res.status(200).json({ ok: false, error: "no_code" }); return; }
+
+      var all = recipientEmails(sv);
+      if (!all.length) { res.status(200).json({ ok: false, error: "no_recipients" }); return; }
+      var skipped = Math.max(0, all.length - MAX_RECIPIENTS);
+      var list = all.slice(0, MAX_RECIPIENTS);
+
+      var pb = String(b.baseUrl || "").trim() || defaultBase();
+      if (!/^https:\/\//.test(pb)) pb = defaultBase();
+      var slink = surveyLink(pb, sv.code);
+      var brand = sv.brand_name ? String(sv.brand_name).trim() : "";
+      var ssubject = String(b.subject || ("Encuesta de clima" + (brand ? (" · " + brand) : ""))).slice(0, 200);
+      var smessage = String(b.message || "").slice(0, 20000) || inviteMessage(sv, slink);
+      if (smessage.indexOf(slink) < 0) smessage += "\n\n" + slink;
+      cfg.replyTo = isEmail(user.email) ? user.email : "";
+
+      var r2 = await sendAll(cfg, list, ssubject, smessage);
+      var nowS = new Date();
+      var roundS = roundKey(nowS, sv.frequency);
+      await fetch(base + "/rest/v1/climate_surveys?id=eq." + encodeURIComponent(sv.id), {
+        method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }),
+        body: JSON.stringify({ current_round: roundS, last_sent_at: nowS.toISOString() })
+      });
+      res.status(200).json({ ok: true, total: list.length, sent: r2.sent, failed: r2.failed, skipped: skipped, round: roundS, link: slink });
+      return;
+    }
+
+    /* ---------- get / submit: la parte pública, sin sesión ---------- */
+    if (rateLimited("enc:" + clientIp(req), 60, 5 * 60 * 1000)) { res.status(429).json({ ok: false, error: "rate_limited" }); return; }
     var code = String(b.code || "").trim();
     if (!/^[A-Za-z0-9]{4,24}$/.test(code)) { res.status(200).json({ ok: false, error: "bad_code" }); return; }
 
-    var base = url.replace(/\/+$/, "");
-    var headers = { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
-
     var sel = "id,title,intro,questions,scale,anonymous,ask_area,status,code,current_round,brand_name";
-    var r = await fetch(base + "/rest/v1/climate_surveys?code=eq." + encodeURIComponent(code) + "&select=" + sel + "&limit=1", { headers: headers });
-    var rows = await r.json();
-    if (!Array.isArray(rows) || !rows[0]) { res.status(200).json({ ok: false, error: "not_found" }); return; }
-    var s = rows[0];
-    if (s.status === "cerrada") { res.status(200).json({ ok: false, error: "closed" }); return; }
-    if (s.status !== "activa") { res.status(200).json({ ok: false, error: "not_open" }); return; }
+    var pr = await fetch(base + "/rest/v1/climate_surveys?code=eq." + encodeURIComponent(code) + "&select=" + sel + "&limit=1", { headers: headers });
+    var prows = await pr.json();
+    if (!Array.isArray(prows) || !prows[0]) { res.status(200).json({ ok: false, error: "not_found" }); return; }
+    var enc = prows[0];
+    if (enc.status === "cerrada") { res.status(200).json({ ok: false, error: "closed" }); return; }
+    if (enc.status !== "activa") { res.status(200).json({ ok: false, error: "not_open" }); return; }
 
-    if (b.action === "get") {
+    if (action === "get") {
       res.status(200).json({
         ok: true,
         survey: {
-          title: s.title || "Encuesta de clima",
-          intro: s.intro || "",
-          questions: Array.isArray(s.questions) ? s.questions : [],
-          scale: s.scale || 5,
-          anonymous: s.anonymous !== false,
-          ask_area: s.ask_area !== false,
-          brand_name: s.brand_name || "",
-          round: s.current_round || ""
+          title: enc.title || "Encuesta de clima",
+          intro: enc.intro || "",
+          questions: Array.isArray(enc.questions) ? enc.questions : [],
+          scale: enc.scale || 5,
+          anonymous: enc.anonymous !== false,
+          ask_area: enc.ask_area !== false,
+          brand_name: enc.brand_name || "",
+          round: enc.current_round || ""
         }
       });
       return;
     }
 
-    if (b.action === "submit") {
-      var qs = Array.isArray(s.questions) ? s.questions : [];
+    if (action === "submit") {
+      var qs = Array.isArray(enc.questions) ? enc.questions : [];
       var byId = {};
       qs.forEach(function (q) { if (q && q.id) byId[q.id] = q; });
 
       var incoming = (b.answers && typeof b.answers === "object") ? b.answers : {};
-      var clean = {};
-      var answered = 0;
+      var clean = {}, answered = 0;
       Object.keys(incoming).slice(0, 200).forEach(function (qid) {
         var q = byId[qid];
         if (!q) return;
@@ -81,7 +277,7 @@ module.exports = async function handler(req, res) {
         }
         var n = Number(v);
         if (!isFinite(n)) return;
-        var max = (q.type === "enps") ? 10 : (s.scale || 5);
+        var max = (q.type === "enps") ? 10 : (enc.scale || 5);
         var min = (q.type === "enps") ? 0 : 1;
         if (n < min || n > max) return;
         clean[qid] = Math.round(n);
@@ -90,8 +286,8 @@ module.exports = async function handler(req, res) {
       if (!answered) { res.status(200).json({ ok: false, error: "empty" }); return; }
 
       var row = {
-        survey_id: s.id,
-        round: s.current_round || null,
+        survey_id: enc.id,
+        round: enc.current_round || null,
         area: String(b.area || "").slice(0, 120).trim() || null,
         answers: clean,
         comments: String(b.comments || "").slice(0, 4000).trim() || null
