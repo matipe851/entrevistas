@@ -1,4 +1,7 @@
 {
+  "crons": [
+    { "path": "/api/encuesta-cron", "schedule": "0 12 * * *" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
