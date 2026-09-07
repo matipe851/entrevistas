@@ -1684,6 +1684,9 @@ var state = {
   empPick: "", empPickInactive: false,
   rep: { loading:false, error:null, year:null },
   offb: { loading:false, items:null, error:null, msg:"", emp:null, form:null, saving:false },
+  clima: { loading:false, items:null, error:null, msg:"", form:null, saving:false, current:null,
+           tab:"resultados", responses:null, respLoading:false, round:"", recipInput:"", send:null },
+  encp: null,
   fichador: null,
   sign: null,
   brand: { name:"", logo:"" },
@@ -1708,19 +1711,20 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 var REC_SHELL_SCREENS = { "rec-home":"dash", "cv-home":"cvs", "jobs-home":"jobs", "config":"config" };
+var MOD3_SHELL_SCREENS = { "mod3-home":"home", "mod3-encuestas":"encuestas", "mod3-encuesta-new":"encuestas", "mod3-encuesta":"encuestas" };
 var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion", "mod2-beneficios":"beneficios", "mod2-reportes":"reportes", "mod2-offboarding":"offboarding" };
 function render(){
   var out = Screens[state.screen]();
   if (supaConfigured() && isLoggedIn()){
     if (REC_SHELL_SCREENS[state.screen]) out = recShellWrap(REC_SHELL_SCREENS[state.screen], out);
     else if (MOD2_SHELL_SCREENS[state.screen]) out = mod2ShellWrap(MOD2_SHELL_SCREENS[state.screen], out);
-    else if (state.screen === "mod3-home") out = mod3ShellWrap("home", out);
+    else if (MOD3_SHELL_SCREENS[state.screen]) out = mod3ShellWrap(MOD3_SHELL_SCREENS[state.screen], out);
   }
   app.innerHTML = out; bind();
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v34.6-r101";
+var APP_VERSION = "v35.0-r102";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2046,7 +2050,7 @@ Screens["mod2-home"] = function(){
 /* ===================== MÓDULO 3: CLIMA Y CULTURA ===================== */
 Screens["mod3-home"] = function(){
   var areas = [
-    { icon:"list",     tag:"Próximamente", title:"1 · Encuestas de clima",        desc:"Encuestas anónimas periódicas por equipo/área, con dimensiones y resultados comparables." },
+    { active:true, action:"go-encuestas", icon:"list", tag:"Activo", title:"1 · Encuestas de clima", desc:"Plantilla lista de Great Place to Work®, programación mensual/trimestral/anual y envío masivo por mail. Resultados anónimos por dimensión." },
     { icon:"eye",      tag:"Próximamente", title:"2 · eNPS y satisfacción",       desc:"Medición del Employee Net Promoter Score y de la satisfacción del personal en el tiempo." },
     { icon:"msg",      tag:"Próximamente", title:"3 · Feedback y reconocimiento",  desc:"Canal de feedback continuo, felicitaciones y reconocimientos entre colaboradores." },
     { icon:"trophy",   tag:"Próximamente", title:"4 · Valores y cultura",          desc:"Valores de la empresa, encuestas de alineamiento cultural y embajadores de cultura." },
@@ -2060,6 +2064,986 @@ Screens["mod3-home"] = function(){
     '</div>' +
     '<p style="font-size:13px;color:var(--muted);margin:6px 0 18px">Herramientas para medir y mejorar el clima laboral, la cultura y el compromiso del equipo. Vamos a ir activando cada área.</p>' +
     '<div class="grid2">' + areaCards(areas) + '</div>';
+};
+
+/* ===================== MÓDULO 3 · ÁREA 1: ENCUESTAS DE CLIMA ===================== */
+/* Las 5 dimensiones del modelo de confianza (Trust Index) con el que trabaja
+   Great Place to Work®. La plantilla de abajo está inspirada en ese modelo,
+   con afirmaciones propias y adaptadas al español rioplatense. */
+var CLIMA_DIMS = {
+  credibilidad:  { label:"Credibilidad",  color:"var(--teal)",   desc:"Comunicación, competencia e integridad de quienes conducen." },
+  respeto:       { label:"Respeto",       color:"var(--green)",  desc:"Apoyo, participación y cuidado de las personas." },
+  imparcialidad: { label:"Imparcialidad", color:"var(--amber)",  desc:"Equidad en la paga, en el trato y en los ascensos." },
+  orgullo:       { label:"Orgullo",       color:"var(--purple)", desc:"Orgullo por el propio trabajo, el equipo y la empresa." },
+  camaraderia:   { label:"Camaradería",   color:"var(--brick)",  desc:"Cercanía, hospitalidad y sentido de equipo." },
+  general:       { label:"General",       color:"var(--muted)",  desc:"Preguntas generales de la encuesta." }
+};
+var CLIMA_DIM_ORDER = ["credibilidad","respeto","imparcialidad","orgullo","camaraderia","general"];
+/* Escala de 5 puntos, la clásica del Trust Index. */
+var CLIMA_SCALE_LABELS = ["Casi siempre falso","Muchas veces falso","A veces sí, a veces no","Muchas veces verdadero","Casi siempre verdadero"];
+var CLIMA_SCALE_SHORT  = ["Casi nunca","Pocas veces","A veces","Muchas veces","Casi siempre"];
+
+function _cq(id, dim, text, type){ return { id:id, dim:dim, text:text, type:type||"scale" }; }
+
+var CLIMA_TEMPLATES = {
+  gptw: {
+    label: "Great Place to Work® · Trust Index",
+    short: "Modelo de las 5 dimensiones",
+    desc: "La encuesta completa: 25 afirmaciones repartidas en Credibilidad, Respeto, Imparcialidad, Orgullo y Camaradería, más eNPS y dos preguntas abiertas.",
+    intro: "Esta encuesta es anónima. Queremos saber cómo se vive el día a día acá para poder mejorarlo. No hay respuestas correctas ni incorrectas: contestá con lo que realmente sentís.",
+    questions: [
+      _cq("cr1","credibilidad","Mis jefes me mantienen informado sobre los temas y cambios importantes."),
+      _cq("cr2","credibilidad","Puedo hacerle a mis jefes cualquier pregunta razonable y obtener una respuesta directa."),
+      _cq("cr3","credibilidad","Mis jefes cumplen con lo que prometen."),
+      _cq("cr4","credibilidad","Los jefes organizan bien el trabajo y asignan los recursos necesarios."),
+      _cq("cr5","credibilidad","Tengo claro hacia dónde va la empresa y cómo mi trabajo aporta a eso."),
+      _cq("re1","respeto","Cuento con las herramientas y el equipamiento para hacer bien mi trabajo."),
+      _cq("re2","respeto","Se reconoce el buen trabajo y el esfuerzo extra."),
+      _cq("re3","respeto","Puedo tomarme tiempo cuando lo necesito por un tema personal o familiar."),
+      _cq("re4","respeto","Se me tiene en cuenta antes de tomar decisiones que afectan mi trabajo."),
+      _cq("re5","respeto","Este es un lugar sano para trabajar: no me voy con angustia a casa."),
+      _cq("im1","imparcialidad","Recibo una paga justa por el trabajo que hago."),
+      _cq("im2","imparcialidad","Todos tenemos las mismas oportunidades de recibir un reconocimiento."),
+      _cq("im3","imparcialidad","Los ascensos se los dan a quienes más se los merecen."),
+      _cq("im4","imparcialidad","Acá se trata a todas las personas por igual, más allá del género, la edad, el origen o la orientación."),
+      _cq("im5","imparcialidad","Si me tratan de forma injusta, sé que me van a escuchar y se va a resolver."),
+      _cq("or1","orgullo","Siento que mi trabajo tiene un sentido: no es solamente “un laburo”."),
+      _cq("or2","orgullo","Cuando veo lo que logramos como equipo, siento orgullo."),
+      _cq("or3","orgullo","Desde afuera nos ven como un buen lugar para trabajar."),
+      _cq("or4","orgullo","Me siento orgulloso de contar dónde trabajo."),
+      _cq("or5","orgullo","Me veo trabajando acá dentro de dos años."),
+      _cq("ca1","camaraderia","Puedo ser yo mismo en mi lugar de trabajo."),
+      _cq("ca2","camaraderia","Cuando entra alguien nuevo, lo hacemos sentir bienvenido."),
+      _cq("ca3","camaraderia","Acá la gente se preocupa por los demás."),
+      _cq("ca4","camaraderia","Puedo contar con la colaboración de las otras áreas."),
+      _cq("ca5","camaraderia","Es un lugar lindo para trabajar: hay buen clima entre nosotros."),
+      _cq("enps","general","Del 0 al 10, ¿qué tan probable es que le recomiendes a un amigo o conocido trabajar acá?","enps"),
+      _cq("op1","general","¿Qué es lo mejor de trabajar acá?","text"),
+      _cq("op2","general","Si pudieras cambiar una sola cosa, ¿cuál sería?","text")
+    ]
+  },
+  pulso: {
+    label: "Pulso rápido (mensual)",
+    short: "8 preguntas, 2 minutos",
+    desc: "Versión corta para medir seguido sin cansar al equipo: una afirmación por dimensión, eNPS y una pregunta abierta.",
+    intro: "Encuesta corta y anónima: son 2 minutos. Nos sirve para ver cómo venimos mes a mes.",
+    questions: [
+      _cq("p1","credibilidad","Estoy bien informado sobre lo que pasa en la empresa."),
+      _cq("p2","respeto","Mi jefe reconoce y valora lo que hago."),
+      _cq("p3","respeto","Puedo equilibrar mi trabajo con mi vida personal."),
+      _cq("p4","imparcialidad","El trato que recibo acá es justo."),
+      _cq("p5","orgullo","Estoy orgulloso del trabajo que hacemos."),
+      _cq("p6","camaraderia","Hay buen clima en mi equipo."),
+      _cq("enps","general","Del 0 al 10, ¿qué tan probable es que le recomiendes a un amigo o conocido trabajar acá?","enps"),
+      _cq("op1","general","¿Hay algo que quieras contarnos?","text")
+    ]
+  },
+  custom: {
+    label: "En blanco",
+    short: "Armala desde cero",
+    desc: "Empezás con una encuesta vacía y cargás vos las preguntas que quieras.",
+    intro: "",
+    questions: []
+  }
+};
+
+var CLIMA_FREQ = {
+  unica:      { label:"Una sola vez",  desc:"Se envía cuando vos digas y no se repite." },
+  mensual:    { label:"Mensual",       desc:"Se envía sola todos los meses, el mismo día." },
+  trimestral: { label:"Trimestral",    desc:"Se envía sola cada 3 meses." },
+  anual:      { label:"Anual",         desc:"Se envía sola una vez por año." }
+};
+var CLIMA_STATUS = {
+  borrador: { label:"Borrador", color:"var(--muted)" },
+  activa:   { label:"Activa",   color:"var(--green)" },
+  cerrada:  { label:"Cerrada",  color:"var(--brick)" }
+};
+
+/* ---- Base de datos ---- */
+function dbListSurveys(){
+  return supaFetch("/rest/v1/climate_surveys?select=*&order=created_at.desc")
+    .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); }).catch(function(){ return []; });
+}
+function dbCreateSurvey(row){
+  return supaFetch("/rest/v1/climate_surveys", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateSurvey(id, patch){
+  return supaFetch("/rest/v1/climate_surveys?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeleteSurvey(id){
+  return supaFetch("/rest/v1/climate_surveys?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+function dbListSurveyResponses(surveyId){
+  return supaFetch("/rest/v1/climate_responses?survey_id=eq."+encodeURIComponent(surveyId)+"&select=*&order=submitted_at.desc")
+    .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); }).catch(function(){ return []; });
+}
+
+/* ---- Rondas y programación (misma lógica que /api/encuesta-cron) ---- */
+function climaRoundKey(d, freq){
+  var y=d.getUTCFullYear(), m=d.getUTCMonth()+1, p2=function(n){ return ("0"+n).slice(-2); };
+  if (freq==="anual") return String(y);
+  if (freq==="trimestral") return y+"-T"+Math.ceil(m/3);
+  if (freq==="mensual") return y+"-"+p2(m);
+  return y+"-"+p2(m)+"-"+p2(d.getUTCDate());
+}
+function climaRoundLabel(key){
+  if(!key) return "Sin ronda";
+  var m=String(key).match(/^(\d{4})-(\d{2})$/);
+  if(m){ var MM=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]; return (MM[parseInt(m[2],10)-1]||"")+" "+m[1]; }
+  var t=String(key).match(/^(\d{4})-T(\d)$/);
+  if(t) return t[2]+"° trimestre "+t[1];
+  if(/^\d{4}$/.test(key)) return "Año "+key;
+  var d=String(key).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(d) return d[3]+"/"+d[2]+"/"+d[1];
+  return key;
+}
+function climaNextFrom(dateStr, freq){
+  if(!dateStr) return null;
+  var d = (String(dateStr).length<=10) ? new Date(String(dateStr)+"T12:00:00Z") : new Date(dateStr);
+  if(isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+function climaAdvance(iso, freq){
+  if(!iso || freq==="unica") return null;
+  var d=new Date(iso); if(isNaN(d.getTime())) return null;
+  if(freq==="mensual") d.setUTCMonth(d.getUTCMonth()+1);
+  else if(freq==="trimestral") d.setUTCMonth(d.getUTCMonth()+3);
+  else if(freq==="anual") d.setUTCFullYear(d.getUTCFullYear()+1);
+  return d.toISOString();
+}
+/* Los próximos 3 envíos, para mostrarlos en pantalla. */
+function climaUpcoming(s, n){
+  var out=[], iso=s.next_send_at;
+  n=n||3;
+  for(var i=0;i<n && iso;i++){ out.push(iso); iso=climaAdvance(iso, s.frequency); }
+  return out;
+}
+function climaFmtDate(iso){
+  if(!iso) return "—";
+  try{ var d=new Date(iso); return ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2)+"/"+d.getFullYear(); }catch(e){ return "—"; }
+}
+function climaLink(code){
+  if(!code) return "";
+  var base=(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, "");
+  return base+"?enc="+encodeURIComponent(code);
+}
+/* Destinatarios normalizados: [{email,name}] -> ["a@b.com", ...] */
+function climaEmails(s){
+  var out=[];
+  (Array.isArray(s&&s.recipients)?s.recipients:[]).forEach(function(p){
+    var em=(p&&typeof p==="object")?p.email:p;
+    em=String(em||"").trim().toLowerCase();
+    if(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em) && out.indexOf(em)<0) out.push(em);
+  });
+  return out;
+}
+/* Texto pegado (comas, punto y coma o saltos de línea) -> lista de destinatarios. */
+function climaParseRecipients(txt){
+  var seen={}, out=[];
+  String(txt||"").split(/[\s,;]+/).forEach(function(raw){
+    var em=String(raw||"").trim().toLowerCase().replace(/^[<"']+|[>"',.]+$/g,"");
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return;
+    if(seen[em]) return; seen[em]=1; out.push({ email:em });
+  });
+  return out;
+}
+
+/* ---- Cálculo de resultados ----
+   Devuelve promedios por dimensión, favorabilidad (respuestas positivas sobre el
+   total), eNPS y los comentarios abiertos. Todo agregado: nunca por persona. */
+function climaAgg(survey, responses){
+  var qs=(survey&&Array.isArray(survey.questions))?survey.questions:[];
+  var scale=survey&&survey.scale?survey.scale:5;
+  var favMin=scale-1;                       // 4 y 5 en una escala de 5 = favorable
+  var byQ={}, dims={}, comments=[], areas={};
+  var enps={ prom:0, pas:0, det:0, n:0, score:null };
+  var totalVals=0, totalSum=0, favN=0;
+
+  qs.forEach(function(q){ byQ[q.id]={ q:q, n:0, sum:0, fav:0, dist:{} }; });
+
+  (responses||[]).forEach(function(r){
+    var a=(r&&r.answers&&typeof r.answers==="object")?r.answers:{};
+    if(r&&r.area){ var ak=String(r.area).trim(); if(ak) areas[ak]=(areas[ak]||0)+1; }
+    if(r&&r.comments) comments.push({ text:String(r.comments), area:r.area||"", at:r.submitted_at, q:"" });
+    Object.keys(a).forEach(function(qid){
+      var slot=byQ[qid]; if(!slot) return;
+      var v=a[qid];
+      if(slot.q.type==="text"){
+        var t=String(v||"").trim();
+        if(t) comments.push({ text:t, area:(r&&r.area)||"", at:r&&r.submitted_at, q:slot.q.text });
+        return;
+      }
+      var n=Number(v); if(!isFinite(n)) return;
+      if(slot.q.type==="enps"){
+        enps.n++;
+        if(n>=9) enps.prom++; else if(n>=7) enps.pas++; else enps.det++;
+        slot.n++; slot.sum+=n; slot.dist[n]=(slot.dist[n]||0)+1;
+        return;
+      }
+      slot.n++; slot.sum+=n; slot.dist[n]=(slot.dist[n]||0)+1;
+      if(n>=favMin) slot.fav++;
+      totalVals++; totalSum+=n; if(n>=favMin) favN++;
+      var dk=slot.q.dim||"general";
+      if(!dims[dk]) dims[dk]={ n:0, sum:0, fav:0 };
+      dims[dk].n++; dims[dk].sum+=n; if(n>=favMin) dims[dk].fav++;
+    });
+  });
+
+  Object.keys(dims).forEach(function(k){
+    dims[k].avg = dims[k].n ? (dims[k].sum/dims[k].n) : null;
+    dims[k].favPct = dims[k].n ? Math.round(dims[k].fav*100/dims[k].n) : null;
+  });
+  Object.keys(byQ).forEach(function(k){
+    byQ[k].avg = byQ[k].n ? (byQ[k].sum/byQ[k].n) : null;
+    byQ[k].favPct = byQ[k].n ? Math.round(byQ[k].fav*100/byQ[k].n) : null;
+  });
+  if(enps.n) enps.score = Math.round((enps.prom-enps.det)*100/enps.n);
+
+  return {
+    responses:(responses||[]).length,
+    dims:dims, byQ:byQ, enps:enps, comments:comments, areas:areas, scale:scale,
+    avg: totalVals ? (totalSum/totalVals) : null,
+    favPct: totalVals ? Math.round(favN*100/totalVals) : null
+  };
+}
+/* Rondas presentes en las respuestas, de la más nueva a la más vieja. */
+function climaRounds(responses){
+  var seen={}, out=[];
+  (responses||[]).forEach(function(r){ var k=r.round||""; if(!(k in seen)){ seen[k]=1; out.push(k); } });
+  out.sort(function(a,b){ return String(b).localeCompare(String(a)); });
+  return out;
+}
+
+/* ---- Navegación y carga ---- */
+function goEncuestas(){
+  state.error=null; state.clima.msg=""; state.clima.error=null;
+  state.clima.current=null; state.clima.form=null; state.clima.responses=null; state.clima.send=null;
+  state.screen="mod3-encuestas"; render(); loadEncuestas();
+}
+function loadEncuestas(){
+  if(!(supaConfigured() && isLoggedIn())){ state.clima.items=[]; render(); return; }
+  state.clima.loading=true; state.clima.error=null; render();
+  dbListSurveys().then(function(items){
+    state.clima.loading=false; state.clima.items=items||[];
+    if(state.screen==="mod3-encuestas"||state.screen==="mod3-encuesta") render();
+  }).catch(function(){ state.clima.loading=false; state.clima.error="No pude cargar las encuestas (¿corriste el SQL de encuestas?)."; render(); });
+}
+/* Pantalla de creación: elegís plantilla y le ponés título. */
+function encNewForm(){
+  state.clima.form={ template:"gptw", title:"Encuesta de clima laboral", intro:CLIMA_TEMPLATES.gptw.intro, frequency:"unica", anonymous:true, ask_area:true, saving:false };
+  state.clima.msg=""; state.clima.error=null;
+  state.screen="mod3-encuesta-new"; render();
+}
+function encPickTemplate(key){
+  var f=state.clima.form; if(!f) return;
+  var t=CLIMA_TEMPLATES[key]||CLIMA_TEMPLATES.custom;
+  f.template=key;
+  if(!f.introTouched) f.intro=t.intro||"";
+  render();
+}
+function encCreate(){
+  var f=state.clima.form; if(!f||f.saving) return;
+  var title=(f.title||"").trim();
+  if(!title){ state.clima.error="Ponele un título a la encuesta."; render(); return; }
+  var t=CLIMA_TEMPLATES[f.template]||CLIMA_TEMPLATES.custom;
+  var row={
+    title:title, template:f.template, intro:(f.intro||"").trim(),
+    questions: JSON.parse(JSON.stringify(t.questions)),
+    scale:5, anonymous:f.anonymous!==false, ask_area:f.ask_area!==false,
+    status:"borrador", frequency:f.frequency||"unica", auto_send:false,
+    recipients:[], brand_name:(state.brand&&state.brand.name)?state.brand.name:null
+  };
+  f.saving=true; state.clima.error=null; render();
+  dbCreateSurvey(row).then(function(s){
+    state.clima.form=null;
+    state.clima.items=[s].concat(state.clima.items||[]);
+    encOpen(s.id, "preguntas");
+    state.clima.msg="Encuesta creada. Revisá las preguntas y después programala o enviala.";
+    render();
+  }).catch(function(){
+    f.saving=false;
+    state.clima.error="No pude crear la encuesta. ¿Corriste el SQL de encuestas (sql_encuestas.sql) en Supabase?";
+    render();
+  });
+}
+function encOpen(id, tab){
+  var s=(state.clima.items||[]).filter(function(x){ return x.id===id; })[0];
+  if(!s) return;
+  state.clima.current=JSON.parse(JSON.stringify(s));
+  state.clima.tab=tab||"resultados";
+  state.clima.msg=""; state.clima.error=null; state.clima.send=null;
+  state.clima.responses=null; state.clima.round="";
+  state.clima.recipInput=climaEmails(s).join(", ");
+  state.screen="mod3-encuesta"; render();
+  encLoadResponses(id);
+}
+function encLoadResponses(id){
+  if(!(supaConfigured() && isLoggedIn())){ state.clima.responses=[]; render(); return; }
+  state.clima.respLoading=true; render();
+  dbListSurveyResponses(id).then(function(rs){
+    state.clima.respLoading=false; state.clima.responses=rs||[];
+    if(state.screen==="mod3-encuesta") render();
+  }).catch(function(){ state.clima.respLoading=false; state.clima.responses=[]; render(); });
+}
+function encBack(){
+  state.clima.current=null; state.clima.responses=null; state.clima.send=null; state.clima.msg="";
+  state.screen="mod3-encuestas"; render();
+}
+/* Guarda lo que se editó en pantalla (título, preguntas, programación, destinatarios). */
+function encSave(){
+  var s=state.clima.current; if(!s||state.clima.saving) return;
+  var patch={
+    title:(s.title||"").trim()||"Encuesta de clima",
+    intro:(s.intro||"").trim(),
+    questions:s.questions||[],
+    anonymous:s.anonymous!==false,
+    ask_area:s.ask_area!==false,
+    frequency:s.frequency||"unica",
+    auto_send:!!s.auto_send,
+    start_date:s.start_date||null,
+    next_send_at:s.next_send_at||null,
+    recipients:s.recipients||[]
+  };
+  state.clima.saving=true; state.clima.error=null; render();
+  dbUpdateSurvey(s.id, patch).then(function(){
+    state.clima.saving=false; state.clima.msg="Cambios guardados.";
+    (state.clima.items||[]).forEach(function(x){ if(x.id===s.id) Object.assign(x, patch); });
+    render();
+  }).catch(function(){
+    state.clima.saving=false; state.clima.error="No pude guardar los cambios."; render();
+  });
+}
+/* Programación: frecuencia + fecha del primer envío + envío automático. */
+function encSetFreq(freq){
+  var s=state.clima.current; if(!s) return;
+  s.frequency=freq;
+  if(freq==="unica") s.auto_send=false;
+  if(s.start_date) s.next_send_at=climaNextFrom(s.start_date, freq);
+  render();
+}
+function encSetStart(dateStr){
+  var s=state.clima.current; if(!s) return;
+  s.start_date=dateStr||null;
+  s.next_send_at=dateStr?climaNextFrom(dateStr, s.frequency):null;
+}
+function encToggleAuto(){
+  var s=state.clima.current; if(!s) return;
+  if(!s.auto_send){
+    if(!s.start_date){ s.start_date=todayISO(); s.next_send_at=climaNextFrom(s.start_date, s.frequency); }
+    if(s.frequency==="unica"){ state.clima.error="Para el envío automático elegí una frecuencia: mensual, trimestral o anual."; render(); return; }
+    if(!climaEmails(s).length){ state.clima.error="Cargá primero los destinatarios."; render(); return; }
+    if(s.status!=="activa"){ state.clima.error="Activá la encuesta para poder programar los envíos."; render(); return; }
+  }
+  s.auto_send=!s.auto_send; state.clima.error=null;
+  encSave();
+}
+/* Activar / cerrar / reabrir. Al activar por primera vez se genera el código del link. */
+function encSetStatus(status){
+  var s=state.clima.current; if(!s) return;
+  var patch={ status:status };
+  if(status==="activa"){
+    if(!s.code) patch.code=makeCode();
+    if(!s.current_round) patch.current_round=climaRoundKey(new Date(), s.frequency);
+  }
+  if(status!=="activa") patch.auto_send=false;
+  state.clima.saving=true; render();
+  dbUpdateSurvey(s.id, patch).then(function(){
+    state.clima.saving=false;
+    Object.assign(s, patch);
+    (state.clima.items||[]).forEach(function(x){ if(x.id===s.id) Object.assign(x, patch); });
+    state.clima.msg = status==="activa" ? "Encuesta activa: ya podés compartir el link o enviarla por mail." :
+                      status==="cerrada" ? "Encuesta cerrada: no se aceptan más respuestas." : "Encuesta en borrador.";
+    render();
+  }).catch(function(){ state.clima.saving=false; state.clima.error="No pude cambiar el estado."; render(); });
+}
+function encDelete(){
+  var s=state.clima.current; if(!s) return;
+  if(!confirm("¿Eliminar esta encuesta y todas sus respuestas? No se puede deshacer.")) return;
+  dbDeleteSurvey(s.id).then(function(){
+    state.clima.items=(state.clima.items||[]).filter(function(x){ return x.id!==s.id; });
+    state.clima.current=null; state.clima.responses=null;
+    state.clima.msg="Encuesta eliminada."; state.screen="mod3-encuestas"; render();
+  });
+}
+/* ---- Preguntas ---- */
+function encAddQuestion(type){
+  var s=state.clima.current; if(!s) return;
+  s.questions=s.questions||[];
+  var id="q"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  s.questions.push({ id:id, dim:"general", text:"", type:type||"scale" });
+  render();
+}
+function encDelQuestion(id){
+  var s=state.clima.current; if(!s) return;
+  s.questions=(s.questions||[]).filter(function(q){ return q.id!==id; });
+  render();
+}
+function encMoveQuestion(id, dir){
+  var s=state.clima.current; if(!s) return;
+  var qs=s.questions||[], i=-1;
+  qs.forEach(function(q,ix){ if(q.id===id) i=ix; });
+  var j=i+dir;
+  if(i<0||j<0||j>=qs.length) return;
+  var tmp=qs[i]; qs[i]=qs[j]; qs[j]=tmp;
+  render();
+}
+function encResetTemplate(key){
+  var s=state.clima.current; if(!s) return;
+  var t=CLIMA_TEMPLATES[key]; if(!t) return;
+  if((s.questions||[]).length && !confirm("Esto reemplaza las preguntas actuales por las de la plantilla. ¿Seguimos?")) return;
+  s.questions=JSON.parse(JSON.stringify(t.questions));
+  s.template=key;
+  if(!(s.intro||"").trim()) s.intro=t.intro||"";
+  state.clima.msg="Preguntas de la plantilla cargadas. Acordate de guardar.";
+  render();
+}
+/* ---- Destinatarios ---- */
+function encApplyRecipients(){
+  var s=state.clima.current; if(!s) return;
+  s.recipients=climaParseRecipients(state.clima.recipInput);
+  state.clima.msg=s.recipients.length+" destinatario"+(s.recipients.length===1?"":"s")+" en la lista.";
+  encSave();
+}
+function encImportEmployees(){
+  var s=state.clima.current; if(!s) return;
+  var apply=function(list){
+    var mails=(list||[]).filter(function(e){ return e.status!=="inactivo" && e.email; }).map(function(e){ return String(e.email).trim().toLowerCase(); });
+    var current=climaEmails(s);
+    mails.forEach(function(m){ if(current.indexOf(m)<0) current.push(m); });
+    state.clima.recipInput=current.join(", ");
+    s.recipients=climaParseRecipients(state.clima.recipInput);
+    state.clima.msg=mails.length?("Sumé "+mails.length+" empleado(s) con email cargado. Total: "+s.recipients.length+"."):"Ningún empleado activo tiene email cargado en su legajo.";
+    render();
+  };
+  if(state.emp.items!==null){ apply(state.emp.items); return; }
+  state.clima.msg="Buscando empleados…"; render();
+  dbListEmployees().then(function(items){ state.emp.items=items||[]; apply(state.emp.items); }).catch(function(){ state.clima.msg="No pude leer el legajo."; render(); });
+}
+/* ---- Envío masivo por mail (server-side, vía /api/encuesta-send) ---- */
+function encSendNow(){
+  var s=state.clima.current; if(!s) return;
+  if(s.status!=="activa"){ state.clima.error="Activá la encuesta antes de enviarla."; render(); return; }
+  var emails=climaEmails(s);
+  if(!emails.length){ state.clima.error="Cargá al menos un destinatario."; render(); return; }
+  if(!confirm("Se le va a enviar la encuesta por mail a "+emails.length+" persona"+(emails.length===1?"":"s")+". ¿Enviamos?")) return;
+  var ses=getSession();
+  state.clima.send={ running:true, total:emails.length, sent:0, failed:0, done:false, error:null };
+  state.clima.error=null; state.clima.msg=""; render();
+  fetch("/api/encuesta-send", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ token:ses&&ses.access_token, surveyId:s.id, baseUrl:(pageBaseUrl()||PROD_BASE).replace(/[?#].*$/, "") })
+  }).then(function(r){ return r.json(); }).then(function(j){
+    var sd=state.clima.send||{};
+    sd.running=false; sd.done=true;
+    if(j&&j.ok){
+      sd.sent=j.sent||0; sd.failed=j.failed||0; sd.round=j.round||"";
+      s.current_round=j.round||s.current_round; s.last_sent_at=new Date().toISOString();
+      state.clima.msg="Enviada a "+sd.sent+" de "+sd.total+" personas."+(sd.failed?(" "+sd.failed+" rebotaron."):"");
+    } else {
+      sd.error=climaSendError(j&&j.error);
+      state.clima.error=sd.error;
+    }
+    render();
+  }).catch(function(){
+    var sd=state.clima.send||{}; sd.running=false; sd.done=true; sd.error="No pude conectarme para enviar.";
+    state.clima.error=sd.error; render();
+  });
+}
+function climaSendError(code){
+  if(code==="no_mail_config") return "Falta configurar el envío de mails (BREVO_API_KEY y BREVO_SENDER en Vercel).";
+  if(code==="no_recipients") return "No hay destinatarios válidos en la lista.";
+  if(code==="not_active") return "La encuesta no está activa.";
+  if(code==="not_owner") return "Esta encuesta es de otra cuenta.";
+  if(code==="unauthorized") return "Tu sesión venció. Volvé a iniciar sesión.";
+  if(code==="rate_limited") return "Demasiados envíos seguidos. Esperá unos minutos.";
+  return "No pude enviar la encuesta. Probá de nuevo en un rato.";
+}
+/* ---- Exportar resultados ---- */
+function encDownloadCSV(){
+  var s=state.clima.current; if(!s) return;
+  var rs=climaFilteredResponses();
+  var a=climaAgg(s, rs);
+  var out=[["Encuesta de clima — "+(s.title||"")],[]];
+  out.push(["Ronda", state.clima.round?climaRoundLabel(state.clima.round):"Todas"]);
+  out.push(["Respuestas", a.responses]);
+  out.push(["Destinatarios", climaEmails(s).length]);
+  out.push(["Favorabilidad general (%)", a.favPct==null?"—":a.favPct]);
+  out.push(["Promedio general (1-"+a.scale+")", a.avg==null?"—":a.avg.toFixed(2)]);
+  out.push(["eNPS", a.enps.score==null?"—":a.enps.score]);
+  out.push([]); out.push(["Dimensión","Promedio","Favorabilidad (%)","Respuestas"]);
+  CLIMA_DIM_ORDER.forEach(function(k){
+    var d=a.dims[k]; if(!d) return;
+    out.push([(CLIMA_DIMS[k]||{label:k}).label, d.avg==null?"":d.avg.toFixed(2), d.favPct==null?"":d.favPct, d.n]);
+  });
+  out.push([]); out.push(["Pregunta","Dimensión","Promedio","Favorabilidad (%)","Respuestas"]);
+  (s.questions||[]).forEach(function(q){
+    if(q.type==="text") return;
+    var b=a.byQ[q.id]||{};
+    out.push([q.text, (CLIMA_DIMS[q.dim]||{label:q.dim||""}).label, b.avg==null?"":b.avg.toFixed(2), b.favPct==null?"":b.favPct, b.n||0]);
+  });
+  out.push([]); out.push(["Comentarios","Área","Pregunta"]);
+  a.comments.forEach(function(c){ out.push([c.text, c.area||"", c.q||""]); });
+  try{
+    var csv="﻿"+toCSV(out);
+    var blob=new Blob([csv], { type:"text/csv;charset=utf-8" });
+    var url=URL.createObjectURL(blob);
+    plainBrowserDownload(url, "encuesta_clima_"+(state.clima.round||"todas")+".csv");
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  }catch(e){}
+}
+function climaFilteredResponses(){
+  var rs=state.clima.responses||[];
+  var r=state.clima.round;
+  if(!r) return rs;
+  return rs.filter(function(x){ return (x.round||"")===r; });
+}
+
+/* ---- Pantalla: lista de encuestas ---- */
+function climaChip(text, color, tint){
+  return '<span style="flex-shrink:0;font-size:11px;font-weight:700;color:'+color+';background:'+(tint||'var(--surface-2)')+';border-radius:20px;padding:4px 10px">'+text+'</span>';
+}
+Screens["mod3-encuestas"] = function(){
+  var c=state.clima;
+  var html=Header()+backlink("go-module-clima","Volver a Clima y Cultura");
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
+    '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('list',20)+'<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">Encuestas de clima</h2></div>' +
+    '<button class="btn btn-primary btn-sm" data-action="enc-new">'+ic('plus',14)+' Nueva encuesta</button>' +
+  '</div>';
+  html+='<p style="font-size:13px;color:var(--muted);margin:0 0 16px">Creá una encuesta con la plantilla de Great Place to Work® o armá la tuya, programala mensual, trimestral o anualmente y enviala por mail a todo el equipo. Las respuestas son anónimas y los resultados se ven agrupados por dimensión.</p>';
+  if (c.msg) html+=Note("ok", esc(c.msg));
+  if (c.error) html+=Note("err", esc(c.error));
+  if (c.loading || c.items===null){ html+='<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando encuestas…</p></div>'; return html; }
+  if (!c.items.length){
+    html+='<div class="center-block" style="padding:28px 12px">'+ic('list',26)+
+      '<h2 style="font-size:16px">Todavía no creaste ninguna encuesta</h2>'+
+      '<p>Empezá con la plantilla lista del modelo Great Place to Work®: 25 afirmaciones, eNPS y preguntas abiertas.</p>'+
+      '<button class="btn btn-primary btn-sm" data-action="enc-new" style="margin-top:12px">'+ic('plus',14)+' Crear la primera encuesta</button></div>';
+    return html;
+  }
+  html+='<div style="display:grid;gap:8px">';
+  c.items.forEach(function(s){
+    var st=CLIMA_STATUS[s.status]||CLIMA_STATUS.borrador;
+    var nrec=climaEmails(s).length;
+    var freq=(CLIMA_FREQ[s.frequency]||CLIMA_FREQ.unica).label;
+    var nq=(Array.isArray(s.questions)?s.questions:[]).length;
+    html+='<div class="qa-item" style="cursor:pointer" data-action="enc-open" data-id="'+esc(s.id)+'">'+
+      '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
+        '<span style="flex-shrink:0;width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal)">'+ic('list',18)+'</span>'+
+        '<div style="flex:1;min-width:160px">'+
+          '<p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(s.title||"Encuesta de clima")+'</p>'+
+          '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">'+nq+' pregunta'+(nq===1?'':'s')+' · '+esc(freq)+' · '+nrec+' destinatario'+(nrec===1?'':'s')+
+            (s.last_sent_at?(' · último envío '+climaFmtDate(s.last_sent_at)):'')+
+            (s.auto_send&&s.next_send_at?(' · próximo '+climaFmtDate(s.next_send_at)):'')+'</p>'+
+        '</div>'+
+        (s.auto_send?climaChip(ic('clock',11)+' Programada','var(--teal-strong)','var(--teal-tint)'):'')+
+        climaChip(esc(st.label), st.color, 'var(--surface-2)')+
+        '<span style="color:var(--muted)">'+ic('chevron',16)+'</span>'+
+      '</div></div>';
+  });
+  html+='</div>';
+  return html;
+};
+
+/* ---- Pantalla: nueva encuesta (elegir plantilla) ---- */
+Screens["mod3-encuesta-new"] = function(){
+  var f=state.clima.form||{};
+  var html=Header()+backlink("go-encuestas","Volver a encuestas");
+  html+='<div style="display:flex;align-items:center;gap:8px;color:var(--teal);margin-bottom:6px">'+ic('plus',20)+'<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">Nueva encuesta de clima</h2></div>';
+  html+='<p style="font-size:13px;color:var(--muted);margin:0 0 16px">Elegí con qué arrancar. Después podés editar, sacar o agregar las preguntas que quieras.</p>';
+  if (state.clima.error) html+=Note("err", esc(state.clima.error));
+  html+='<div class="grid2" style="gap:12px;margin-bottom:18px">';
+  ["gptw","pulso","custom"].forEach(function(k){
+    var t=CLIMA_TEMPLATES[k], on=(f.template===k);
+    var nq=t.questions.length;
+    html+='<button class="tile" data-action="enc-tpl" data-k="'+k+'" style="text-align:left;height:100%;align-items:stretch;'+(on?'border-color:var(--teal);background:var(--teal-tint)':'')+'">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px"><span style="color:var(--teal)">'+ic(k==="gptw"?'trophy':(k==="pulso"?'clock':'square'),18)+'</span>'+
+        (on?('<span style="color:var(--teal)">'+ic('check',16)+'</span>'):'')+'</div>'+
+      '<h3 style="font-size:14.5px;font-weight:600;margin:0 0 4px">'+esc(t.label)+'</h3>'+
+      '<p style="margin:0 0 8px;font-size:12.5px;color:var(--muted);line-height:1.5">'+esc(t.desc)+'</p>'+
+      '<span style="font-size:11.5px;color:var(--faint)">'+(nq?(nq+' preguntas · '+esc(t.short)):esc(t.short))+'</span>'+
+    '</button>';
+  });
+  html+='</div>';
+  if (f.template==="gptw"){
+    html+=Note("info", 'La plantilla reproduce las <b>5 dimensiones</b> del modelo de confianza que popularizó Great Place to Work® (Credibilidad, Respeto, Imparcialidad, Orgullo y Camaradería), con afirmaciones propias. No es un cuestionario oficial ni certifica nada ante esa organización.');
+  }
+  html+='<div class="card" style="margin-top:4px">';
+  html+='<label class="field"><span class="field-label">Título de la encuesta</span><div class="input-row"><input id="f_enc_title" value="'+esc(f.title||"")+'" placeholder="Ej: Encuesta de clima 2026"></div></label>';
+  html+='<label class="field" style="margin-top:12px"><span class="field-label">Texto de bienvenida (lo ve quien responde)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_enc_intro" rows="3" placeholder="Contale al equipo para qué es la encuesta…">'+esc(f.intro||"")+'</textarea></div></label>';
+  html+='<div class="grid2" style="gap:12px;margin-top:12px">';
+  html+='<label class="field"><span class="field-label">Frecuencia</span><select class="bare" id="f_enc_freq">'+
+    Object.keys(CLIMA_FREQ).map(function(k){ return '<option value="'+k+'"'+((f.frequency||"unica")===k?' selected':'')+'>'+esc(CLIMA_FREQ[k].label)+'</option>'; }).join('')+
+    '</select><span class="field-hint">'+esc((CLIMA_FREQ[f.frequency||"unica"]||{}).desc||"")+'</span></label>';
+  html+='<div class="field"><span class="field-label">Opciones</span>'+
+    '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);margin-top:6px"><input type="checkbox" id="f_enc_anon" '+(f.anonymous!==false?'checked':'')+' style="accent-color:var(--teal)"> Respuestas anónimas</label>'+
+    '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);margin-top:8px"><input type="checkbox" id="f_enc_area" '+(f.ask_area!==false?'checked':'')+' style="accent-color:var(--teal)"> Preguntar el área o equipo</label>'+
+  '</div>';
+  html+='</div>';
+  html+='<button class="btn btn-primary" id="encCreateBtn" style="margin-top:16px" '+(f.saving?'disabled':'')+'>'+(f.saving?ic('loader',15,'spin'):ic('check',15))+' Crear encuesta</button>';
+  html+='</div>';
+  return html;
+};
+
+/* ---- Pantalla: detalle de una encuesta ---- */
+function encTabs(active){
+  var t=[["resultados","Resultados","eye"],["preguntas","Preguntas","list"],["envios","Programación y envíos","send"]];
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 16px;border-bottom:1px solid var(--border-soft);padding-bottom:10px">'+
+    t.map(function(x){
+      var on=(active===x[0]);
+      return '<button class="btn btn-sm" data-action="enc-tab" data-t="'+x[0]+'" style="gap:7px;'+(on?'background:var(--teal-tint);color:var(--teal-strong);border:1px solid transparent;font-weight:600':'background:transparent;color:var(--muted);border:1px solid transparent')+'">'+ic(x[2],14)+' '+x[1]+'</button>';
+    }).join('')+'</div>';
+}
+function encBar(pct, color){
+  var w=Math.max(0,Math.min(100, pct||0));
+  return '<div style="flex:1;min-width:80px;height:8px;border-radius:20px;background:var(--surface-2);overflow:hidden"><div style="width:'+w+'%;height:100%;background:'+(color||'var(--teal)')+'"></div></div>';
+}
+function encKpi(label, value, hint, color){
+  return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px">'+
+    '<p style="margin:0;font-size:11.5px;color:var(--faint);letter-spacing:.04em;text-transform:uppercase">'+esc(label)+'</p>'+
+    '<p style="margin:6px 0 0;font-size:24px;font-weight:700;color:'+(color||'var(--ink)')+';letter-spacing:-.02em">'+value+'</p>'+
+    (hint?('<p style="margin:4px 0 0;font-size:11.5px;color:var(--muted)">'+esc(hint)+'</p>'):'')+
+  '</div>';
+}
+function encResultsTab(s){
+  var rs=climaFilteredResponses();
+  var a=climaAgg(s, rs);
+  var nrec=climaEmails(s).length;
+  var rounds=climaRounds(state.clima.responses||[]);
+  var html='';
+  if (state.clima.respLoading){ return '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando respuestas…</p></div>'; }
+  if (rounds.length>1 || (rounds.length===1 && rounds[0])){
+    html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center">'+
+      '<span style="font-size:12px;color:var(--muted)">Ronda:</span>'+
+      '<button class="btn btn-sm" data-action="enc-round" data-r="" style="'+(!state.clima.round?'background:var(--teal-tint);color:var(--teal-strong)':'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">Todas</button>'+
+      rounds.map(function(r){
+        var on=(state.clima.round===r);
+        return '<button class="btn btn-sm" data-action="enc-round" data-r="'+esc(r)+'" style="'+(on?'background:var(--teal-tint);color:var(--teal-strong)':'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">'+esc(climaRoundLabel(r))+'</button>';
+      }).join('')+'</div>';
+  }
+  if (!a.responses){
+    html+='<div class="center-block" style="padding:26px 12px">'+ic('eye',26)+'<h2 style="font-size:16px">Todavía no hay respuestas</h2>'+
+      '<p>'+(s.status==="activa"?'Compartí el link o mandá la encuesta por mail desde la solapa “Programación y envíos”.':'Activá la encuesta para empezar a recibir respuestas.')+'</p></div>';
+    return html;
+  }
+  var tasa = nrec ? Math.round(a.responses*100/nrec) : null;
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px">'+
+    encKpi("Respuestas", a.responses, nrec?("de "+nrec+" enviadas"):"", "var(--ink)")+
+    encKpi("Participación", tasa==null?"—":(tasa+"%"), nrec?"":"cargá destinatarios", tasa==null?"var(--muted)":(tasa>=70?"var(--green)":tasa>=40?"var(--amber)":"var(--brick)"))+
+    encKpi("Favorabilidad", a.favPct==null?"—":(a.favPct+"%"), "respuestas positivas", a.favPct==null?"var(--muted)":(a.favPct>=70?"var(--green)":a.favPct>=50?"var(--amber)":"var(--brick)"))+
+    encKpi("Promedio", a.avg==null?"—":(a.avg.toFixed(2)+" / "+a.scale), "escala de 1 a "+a.scale)+
+    encKpi("eNPS", a.enps.score==null?"—":String(a.enps.score), a.enps.n?(a.enps.prom+" promotores · "+a.enps.det+" detractores"):"", a.enps.score==null?"var(--muted)":(a.enps.score>=30?"var(--green)":a.enps.score>=0?"var(--amber)":"var(--brick)"))+
+  '</div>';
+  // Dimensiones
+  var dimKeys=CLIMA_DIM_ORDER.filter(function(k){ return a.dims[k] && a.dims[k].n; });
+  if (dimKeys.length){
+    html+='<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Por dimensión</h3>'+
+      '<p style="margin:0 0 14px;font-size:12.5px;color:var(--muted)">Porcentaje de respuestas favorables en cada dimensión del modelo.</p>';
+    dimKeys.forEach(function(k){
+      var d=a.dims[k], dm=CLIMA_DIMS[k]||{label:k,color:"var(--teal)"};
+      html+='<div style="margin-bottom:12px">'+
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px">'+
+          '<span style="font-size:13px;font-weight:600;color:var(--ink)">'+esc(dm.label)+'</span>'+
+          '<span style="font-size:12px;color:var(--muted)">'+d.favPct+'% favorable · promedio '+d.avg.toFixed(2)+'</span>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:10px">'+encBar(d.favPct, dm.color)+'</div>'+
+      '</div>';
+    });
+    html+='</div>';
+  }
+  // Pregunta por pregunta
+  var scaleQs=(s.questions||[]).filter(function(q){ return q.type!=="text" && (a.byQ[q.id]||{}).n; });
+  if (scaleQs.length){
+    html+='<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 12px;font-size:15px;color:var(--ink)">Pregunta por pregunta</h3>';
+    scaleQs.forEach(function(q){
+      var b=a.byQ[q.id], dm=CLIMA_DIMS[q.dim]||{label:"",color:"var(--teal)"};
+      var isE=(q.type==="enps");
+      html+='<div style="padding:10px 0;border-top:1px solid var(--border-soft)">'+
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
+          '<span style="font-size:13px;color:var(--ink);flex:1;min-width:200px">'+esc(q.text)+'</span>'+
+          '<span style="font-size:12px;color:var(--muted);white-space:nowrap">'+(isE?('promedio '+b.avg.toFixed(1)+' / 10'):(b.favPct+'% · '+b.avg.toFixed(2)))+'</span>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">'+encBar(isE?Math.round(b.avg*10):b.favPct, dm.color)+
+          '<span style="font-size:11px;color:var(--faint);white-space:nowrap">'+b.n+' resp.</span></div>'+
+      '</div>';
+    });
+    html+='</div>';
+  }
+  // Comentarios
+  if (a.comments.length){
+    html+='<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Comentarios ('+a.comments.length+')</h3>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Textuales, sin identificar a quien los escribió.</p>';
+    a.comments.slice(0,60).forEach(function(c){
+      html+='<div style="padding:10px 12px;border-radius:10px;background:var(--surface-2);margin-bottom:8px">'+
+        (c.q?('<p style="margin:0 0 4px;font-size:11.5px;color:var(--faint)">'+esc(c.q)+'</p>'):'')+
+        '<p style="margin:0;font-size:13px;color:var(--ink);line-height:1.5">'+esc(c.text)+'</p>'+
+        (c.area?('<p style="margin:4px 0 0;font-size:11.5px;color:var(--muted)">Área: '+esc(c.area)+'</p>'):'')+
+      '</div>';
+    });
+    if (a.comments.length>60) html+='<p style="margin:0;font-size:12px;color:var(--muted)">Se muestran los primeros 60. Descargá el CSV para verlos todos.</p>';
+    html+='</div>';
+  }
+  html+='<button class="btn btn-ghost btn-sm" data-action="enc-csv">'+ic('download',14)+' Descargar resultados en CSV</button>';
+  return html;
+}
+function encQuestionsTab(s){
+  var html='<div class="card" style="margin-bottom:14px">';
+  html+='<label class="field"><span class="field-label">Título</span><div class="input-row"><input id="f_enc_d_title" value="'+esc(s.title||"")+'"></div></label>';
+  html+='<label class="field" style="margin-top:12px"><span class="field-label">Texto de bienvenida</span><div class="input-row" style="align-items:flex-start"><textarea id="f_enc_d_intro" rows="3">'+esc(s.intro||"")+'</textarea></div></label>';
+  html+='<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px">'+
+    '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink)"><input type="checkbox" id="f_enc_d_anon" '+(s.anonymous!==false?'checked':'')+' style="accent-color:var(--teal)"> Respuestas anónimas</label>'+
+    '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink)"><input type="checkbox" id="f_enc_d_area" '+(s.ask_area!==false?'checked':'')+' style="accent-color:var(--teal)"> Preguntar el área o equipo</label>'+
+  '</div>';
+  html+='</div>';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
+    '<h3 style="margin:0;font-size:15px;color:var(--ink)">Preguntas ('+((s.questions||[]).length)+')</h3>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+      '<button class="btn btn-ghost btn-sm" data-action="enc-tpl-load" data-k="gptw">'+ic('trophy',13)+' Cargar plantilla GPTW</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="enc-tpl-load" data-k="pulso">'+ic('clock',13)+' Pulso rápido</button>'+
+    '</div>'+
+  '</div>';
+  var qs=s.questions||[];
+  if(!qs.length) html+=Note("info","Esta encuesta todavía no tiene preguntas. Agregá una o cargá una plantilla.");
+  html+='<div style="display:grid;gap:8px">';
+  qs.forEach(function(q, i){
+    var tipo=q.type||"scale";
+    html+='<div class="qa-item" style="cursor:default">'+
+      '<div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
+        '<span style="flex-shrink:0;width:26px;height:26px;border-radius:8px;background:var(--surface-2);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;margin-top:4px">'+(i+1)+'</span>'+
+        '<div style="flex:1;min-width:220px">'+
+          '<div class="input-row"><input class="enc-q-text" data-id="'+esc(q.id)+'" value="'+esc(q.text||"")+'" placeholder="Escribí la afirmación o pregunta…"></div>'+
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:7px">'+
+            '<select class="bare enc-q-type" data-id="'+esc(q.id)+'" style="max-width:180px">'+
+              '<option value="scale"'+(tipo==="scale"?' selected':'')+'>Escala 1 a 5</option>'+
+              '<option value="enps"'+(tipo==="enps"?' selected':'')+'>eNPS (0 a 10)</option>'+
+              '<option value="text"'+(tipo==="text"?' selected':'')+'>Respuesta abierta</option>'+
+            '</select>'+
+            (tipo==="scale"?('<select class="bare enc-q-dim" data-id="'+esc(q.id)+'" style="max-width:200px">'+
+              CLIMA_DIM_ORDER.map(function(k){ return '<option value="'+k+'"'+((q.dim||"general")===k?' selected':'')+'>'+esc(CLIMA_DIMS[k].label)+'</option>'; }).join('')+
+            '</select>'):'')+
+          '</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:4px;flex-shrink:0;margin-top:4px">'+
+          '<button class="btn btn-ghost btn-sm" data-action="enc-q-up" data-id="'+esc(q.id)+'" title="Subir" style="padding:6px 8px">↑</button>'+
+          '<button class="btn btn-ghost btn-sm" data-action="enc-q-down" data-id="'+esc(q.id)+'" title="Bajar" style="padding:6px 8px">↓</button>'+
+          '<button class="btn btn-ghost btn-sm" data-action="enc-q-del" data-id="'+esc(q.id)+'" title="Eliminar" style="padding:6px 8px;color:var(--brick)">'+ic('trash',14)+'</button>'+
+        '</div>'+
+      '</div></div>';
+  });
+  html+='</div>';
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
+    '<button class="btn btn-ghost btn-sm" data-action="enc-q-add" data-t="scale">'+ic('plus',13)+' Afirmación (escala)</button>'+
+    '<button class="btn btn-ghost btn-sm" data-action="enc-q-add" data-t="text">'+ic('plus',13)+' Pregunta abierta</button>'+
+    '<button class="btn btn-ghost btn-sm" data-action="enc-q-add" data-t="enps">'+ic('plus',13)+' eNPS</button>'+
+  '</div>';
+  html+='<button class="btn btn-primary" data-action="enc-save" style="margin-top:16px" '+(state.clima.saving?'disabled':'')+'>'+(state.clima.saving?ic('loader',15,'spin'):ic('check',15))+' Guardar cambios</button>';
+  return html;
+}
+function encSendTab(s){
+  var link=climaLink(s.code);
+  var emails=climaEmails(s);
+  var html='';
+  // Estado
+  html+='<div class="card" style="margin-bottom:14px">'+
+    '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Estado de la encuesta</h3>'+
+    '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Mientras esté en borrador nadie puede responderla. Al activarla se genera el link público.</p>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      (s.status!=="activa"?('<button class="btn btn-teal btn-sm" data-action="enc-status" data-s="activa">'+ic('check',14)+' Activar encuesta</button>'):'')+
+      (s.status==="activa"?('<button class="btn btn-ghost btn-sm" data-action="enc-status" data-s="cerrada">'+ic('lock',14)+' Cerrar encuesta</button>'):'')+
+      (s.status==="cerrada"?('<button class="btn btn-ghost btn-sm" data-action="enc-status" data-s="activa">'+ic('rotate',14)+' Reabrir</button>'):'')+
+    '</div>';
+  if (s.status==="activa" && link){
+    html+='<label class="field" style="margin-top:14px"><span class="field-label">Link para responder</span>'+
+      '<div class="input-row"><span style="color:var(--muted)">'+ic('globe',15)+'</span><input value="'+esc(link)+'" readonly></div>'+
+      '<span class="field-hint">Cualquiera con el link puede responder, sin usuario ni contraseña.</span></label>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
+        '<button class="btn btn-ghost btn-sm" data-action="enc-copy" data-link="'+esc(link)+'">'+ic('copy',14)+' Copiar link</button>'+
+        '<a class="btn btn-ghost btn-sm" href="'+esc(link)+'" target="_blank" rel="noopener">'+ic('eye',14)+' Ver la encuesta</a>'+
+      '</div>';
+  }
+  html+='</div>';
+  // Programación
+  html+='<div class="card" style="margin-bottom:14px">'+
+    '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Programación</h3>'+
+    '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Elegí cada cuánto se repite. Con el envío automático activado, el sistema la manda solo y abre una ronda nueva de resultados.</p>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+  Object.keys(CLIMA_FREQ).forEach(function(k){
+    var on=((s.frequency||"unica")===k);
+    html+='<button class="btn btn-sm" data-action="enc-freq" data-f="'+k+'" style="'+(on?'background:var(--teal-tint);color:var(--teal-strong);font-weight:600':'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">'+esc(CLIMA_FREQ[k].label)+'</button>';
+  });
+  html+='</div>';
+  html+='<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">'+esc((CLIMA_FREQ[s.frequency||"unica"]||{}).desc||"")+'</p>';
+  html+='<div class="grid2" style="gap:12px">'+
+    '<label class="field"><span class="field-label">'+(s.frequency==="unica"?"Fecha de envío":"Primer envío")+'</span><div class="input-row"><input id="f_enc_start" type="date" value="'+esc(String(s.start_date||"").slice(0,10))+'"></div><span class="field-hint">Los envíos salen a la mañana (9 hs de Argentina).</span></label>'+
+    '<div class="field"><span class="field-label">Envío automático</span>'+
+      '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);margin-top:6px"><input type="checkbox" id="f_enc_auto" '+(s.auto_send?'checked':'')+' style="accent-color:var(--teal)"> Que la mande el sistema solo</label>'+
+      '<span class="field-hint">Necesita frecuencia mensual, trimestral o anual, la encuesta activa y destinatarios cargados.</span>'+
+    '</div>'+
+  '</div>';
+  var up=climaUpcoming(s,3);
+  if (s.auto_send && up.length){
+    html+='<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--teal-tint)">'+
+      '<p style="margin:0;font-size:12.5px;color:var(--teal-strong);font-weight:600">'+ic('clock',13)+' Próximos envíos</p>'+
+      '<p style="margin:4px 0 0;font-size:12.5px;color:var(--ink)">'+up.map(function(x){ return climaFmtDate(x); }).join(' · ')+'</p></div>';
+  }
+  if (s.last_sent_at) html+='<p style="margin:12px 0 0;font-size:12px;color:var(--muted)">Último envío: '+climaFmtDate(s.last_sent_at)+(s.current_round?(' · ronda vigente: '+esc(climaRoundLabel(s.current_round))):'')+'</p>';
+  html+='<button class="btn btn-ghost btn-sm" data-action="enc-save" style="margin-top:14px">'+ic('check',14)+' Guardar programación</button>';
+  html+='</div>';
+  // Destinatarios
+  html+='<div class="card" style="margin-bottom:14px">'+
+    '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Destinatarios ('+emails.length+')</h3>'+
+    '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Pegá los mails separados por coma o uno por línea, o traelos del legajo de empleados.</p>'+
+    '<label class="field"><div class="input-row" style="align-items:flex-start"><textarea id="f_enc_recip" rows="4" placeholder="ana@empresa.com, juan@empresa.com…">'+esc(state.clima.recipInput||"")+'</textarea></div></label>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'+
+      '<button class="btn btn-ghost btn-sm" data-action="enc-recip-emp">'+ic('users',14)+' Traer del legajo</button>'+
+      '<button class="btn btn-teal btn-sm" data-action="enc-recip-save">'+ic('check',14)+' Guardar lista</button>'+
+    '</div>'+
+  '</div>';
+  // Envío manual
+  var sd=state.clima.send;
+  html+='<div class="card">'+
+    '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Enviar ahora</h3>'+
+    '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Le manda el link por mail a los '+emails.length+' destinatario'+(emails.length===1?'':'s')+' de la lista y abre una ronda nueva de resultados.</p>'+
+    '<button class="btn btn-primary btn-sm" data-action="enc-send" '+((sd&&sd.running)?'disabled':'')+'>'+((sd&&sd.running)?ic('loader',15,'spin'):ic('send',15))+' '+((sd&&sd.running)?'Enviando…':'Enviar la encuesta por mail')+'</button>';
+  if (sd && sd.done && !sd.error) html+=Note("ok","Enviada a "+sd.sent+" de "+sd.total+" destinatarios."+(sd.failed?(" "+sd.failed+" no pudieron entregarse."):""));
+  if (sd && sd.error) html+=Note("err", esc(sd.error));
+  html+='<p style="margin:12px 0 0;font-size:11.5px;color:var(--faint)">Los mails salen desde el servidor de correo de la app (Brevo). El envío automático usa el mismo camino.</p>';
+  html+='</div>';
+  return html;
+}
+Screens["mod3-encuesta"] = function(){
+  var s=state.clima.current;
+  var html=Header()+backlink("go-encuestas","Volver a encuestas");
+  if(!s) return html+Note("err","No encontré la encuesta.");
+  var st=CLIMA_STATUS[s.status]||CLIMA_STATUS.borrador;
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px">'+
+    '<div style="display:flex;align-items:center;gap:8px;color:var(--teal);flex:1;min-width:200px">'+ic('list',20)+
+      '<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">'+esc(s.title||"Encuesta de clima")+'</h2>'+
+      climaChip(esc(st.label), st.color)+'</div>'+
+    '<button class="btn btn-ghost btn-sm" data-action="enc-del" style="color:var(--brick)">'+ic('trash',13)+' Eliminar</button>'+
+  '</div>';
+  html+='<p style="font-size:12.5px;color:var(--muted);margin:0">'+((s.questions||[]).length)+' preguntas · '+esc((CLIMA_FREQ[s.frequency||"unica"]||{}).label||"")+' · '+climaEmails(s).length+' destinatarios</p>';
+  html+=encTabs(state.clima.tab||"resultados");
+  if (state.clima.msg) html+=Note("ok", esc(state.clima.msg));
+  if (state.clima.error) html+=Note("err", esc(state.clima.error));
+  var tab=state.clima.tab||"resultados";
+  if (tab==="preguntas") html+=encQuestionsTab(s);
+  else if (tab==="envios") html+=encSendTab(s);
+  else html+=encResultsTab(s);
+  return html;
+};
+
+/* ---- Encuesta pública (la persona que responde, sin usuario) ---- */
+function loadEncuestaPublic(code){
+  state.encp={ loading:true, code:code, survey:null, error:null, answers:{}, area:"", comments:"", sending:false, sent:false, missing:0 };
+  state.screen="encuesta-public"; render();
+  fetch("/api/encuesta", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ code:code, action:"get" }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      state.encp.loading=false;
+      if (j && j.ok && j.survey){
+        state.encp.survey=j.survey;
+        // Si ya respondió esta misma ronda desde este dispositivo, se lo avisamos.
+        var prev=lget("voz_enc_"+code);
+        if (prev && String(prev.round||"")===String(j.survey.round||"")) state.encp.already=true;
+      }
+      else state.encp.error=(j&&j.error)||"error";
+      render();
+    })
+    .catch(function(){ state.encp.loading=false; state.encp.error="network"; render(); });
+}
+function encPublicSubmit(){
+  var p=state.encp; if(!p||!p.survey||p.sending) return;
+  var qs=p.survey.questions||[];
+  var pend=0;
+  qs.forEach(function(q){ if(q.type!=="text" && (p.answers[q.id]===undefined||p.answers[q.id]==="")) pend++; });
+  if (pend){ p.missing=pend; render(); return; }
+  p.missing=0; p.sending=true; render();
+  fetch("/api/encuesta", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ code:p.code, action:"submit", answers:p.answers, area:p.area||"", comments:p.comments||"" })
+  }).then(function(r){ return r.json(); }).then(function(j){
+    p.sending=false;
+    if (j && j.ok){ p.sent=true; try{ lset("voz_enc_"+p.code, { at:Date.now(), round:(p.survey&&p.survey.round)||"" }); }catch(e){} }
+    else p.error=(j&&j.error)||"error";
+    render();
+  }).catch(function(){ p.sending=false; p.error="network"; render(); });
+}
+Screens["encuesta-public"] = function(){
+  var p=state.encp||{};
+  var s=p.survey;
+  var brand=(s&&s.brand_name)?s.brand_name:"";
+  var head=function(){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:14px 4px 18px;max-width:640px;margin:0 auto">'+ic('globe',24)+
+      '<span style="font-weight:800;font-size:16px;color:var(--ink)">Encuesta de clima'+(brand?(' · '+esc(brand)):'')+'</span></div>';
+  };
+  if (p.loading) return head()+Centered(ic('loader',26,'spin'), "Cargando la encuesta…", "");
+  if (p.error && !s){
+    var em = p.error==="closed" ? "Esta encuesta ya está cerrada. ¡Gracias igual!" :
+             p.error==="not_open" ? "Esta encuesta todavía no está abierta." :
+             p.error==="not_found" ? "No encontramos esta encuesta. Revisá el link." :
+             "No pudimos cargar la encuesta. Probá de nuevo en un rato.";
+    return head()+Centered(ic('alert',26), "Encuesta no disponible", em);
+  }
+  if (p.sent){
+    return head()+'<div class="card" style="max-width:640px;margin:0 auto"><div class="center-block" style="padding:30px 12px">'+ic('check',34)+
+      '<h2 style="font-size:20px">¡Listo, gracias!</h2>'+
+      '<p>Tu respuesta quedó registrada'+((s&&s.anonymous!==false)?' de forma anónima':'')+'. Lo que contaste se usa para tomar decisiones concretas sobre el clima del equipo.</p>'+
+      '</div></div>';
+  }
+  if (p.already){
+    return head()+'<div class="card" style="max-width:640px;margin:0 auto"><div class="center-block" style="padding:30px 12px">'+ic('check',30)+
+      '<h2 style="font-size:19px">Ya respondiste esta encuesta</h2>'+
+      '<p>Desde este dispositivo ya se envió una respuesta para esta ronda. ¡Gracias!</p>'+
+      '<button class="btn btn-ghost btn-sm" data-action="encp-again" style="margin-top:12px">Responder de nuevo</button>'+
+      '</div></div>';
+  }
+  var scale=s.scale||5;
+  var html=head();
+  html+='<div class="card" style="max-width:640px;margin:0 auto">';
+  html+='<h2 style="margin:0 0 6px;font-size:18px;color:var(--ink)">'+esc(s.title||"Encuesta de clima")+'</h2>';
+  if (s.intro) html+='<p style="margin:0 0 12px;font-size:13px;color:var(--muted);line-height:1.6;white-space:pre-wrap">'+esc(s.intro)+'</p>';
+  if (s.anonymous!==false) html+=Note("info", ic('lock',13)+' &nbsp;Es anónima: no guardamos tu nombre, tu mail ni nada que permita identificarte.');
+  if (p.error) html+=Note("err","No pudimos guardar tu respuesta. Probá de nuevo.");
+  if (p.missing) html+=Note("warn","Te faltan "+p.missing+" respuesta"+(p.missing===1?"":"s")+" para poder enviar.");
+  if (s.ask_area!==false){
+    html+='<label class="field" style="margin-bottom:14px"><span class="field-label">Área o equipo (opcional)</span>'+
+      '<div class="input-row"><input id="f_encp_area" value="'+esc(p.area||"")+'" placeholder="Ej: Administración, Depósito, Ventas…"></div>'+
+      '<span class="field-hint">Sirve para comparar entre equipos. Si preferís, dejalo vacío.</span></label>';
+  }
+  (s.questions||[]).forEach(function(q, i){
+    var val=p.answers[q.id];
+    html+='<div style="padding:14px 0;border-top:1px solid var(--border-soft)">';
+    html+='<p style="margin:0 0 10px;font-size:13.5px;color:var(--ink);line-height:1.5"><span style="color:var(--faint);font-size:12px">'+(i+1)+'.</span> '+esc(q.text||"")+'</p>';
+    if (q.type==="text"){
+      html+='<div class="input-row" style="align-items:flex-start"><textarea class="encp-text" data-id="'+esc(q.id)+'" rows="3" placeholder="Escribí lo que quieras…">'+esc(val||"")+'</textarea></div>';
+    } else if (q.type==="enps"){
+      html+='<div style="display:flex;gap:4px;flex-wrap:wrap">';
+      for (var n=0;n<=10;n++){
+        var on=(String(val)===String(n));
+        html+='<button class="btn btn-sm encp-num" data-action="encp-set" data-id="'+esc(q.id)+'" data-v="'+n+'" style="min-width:38px;justify-content:center;padding:7px 0;'+(on?'background:var(--teal);color:#fff;border:1px solid var(--teal)':'background:transparent;color:var(--muted);border:1px solid var(--border)')+'">'+n+'</button>';
+      }
+      html+='</div><p style="margin:6px 0 0;font-size:11.5px;color:var(--faint)">0 = de ninguna manera · 10 = sin dudas</p>';
+    } else {
+      html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:6px">';
+      for (var v=1;v<=scale;v++){
+        var sel=(String(val)===String(v));
+        var lab=(scale===5?CLIMA_SCALE_SHORT[v-1]:String(v));
+        var full=(scale===5?CLIMA_SCALE_LABELS[v-1]:String(v));
+        html+='<button class="btn btn-sm" data-action="encp-set" data-id="'+esc(q.id)+'" data-v="'+v+'" title="'+esc(full)+'" style="flex-direction:column;gap:2px;padding:9px 6px;text-align:center;'+(sel?'background:var(--teal);color:#fff;border:1px solid var(--teal)':'background:transparent;color:var(--muted);border:1px solid var(--border)')+'">'+
+          '<span style="font-size:13px;font-weight:700">'+v+'</span><span style="font-size:10.5px;line-height:1.2">'+esc(lab)+'</span></button>';
+      }
+      html+='</div>';
+    }
+    html+='</div>';
+  });
+  html+='<label class="field" style="margin-top:14px;border-top:1px solid var(--border-soft);padding-top:14px"><span class="field-label">¿Querés agregar algo más? (opcional)</span>'+
+    '<div class="input-row" style="align-items:flex-start"><textarea id="f_encp_comments" rows="3" placeholder="Todo comentario suma.">'+esc(p.comments||"")+'</textarea></div></label>';
+  html+='<button class="btn btn-primary btn-block" data-action="encp-send" style="margin-top:16px" '+(p.sending?'disabled':'')+'>'+(p.sending?ic('loader',15,'spin'):ic('send',15))+' '+(p.sending?'Enviando…':'Enviar mis respuestas')+'</button>';
+  html+='<p style="margin:12px 0 0;font-size:11.5px;color:var(--faint);text-align:center">Podés responder desde el celular. Lleva pocos minutos.</p>';
+  html+='</div>';
+  return html;
 };
 
 /* ---- Legajo: lista de empleados ---- */
@@ -3931,11 +4915,11 @@ function mod2SideNav(active){
   ], sideFooterCommon());
 }
 function mod2ShellWrap(active, screenHtml){ return moduleShellWrap(mod2SideNav(active), screenHtml); }
-/* Módulo 3 (Clima y Cultura) — todavía sin áreas activas: se muestran como próximamente */
+/* Módulo 3 (Clima y Cultura) — el área 1 ya está activa; el resto, próximamente */
 function mod3SideNav(active){
   return sideNavShell('Accesos', active, [
-    { key:'home',   action:'go-module-clima', icon:'globe',  label:'Panel del módulo' },
-    { icon:'list',   label:'Encuestas de clima',      soon:true },
+    { key:'home',      action:'go-module-clima', icon:'globe', label:'Panel del módulo' },
+    { key:'encuestas', action:'go-encuestas',    icon:'list',  label:'Encuestas de clima' },
     { icon:'eye',    label:'eNPS y satisfacción',     soon:true },
     { icon:'msg',    label:'Feedback y reconocim.',   soon:true },
     { icon:'trophy', label:'Valores y cultura',       soon:true },
@@ -7964,6 +8948,29 @@ function bind(){
       else if (act === "go-module-recruit") goRecruiterHome();
       else if (act === "go-module-admin-hr") goMod2();
       else if (act === "go-module-clima") goMod3();
+      else if (act === "go-encuestas") goEncuestas();
+      else if (act === "enc-new") encNewForm();
+      else if (act === "enc-tpl"){ encPickTemplate(el.getAttribute("data-k")); }
+      else if (act === "enc-open"){ encOpen(el.getAttribute("data-id")); }
+      else if (act === "enc-tab"){ state.clima.tab=el.getAttribute("data-t")||"resultados"; state.clima.msg=""; state.clima.error=null; render(); }
+      else if (act === "enc-save"){ encSave(); }
+      else if (act === "enc-status"){ encSetStatus(el.getAttribute("data-s")); }
+      else if (act === "enc-del"){ encDelete(); }
+      else if (act === "enc-freq"){ encSetFreq(el.getAttribute("data-f")); }
+      else if (act === "enc-tpl-load"){ encResetTemplate(el.getAttribute("data-k")); }
+      else if (act === "enc-q-add"){ encAddQuestion(el.getAttribute("data-t")); }
+      else if (act === "enc-q-del"){ encDelQuestion(el.getAttribute("data-id")); }
+      else if (act === "enc-q-up"){ encMoveQuestion(el.getAttribute("data-id"), -1); }
+      else if (act === "enc-q-down"){ encMoveQuestion(el.getAttribute("data-id"), 1); }
+      else if (act === "enc-recip-emp"){ encImportEmployees(); }
+      else if (act === "enc-recip-save"){ encApplyRecipients(); }
+      else if (act === "enc-send"){ encSendNow(); }
+      else if (act === "enc-round"){ state.clima.round=el.getAttribute("data-r")||""; render(); }
+      else if (act === "enc-csv"){ encDownloadCSV(); }
+      else if (act === "enc-copy"){ var encl=el.getAttribute("data-link")||""; copyText(encl, function(){ el.innerHTML=ic('check',13)+' Copiado'; setTimeout(function(){ if(state.screen==="mod3-encuesta") render(); },1200); }); }
+      else if (act === "encp-set"){ if(state.encp&&state.encp.answers){ var sy=(window.pageYOffset||0); state.encp.answers[el.getAttribute("data-id")]=el.getAttribute("data-v"); state.encp.missing=0; render(); try{ window.scrollTo(0, sy); }catch(e2){} } }
+      else if (act === "encp-again"){ if(state.encp){ state.encp.already=false; render(); } }
+      else if (act === "encp-send"){ encPublicSubmit(); }
       else if (act === "go-legajo") goLegajo();
       else if (act === "emp-new") newEmployee();
       else if (act === "emp-open"){ openEmployee(el.getAttribute("data-id")); }
@@ -8288,6 +9295,37 @@ function bind(){
   document.querySelectorAll("input[data-offbtask]").forEach(function(el){ el.addEventListener("change", function(e){ offbToggleTask(el.getAttribute("data-offbtask"), e.target.checked); }); });
   document.querySelectorAll("input[data-offbnote]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo && fo.tasks[el.getAttribute("data-offbnote")]) fo.tasks[el.getAttribute("data-offbnote")].note=e.target.value; }); });
   document.querySelectorAll("input[data-offbconcept]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo) fo.settlement[el.getAttribute("data-offbconcept")]=e.target.value; }); });
+
+  /* encuestas de clima — alta */
+  if ((f=document.getElementById("f_enc_title"))) f.addEventListener("input", function(e){ if(state.clima.form) state.clima.form.title=e.target.value; });
+  if ((f=document.getElementById("f_enc_intro"))) f.addEventListener("input", function(e){ if(state.clima.form){ state.clima.form.intro=e.target.value; state.clima.form.introTouched=true; } });
+  if ((f=document.getElementById("f_enc_freq"))) f.addEventListener("change", function(e){ if(state.clima.form){ state.clima.form.frequency=e.target.value; render(); } });
+  if ((f=document.getElementById("f_enc_anon"))) f.addEventListener("change", function(e){ if(state.clima.form) state.clima.form.anonymous=e.target.checked; });
+  if ((f=document.getElementById("f_enc_area"))) f.addEventListener("change", function(e){ if(state.clima.form) state.clima.form.ask_area=e.target.checked; });
+  if ((f=document.getElementById("encCreateBtn"))) f.addEventListener("click", function(){ encCreate(); });
+  /* encuestas de clima — detalle */
+  if ((f=document.getElementById("f_enc_d_title"))) f.addEventListener("input", function(e){ if(state.clima.current) state.clima.current.title=e.target.value; });
+  if ((f=document.getElementById("f_enc_d_intro"))) f.addEventListener("input", function(e){ if(state.clima.current) state.clima.current.intro=e.target.value; });
+  if ((f=document.getElementById("f_enc_d_anon"))) f.addEventListener("change", function(e){ if(state.clima.current) state.clima.current.anonymous=e.target.checked; });
+  if ((f=document.getElementById("f_enc_d_area"))) f.addEventListener("change", function(e){ if(state.clima.current) state.clima.current.ask_area=e.target.checked; });
+  if ((f=document.getElementById("f_enc_start"))) f.addEventListener("input", function(e){ encSetStart(e.target.value); });
+  if ((f=document.getElementById("f_enc_auto"))) f.addEventListener("change", function(){ encToggleAuto(); });
+  if ((f=document.getElementById("f_enc_recip"))) f.addEventListener("input", function(e){ state.clima.recipInput=e.target.value; });
+  app.querySelectorAll("input.enc-q-text").forEach(function(el){
+    el.addEventListener("input", function(){ var s2=state.clima.current; if(!s2) return; (s2.questions||[]).forEach(function(q){ if(q.id===el.getAttribute("data-id")) q.text=el.value; }); });
+  });
+  app.querySelectorAll("select.enc-q-type").forEach(function(el){
+    el.addEventListener("change", function(){ var s2=state.clima.current; if(!s2) return; (s2.questions||[]).forEach(function(q){ if(q.id===el.getAttribute("data-id")) q.type=el.value; }); render(); });
+  });
+  app.querySelectorAll("select.enc-q-dim").forEach(function(el){
+    el.addEventListener("change", function(){ var s2=state.clima.current; if(!s2) return; (s2.questions||[]).forEach(function(q){ if(q.id===el.getAttribute("data-id")) q.dim=el.value; }); });
+  });
+  /* encuesta pública */
+  if ((f=document.getElementById("f_encp_area"))) f.addEventListener("input", function(e){ if(state.encp) state.encp.area=e.target.value; });
+  if ((f=document.getElementById("f_encp_comments"))) f.addEventListener("input", function(e){ if(state.encp) state.encp.comments=e.target.value; });
+  app.querySelectorAll("textarea.encp-text").forEach(function(el){
+    el.addEventListener("input", function(){ if(state.encp&&state.encp.answers) state.encp.answers[el.getAttribute("data-id")]=el.value; });
+  });
   // ---- Selector de empleado de las áreas del módulo 2 ----
   if ((f=document.getElementById("f_pick_search"))){
     var applyPickFilter=function(){
@@ -8759,6 +9797,18 @@ var pendingFichar = (function(){
   return "";
 })();
 
+// Código de la encuesta de clima (?enc=CODIGO o #enc=CODIGO).
+var pendingEnc = (function(){
+  try{
+    var loc = window.location || {};
+    var mq = (loc.search || "").match(/[?&]enc=([^&]+)/);
+    if (mq) return decodeURIComponent(mq[1]);
+    var mh = (loc.hash || "").match(/[#&]enc=([^&]+)/);
+    if (mh) return decodeURIComponent(mh[1]);
+  }catch(e){}
+  return "";
+})();
+
 // Token de firma de legajo (?firmar_legajo=TOKEN)
 var pendingSign = (function(){
   try{
@@ -8806,6 +9856,8 @@ if (handleOAuthRedirect()){
   loadSignDoc(pendingDoc, "doc");    // empleado firmando un documento (público)
 } else if (pendingEpp){
   loadSignDoc(pendingEpp, "hs");     // empleado firmando una entrega de EPP (público)
+} else if (pendingEnc){
+  loadEncuestaPublic(pendingEnc);   // empleado respondiendo la encuesta de clima (público)
 } else if (pendingFichar){
   loadFichador(pendingFichar);      // empleado fichando (fichador público)
 } else if (pendingJob){
