@@ -1,7 +1,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <script>try{document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
-<title>TalentIA — Elegir mejor · Consultora de RR.HH. con IA</title>
+<title>TalentIA — “Elegir mejor” · Consultora de RR.HH. con IA</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%20fill%3D%22none%22%3E%3Cg%20transform%3D%22translate%280%20-1%29%22%3E%3Cg%20fill%3D%22none%22%20stroke-width%3D%223.4%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20stroke%3D%22%2323357C%22%20d%3D%22M32%2052V18%22%2F%3E%3Cpath%20stroke%3D%22%2323357C%22%20d%3D%22M32%2030L14%2018%22%2F%3E%3Cpath%20stroke%3D%22%2323357C%22%20d%3D%22M32%2030L50%2018%22%2F%3E%3Cpath%20stroke%3D%22%231BA6C0%22%20d%3D%22M32%2044L20%2034%22%2F%3E%3Cpath%20stroke%3D%22%231BA6C0%22%20d%3D%22M32%2044L44%2034%22%2F%3E%3C%2Fg%3E%3Ccircle%20cx%3D%2214%22%20cy%3D%2218%22%20r%3D%224.2%22%20fill%3D%22%2323357C%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2218%22%20r%3D%224.2%22%20fill%3D%22%2323357C%22%2F%3E%3Ccircle%20cx%3D%2220%22%20cy%3D%2234%22%20r%3D%224%22%20fill%3D%22%231BA6C0%22%2F%3E%3Ccircle%20cx%3D%2244%22%20cy%3D%2234%22%20r%3D%224%22%20fill%3D%22%231BA6C0%22%2F%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2214%22%20r%3D%224.4%22%20fill%3D%22%231BA6C0%22%2F%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2252%22%20r%3D%223.4%22%20fill%3D%22%2323357C%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -46,6 +47,8 @@
   --blue:#2F73C7;    --blue-tint:#E7F0FB;
   --green:#1A7E5A;   --green-tint:#E4F3EC;
   --cta-bg:#2563EB;  --cta-fg:#FFFFFF;
+  /* Colores propios del isotipo: el azul profundo y el turquesa del logo. */
+  --logo-deep:#23357C; --logo-teal:#1BA6C0;
   --shadow:0 1px 2px rgba(21,36,56,.05);
   --ring:rgba(37,99,235,.18);
   /* Marcas de los gráficos de Reportes, validadas sobre superficie blanca. */
@@ -95,17 +98,20 @@ button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-act
 
 /* Encabezado: una línea discreta, no un cartel. */
 .hdr{ display:flex; align-items:center; gap:11px; margin-bottom:30px; padding-bottom:18px; border-bottom:1px solid var(--border-soft); }
-.hdr-mark{ position:relative; width:30px; height:30px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border); color:var(--teal); display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden; }
-.hdr-mark svg{ position:relative; z-index:1; width:16px; height:16px; }
+.hdr-mark{ position:relative; width:36px; height:36px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.hdr-mark svg{ width:36px; height:36px; display:block; }
 .hdr-wave{ display:none; }
-.hdr-title{ font-size:15px; font-weight:600; letter-spacing:-.01em; }
-.hdr-title .dot{ color:var(--teal); }
-.hdr-sub{ margin:0; font-size:12px; color:var(--faint); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.hdr-slogan{ color:var(--teal); font-weight:600; letter-spacing:-.005em; }
+.hdr-title{ font-size:21px; font-weight:700; letter-spacing:-.02em; line-height:1.1; color:var(--logo-deep); }
+.hdr-title .dot{ color:var(--logo-teal); }
+.hdr-sub{ margin:2px 0 0; font-size:12px; color:var(--faint); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.hdr-slogan{ color:var(--logo-teal); font-weight:600; letter-spacing:-.005em; font-style:italic; }
 .hdr-sep{ color:var(--faint); opacity:.45; }
-.slogan-hero{ margin:6px 0 0; font-size:30px; font-weight:600; letter-spacing:-.025em; color:var(--ink); line-height:1.1; }
-.slogan-hero .em{ color:var(--teal); }
-@media (max-width:520px){ .slogan-hero{ font-size:25px; } }
+/* Portada: el mismo lockup, en grande. */
+.brand-lockup{ display:flex; flex-direction:column; align-items:flex-start; }
+.brand-word{ margin:14px 0 0; font-size:42px; font-weight:700; letter-spacing:-.035em; line-height:1; color:var(--logo-deep); }
+.brand-word .dot{ color:var(--logo-teal); }
+.brand-slogan{ margin:9px 0 0; font-size:17px; font-weight:500; font-style:italic; letter-spacing:-.01em; color:var(--logo-teal); }
+@media (max-width:520px){ .brand-word{ font-size:34px; } .brand-slogan{ font-size:15.5px; } }
 .hdr-home{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; background:transparent; border:1px solid var(--border); color:var(--muted); font-size:12.5px; font-weight:500; cursor:pointer; transition:color .12s, border-color .12s; }
 .hdr-home:hover{ color:var(--ink); border-color:var(--muted); }
 
@@ -1613,6 +1619,15 @@ function evaluateLocally(questions, answers, cfg){
 /* ================================================================
    ICONS — small hand-drawn line set (24x24, stroke=currentColor)
    ================================================================ */
+/* Isotipo de TalentIA: un árbol de circuito: un tronco del que salen ramas
+   que terminan en nodos. Las exteriores en azul profundo, las interiores en
+   turquesa. Va en SVG para que se vea nítido en cualquier tamaño. */
+function logoMark(size){
+  size = size || 36;
+  return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 64 64" fill="none" role="img" aria-label="TalentIA">' +
+    '<g transform="translate(0 -1)"><g fill="none" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path stroke="var(--logo-deep)" d="M32 52V18"/><path stroke="var(--logo-deep)" d="M32 30L14 18"/><path stroke="var(--logo-deep)" d="M32 30L50 18"/><path stroke="var(--logo-teal)" d="M32 44L20 34"/><path stroke="var(--logo-teal)" d="M32 44L44 34"/></g><circle cx="14" cy="18" r="4.2" fill="var(--logo-deep)"/><circle cx="50" cy="18" r="4.2" fill="var(--logo-deep)"/><circle cx="20" cy="34" r="4" fill="var(--logo-teal)"/><circle cx="44" cy="34" r="4" fill="var(--logo-teal)"/><circle cx="32" cy="14" r="4.4" fill="var(--logo-teal)"/><circle cx="32" cy="52" r="3.4" fill="var(--logo-deep)"/></g>' +
+  '</svg>';
+}
 function ic(name, size, cls){
   size = size || 18; cls = cls ? (' class="'+cls+'"') : '';
   var P = '<svg' + cls + ' width="'+size+'" height="'+size+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
@@ -1736,10 +1751,10 @@ function Header(){
   var showHome = state.screen !== "home" && !candCtx;
   return '' +
   '<div class="hdr">' +
-    '<div class="hdr-mark">' + ic('users', 16) + '</div>' +
+    '<div class="hdr-mark">' + logoMark(36) + '</div>' +
     '<div>' +
       '<h1 class="hdr-title">Talent<span class="dot">IA</span></h1>' +
-      '<p class="hdr-sub"><span class="hdr-slogan">Elegir mejor</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p>' +
+      '<p class="hdr-sub"><span class="hdr-slogan">“Elegir mejor”</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p>' +
     '</div>' +
     (function(){ var chip=BrandChip(); return chip ? '<span style="margin-left:auto;display:flex;align-items:center;gap:8px">'+chip+'</span>' : ''; })() +
     (showHome ? '<button class="hdr-home" data-action="home">'+ic('home',14)+' Inicio</button>' : '') +
@@ -1764,9 +1779,11 @@ var Screens = {};
 
 Screens.home = function(){
   return Header() +
-  '<div style="max-width:460px;margin:0 auto 24px">' +
-    '<h2 class="slogan-hero">Elegir <span class="em">mejor</span></h2>' +
-    '<p style="margin:9px 0 0;font-size:13.5px;color:var(--muted);line-height:1.55">Selección y gestión de personas con inteligencia artificial: datos que ordenan la decisión, personas que la toman.</p>' +
+  '<div class="brand-lockup" style="max-width:460px;margin:0 auto 26px">' +
+    logoMark(72) +
+    '<h2 class="brand-word">Talent<span class="dot">IA</span></h2>' +
+    '<p class="brand-slogan">“Elegir mejor”</p>' +
+    '<p style="margin:14px 0 0;font-size:13.5px;color:var(--muted);line-height:1.55">Selección y gestión de personas con inteligencia artificial: datos que ordenan la decisión, personas que la toman.</p>' +
   '</div>' +
   '<div style="max-width:460px;margin:0 auto">' +
     '<button class="tile tile-dark" data-action="go-recruiter" style="width:100%">' + ic('briefcase',24) + '<h3>Ingresar a la consultora</h3><p>Iniciá sesión con tu cuenta para acceder a las áreas de RR. HH. Por ahora está activo el Módulo 1: Reclutamiento y selección.</p></button>' +
@@ -2013,9 +2030,9 @@ Screens["hub"] = function(){
     : '';
   return '<div style="max-width:1000px;margin:0 auto">' +
     '<div class="hdr">' +
-      '<div class="hdr-mark">'+ic('users',16)+'</div>' +
+      '<div class="hdr-mark">'+logoMark(36)+'</div>' +
       '<div><h1 class="hdr-title">Talent<span class="dot">IA</span></h1>' +
-        '<p class="hdr-sub"><span class="hdr-slogan">Elegir mejor</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p></div>' +
+        '<p class="hdr-sub"><span class="hdr-slogan">“Elegir mejor”</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p></div>' +
       '<div style="margin-left:auto;display:flex;align-items:center;gap:9px;flex-wrap:wrap">' + BrandChip() + admin +
         (u&&u.email?('<span style="font-size:12px;color:var(--faint)">'+esc(u.email)+'</span>'):'') +
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
@@ -6524,7 +6541,7 @@ function generateConstanciaPdf(o){
       wrap.innerHTML =
         '<div style="border-bottom:3px solid #0f766e;padding-bottom:14px;margin-bottom:20px">'+
           '<div style="font-size:22px;font-weight:800;color:#0f766e">Constancia de firma digital</div>'+
-          '<div style="font-size:12px;color:#888;margin-top:2px">TalentIA · Elegir mejor · Consultora de RR.HH.</div>'+
+          '<div style="font-size:12px;color:#888;margin-top:2px">TalentIA · “Elegir mejor” · Consultora de RR.HH.</div>'+
         '</div>'+
         '<div style="font-size:16px;font-weight:800;margin-bottom:4px;color:#111">'+esc(o.title||"Documento firmado")+'</div>'+
         '<div style="font-size:13px;color:#555;margin-bottom:18px">Firmado por: '+esc(o.empName||"")+'</div>'+
@@ -9907,8 +9924,8 @@ Screens["brand-pick"] = function(){
   var u=currentUser();
   var html='<div style="max-width:720px;margin:0 auto">';
   html+='<div class="hdr">' +
-    '<div class="hdr-mark">'+ic('users',16)+'</div>' +
-    '<div><h1 class="hdr-title">Talent<span class="dot">IA</span></h1><p class="hdr-sub"><span class="hdr-slogan">Elegir mejor</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p></div>' +
+    '<div class="hdr-mark">'+logoMark(36)+'</div>' +
+    '<div><h1 class="hdr-title">Talent<span class="dot">IA</span></h1><p class="hdr-sub"><span class="hdr-slogan">“Elegir mejor”</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p></div>' +
     '<div style="margin-left:auto;display:flex;align-items:center;gap:9px">' +
       ((u&&u.email)?('<span style="font-size:12px;color:var(--faint)">'+esc(u.email)+'</span>'):'') +
       '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
