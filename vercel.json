@@ -1,6 +1,6 @@
 {
   "crons": [
-    { "path": "/api/encuesta-cron", "schedule": "0 12 * * *" }
+    { "path": "/api/encuesta", "schedule": "0 12 * * *" }
   ],
   "headers": [
     {
