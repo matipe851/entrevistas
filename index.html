@@ -1,7 +1,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <script>try{document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
-<title>TalentIA — Consultora de RR.HH. con IA</title>
+<title>TalentIA — Elegir mejor · Consultora de RR.HH. con IA</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -100,7 +100,12 @@ button, .btn, .rec-btn, .tile, [data-action], input, select, textarea{ touch-act
 .hdr-wave{ display:none; }
 .hdr-title{ font-size:15px; font-weight:600; letter-spacing:-.01em; }
 .hdr-title .dot{ color:var(--teal); }
-.hdr-sub{ margin:0; font-size:12px; color:var(--faint); }
+.hdr-sub{ margin:0; font-size:12px; color:var(--faint); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.hdr-slogan{ color:var(--teal); font-weight:600; letter-spacing:-.005em; }
+.hdr-sep{ color:var(--faint); opacity:.45; }
+.slogan-hero{ margin:6px 0 0; font-size:30px; font-weight:600; letter-spacing:-.025em; color:var(--ink); line-height:1.1; }
+.slogan-hero .em{ color:var(--teal); }
+@media (max-width:520px){ .slogan-hero{ font-size:25px; } }
 .hdr-home{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; background:transparent; border:1px solid var(--border); color:var(--muted); font-size:12.5px; font-weight:500; cursor:pointer; transition:color .12s, border-color .12s; }
 .hdr-home:hover{ color:var(--ink); border-color:var(--muted); }
 
@@ -1734,7 +1739,7 @@ function Header(){
     '<div class="hdr-mark">' + ic('users', 16) + '</div>' +
     '<div>' +
       '<h1 class="hdr-title">Talent<span class="dot">IA</span></h1>' +
-      '<p class="hdr-sub">Consultora de RR.HH.</p>' +
+      '<p class="hdr-sub"><span class="hdr-slogan">Elegir mejor</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p>' +
     '</div>' +
     (function(){ var chip=BrandChip(); return chip ? '<span style="margin-left:auto;display:flex;align-items:center;gap:8px">'+chip+'</span>' : ''; })() +
     (showHome ? '<button class="hdr-home" data-action="home">'+ic('home',14)+' Inicio</button>' : '') +
@@ -1759,6 +1764,10 @@ var Screens = {};
 
 Screens.home = function(){
   return Header() +
+  '<div style="max-width:460px;margin:0 auto 24px">' +
+    '<h2 class="slogan-hero">Elegir <span class="em">mejor</span></h2>' +
+    '<p style="margin:9px 0 0;font-size:13.5px;color:var(--muted);line-height:1.55">Selección y gestión de personas con inteligencia artificial: datos que ordenan la decisión, personas que la toman.</p>' +
+  '</div>' +
   '<div style="max-width:460px;margin:0 auto">' +
     '<button class="tile tile-dark" data-action="go-recruiter" style="width:100%">' + ic('briefcase',24) + '<h3>Ingresar a la consultora</h3><p>Iniciá sesión con tu cuenta para acceder a las áreas de RR. HH. Por ahora está activo el Módulo 1: Reclutamiento y selección.</p></button>' +
   '</div>' +
@@ -2006,7 +2015,7 @@ Screens["hub"] = function(){
     '<div class="hdr">' +
       '<div class="hdr-mark">'+ic('users',16)+'</div>' +
       '<div><h1 class="hdr-title">Talent<span class="dot">IA</span></h1>' +
-        '<p class="hdr-sub">Consultora de RR.HH.</p></div>' +
+        '<p class="hdr-sub"><span class="hdr-slogan">Elegir mejor</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p></div>' +
       '<div style="margin-left:auto;display:flex;align-items:center;gap:9px;flex-wrap:wrap">' + BrandChip() + admin +
         (u&&u.email?('<span style="font-size:12px;color:var(--faint)">'+esc(u.email)+'</span>'):'') +
         '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
@@ -6515,7 +6524,7 @@ function generateConstanciaPdf(o){
       wrap.innerHTML =
         '<div style="border-bottom:3px solid #0f766e;padding-bottom:14px;margin-bottom:20px">'+
           '<div style="font-size:22px;font-weight:800;color:#0f766e">Constancia de firma digital</div>'+
-          '<div style="font-size:12px;color:#888;margin-top:2px">TalentIA · Consultora de RR.HH.</div>'+
+          '<div style="font-size:12px;color:#888;margin-top:2px">TalentIA · Elegir mejor · Consultora de RR.HH.</div>'+
         '</div>'+
         '<div style="font-size:16px;font-weight:800;margin-bottom:4px;color:#111">'+esc(o.title||"Documento firmado")+'</div>'+
         '<div style="font-size:13px;color:#555;margin-bottom:18px">Firmado por: '+esc(o.empName||"")+'</div>'+
@@ -9899,7 +9908,7 @@ Screens["brand-pick"] = function(){
   var html='<div style="max-width:720px;margin:0 auto">';
   html+='<div class="hdr">' +
     '<div class="hdr-mark">'+ic('users',16)+'</div>' +
-    '<div><h1 class="hdr-title">Talent<span class="dot">IA</span></h1><p class="hdr-sub">Consultora de RR.HH.</p></div>' +
+    '<div><h1 class="hdr-title">Talent<span class="dot">IA</span></h1><p class="hdr-sub"><span class="hdr-slogan">Elegir mejor</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p></div>' +
     '<div style="margin-left:auto;display:flex;align-items:center;gap:9px">' +
       ((u&&u.email)?('<span style="font-size:12px;color:var(--faint)">'+esc(u.email)+'</span>'):'') +
       '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
