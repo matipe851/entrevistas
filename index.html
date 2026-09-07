@@ -1710,7 +1710,7 @@ var state = {
   fichador: null,
   sign: null,
   brand: { id:null, name:"", logo:"" },
-  brandpick: null,
+  empresa: null,
   myApproved: null,
   admin: { loading:false, items:null, error:null },
   audioOmitted: false, recording:false, qTiming:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
@@ -5498,10 +5498,10 @@ Screens.config = function(){
       '<div class="field" style="background:var(--surface-2);border-radius:14px;padding:14px 16px"><span class="field-label" style="margin-bottom:8px;display:block">Tu marca en las invitaciones</span>' +
         '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
           (brandLogoUrl()?'<img src="'+esc(brandLogoUrl())+'" alt="logo" style="height:38px;max-width:120px;object-fit:contain;border-radius:6px;background:var(--surface);padding:2px">':'') +
-          '<span style="flex:1;min-width:120px;font-size:13.5px;color:var(--ink);font-weight:600">'+(brandName()?esc(brandName()):'<span style="color:var(--muted);font-weight:400">Sin marca: los mails salen sin logo ni nombre de empresa.</span>')+'</span>' +
-          '<button class="btn btn-ghost btn-sm" data-action="brand-change">'+ic('rotate',13)+' Cambiar empresa</button>' +
+          '<span style="flex:1;min-width:120px;font-size:13.5px;color:var(--ink);font-weight:600">'+(brandName()?esc(brandName()):'<span style="color:var(--muted);font-weight:400">Todavía no cargaste los datos de tu empresa.</span>')+'</span>' +
+          '<button class="btn btn-ghost btn-sm" data-action="brand-change">'+ic('rotate',13)+' Editar empresa</button>' +
         '</div>' +
-        '<span class="field-hint" style="margin-top:8px;display:block">Es la empresa que elegiste al entrar. Se muestra al candidato en la invitación y en el mail.</span>' +
+        '<span class="field-hint" style="margin-top:8px;display:block">Son los datos de tu cuenta. Se muestran al candidato en la invitación y en el mail.</span>' +
       '</div>' +
       '<div class="grid3">' +
         '<label class="field"><span class="field-label">Seniority</span><select class="bare" id="f_level">' + LEVELS.map(function(l){return '<option'+(l===c.level?' selected':'')+'>'+l+'</option>';}).join('') + '</select></label>' +
@@ -8283,7 +8283,7 @@ function doSignup(email, password, captchaToken){
     render();
   }).catch(function(){ state.busy=false; state.error="No pude conectar. Revisá tu conexión."; render(); });
 }
-function doLogout(){ supaLogout(); clearBrandSession(); state.dash={loading:false,items:null,error:null,detail:null}; state.admin={loading:false,items:null,error:null}; state.myApproved=null; state.screen="home"; render(); }
+function doLogout(){ supaLogout(); state.empresa=null; state.dash={loading:false,items:null,error:null,detail:null}; state.admin={loading:false,items:null,error:null}; state.myApproved=null; state.screen="home"; render(); }
 function loadDashboard(){
   if(!supaConfigured() || !isLoggedIn()) return;
   state.dash.loading=true; state.dash.error=null; render();
@@ -8293,8 +8293,12 @@ function loadDashboard(){
 function routeAfterAuth(){
   state.myApproved = null;
   loadBrandForUser();
-  // Una vez por sesión se elige con qué empresa se trabaja (nombre + logo de los mails).
-  var entrar = function(){ if (brandSessionDone()) { state.screen="hub"; render(); loadDashboard(); } else { goBrandPick(); loadDashboard(); } };
+  // La cuenta ES la empresa: se entra derecho y, si todavía no cargó sus datos, se piden una única vez.
+  var entrar = function(){
+    state.screen="hub"; render();
+    loadCompanyThen(function(){ if(state.screen!=="empresa"){ state.screen="hub"; render(); } });
+    loadDashboard();
+  };
   // El admin siempre puede entrar (para poder aprobar, incluso a sí mismo).
   if (isAdminUser()){ state.myApproved = true; entrar(); loadAdminList(); return; }
   loadProfile().then(function(approved){
@@ -8982,13 +8986,9 @@ function bind(){
       else if (act === "go-module-recruit") goRecruiterHome();
       else if (act === "go-module-admin-hr") goMod2();
       else if (act === "go-module-clima") goMod3();
-      else if (act === "brand-change"){ goBrandPick(true); }
-      else if (act === "brand-use"){ brandUse(el.getAttribute("data-id")); }
-      else if (act === "brand-new"){ brandNewForm(); }
-      else if (act === "brand-save"){ brandSaveNew(); }
-      else if (act === "brand-cancel"){ brandCancelForm(); }
-      else if (act === "brand-del"){ brandDelete(el.getAttribute("data-id")); }
-      else if (act === "brand-skip"){ brandSkip(); }
+      else if (act === "brand-change"){ goCompany(true); }
+      else if (act === "empresa-save"){ companySave(); }
+      else if (act === "empresa-back"){ goHub(); }
       else if (act === "go-encuestas") goEncuestas();
       else if (act === "enc-new") encNewForm();
       else if (act === "enc-tpl"){ encPickTemplate(el.getAttribute("data-k")); }
@@ -9285,7 +9285,7 @@ function bind(){
   if ((f=document.getElementById("f_company"))) f.addEventListener("input", function(e){ state.config.company=e.target.value; syncGenBtn(); });
   if ((f=document.getElementById("f_focus"))) f.addEventListener("input", function(e){ state.config.focus=e.target.value; });
   if ((f=document.getElementById("f_companyurl"))) f.addEventListener("input", function(e){ state.config.companyUrl=e.target.value; });
-  /* (la marca ya no se edita acá: se elige al entrar, en la pantalla "brand-pick") */
+  /* (la marca no se edita acá: son los datos de la cuenta, pantalla "empresa") */
   /* screening de CVs */
   if ((f=document.getElementById("f_searchtitle"))) f.addEventListener("input", function(e){ state.newsearch.title=e.target.value; });
   if ((f=document.getElementById("f_searchdesc"))) f.addEventListener("input", function(e){ state.newsearch.description=e.target.value; });
@@ -9330,11 +9330,11 @@ function bind(){
 
   /* elegir la empresa de la sesión */
   if ((f=document.getElementById("f_brand_name"))){
-    f.addEventListener("input", function(e){ if(state.brandpick&&state.brandpick.form) state.brandpick.form.name=e.target.value; });
-    f.addEventListener("keydown", function(e){ if(e.key==="Enter") brandSaveNew(); });
-    if(!(state.brandpick&&state.brandpick.form&&state.brandpick.form.name)) f.focus();
+    f.addEventListener("input", function(e){ if(state.empresa&&state.empresa.form) state.empresa.form.name=e.target.value; });
+    f.addEventListener("keydown", function(e){ if(e.key==="Enter") companySave(); });
+    if(!(state.empresa&&state.empresa.form&&state.empresa.form.name)) f.focus();
   }
-  if ((f=document.getElementById("f_brand_logo"))) f.addEventListener("change", function(e){ if(e.target.files&&e.target.files[0]) brandUploadLogo(e.target.files[0]); });
+  if ((f=document.getElementById("f_brand_logo"))) f.addEventListener("change", function(e){ if(e.target.files&&e.target.files[0]) companyUploadLogo(e.target.files[0]); });
 
   /* encuestas de clima — alta */
   if ((f=document.getElementById("f_enc_title"))) f.addEventListener("input", function(e){ if(state.clima.form) state.clima.form.title=e.target.value; });
@@ -9785,14 +9785,15 @@ function bind(){
   }
 }
 
-/* ===================== MARCA DE LA EMPRESA (white-label por usuario) =====================
-   Cada usuario carga las empresas con las que trabaja (nombre + logo) y elige una al
-   iniciar sesión. La marca activa se usa en la app y viaja en TODOS los mails que se
-   mandan desde adentro: el remitente sale con el nombre de la empresa y el mail lleva
-   el logo arriba. */
+/* ===================== LA EMPRESA DE LA CUENTA (white-label) =====================
+   Cada cuenta es una empresa. El nombre y el logo se cargan una sola vez, la primera
+   vez que se entra, y después se editan desde el encabezado: no se elige empresa al
+   iniciar sesión. La marca se usa en la app y viaja en TODOS los mails que se mandan
+   desde adentro: el remitente sale con el nombre de la empresa y el mail lleva el
+   logo arriba. */
 
 function brandStoreKey(){ var u=currentUser(); return "voz_brand_"+((u&&u.id)||"anon"); }
-/* La marca elegida queda guardada para este usuario (sobrevive a un F5). */
+/* Copia local de la marca, para pintar bien la app antes de que conteste la base. */
 function saveBrand(){
   try{ lset(brandStoreKey(), { id:state.brand.id||null, name:state.brand.name||"", logo:state.brand.logo||"" }); }catch(e){}
 }
@@ -9802,24 +9803,15 @@ function loadBrandForUser(){
     state.brand = { id:(b&&b.id)||null, name:(b&&b.name)||"", logo:(b&&b.logo)||"" };
   }catch(e){ state.brand={ id:null, name:"", logo:"" }; }
 }
-/* ¿Ya eligió empresa en ESTA sesión del navegador? (se pregunta una vez por sesión) */
-function brandSessionDone(){
-  try{
-    var u=currentUser(), raw=sessionStorage.getItem("voz_brand_session");
-    if(!raw) return false;
-    var v=JSON.parse(raw);
-    return !!(v && u && v.uid===u.id);
-  }catch(e){ return false; }
+function setBrandFromRow(row){
+  state.brand = { id:(row&&row.id)||null, name:(row&&row.name)||"", logo:(row&&row.logo_url)||"" };
+  saveBrand();
 }
-function markBrandSession(){
-  try{ var u=currentUser(); sessionStorage.setItem("voz_brand_session", JSON.stringify({ uid:(u&&u.id)||"", at:Date.now() })); }catch(e){}
-}
-function clearBrandSession(){ try{ sessionStorage.removeItem("voz_brand_session"); }catch(e){} }
 
 function brandName(){ return (state.brand && state.brand.name) ? String(state.brand.name).trim() : ""; }
 function brandLogoUrl(){ return (state.brand && state.brand.logo) ? String(state.brand.logo).trim() : ""; }
 /* Campos de marca que se le suman a cada envío de mail. En el lado del candidato
-   no hay sesión ni marca activa, así que ahí se usa la marca que viajó en la invitación. */
+   no hay sesión ni marca, así que ahí se usa la marca que viajó en la invitación. */
 function brandMailFields(){
   var n=brandName(), l=brandLogoUrl();
   if(!n && !l){
@@ -9831,9 +9823,11 @@ function brandMailFields(){
 }
 
 /* ---- Base de datos ---- */
-function dbListBrands(){
-  return supaFetch("/rest/v1/brands?select=*&order=last_used_at.desc")
-    .then(function(r){ return r.json().then(function(j){ return Array.isArray(j)?j:[]; }); }).catch(function(){ return []; });
+/* Una sola empresa por cuenta. Si quedaron varias filas de la versión anterior,
+   vale la última que se usó. */
+function dbGetCompany(){
+  return supaFetch("/rest/v1/brands?select=*&order=last_used_at.desc&limit=1")
+    .then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error("select_failed"); return (Array.isArray(j)&&j[0])||null; }); });
 }
 function dbCreateBrand(row){
   return supaFetch("/rest/v1/brands", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
@@ -9841,88 +9835,67 @@ function dbCreateBrand(row){
 }
 function dbUpdateBrand(id, patch){
   return supaFetch("/rest/v1/brands?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
-    .then(function(r){ return r.json().then(function(j){ return (Array.isArray(j)&&j[0])||null; }); }).catch(function(){ return null; });
-}
-function dbDeleteBrand(id){
-  return supaFetch("/rest/v1/brands?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+    .then(function(r){ return r.json().then(function(j){ if(r.ok) return (Array.isArray(j)&&j[0])||null; throw new Error("update_failed"); }); });
 }
 
-/* ---- Pantalla: elegir la empresa de la sesión ---- */
-function goBrandPick(fromHeader){
-  state.brandpick = { loading:true, items:null, error:null, form:null, saving:false, msg:"", fromHeader:!!fromHeader };
-  state.error=null; state.screen="brand-pick"; render();
-  loadBrands();
-}
-function loadBrands(){
-  if(!(supaConfigured() && isLoggedIn())){ state.brandpick.loading=false; state.brandpick.items=[]; render(); return; }
-  dbListBrands().then(function(items){
-    state.brandpick.loading=false;
-    state.brandpick.items=items||[];
-    // Si todavía no cargó ninguna empresa, abrimos derecho el formulario.
-    if(!state.brandpick.items.length && !state.brandpick.form) state.brandpick.form={ name:"", logo:"", uploading:false };
-    if(state.screen==="brand-pick") render();
+/* ---- Al entrar ---- */
+/* Si la cuenta ya tiene su empresa cargada, sigue derecho; si no, se piden el nombre
+   y el logo una única vez. */
+function loadCompanyThen(next){
+  if(!(supaConfigured() && isLoggedIn())){ next(); return; }
+  dbGetCompany().then(function(row){
+    if(row){ setBrandFromRow(row); next(); }
+    else { goCompany(false); }
   }).catch(function(){
-    state.brandpick.loading=false; state.brandpick.items=[];
-    state.brandpick.error="No pude leer tus empresas (¿corriste el SQL de marca?).";
-    render();
+    /* Si la base no contesta, entramos igual con lo último que sabíamos de la empresa. */
+    if(brandName()) next();
+    else goCompany(false, "No pude leer los datos de tu empresa. ¿Corriste sql_marca.sql en Supabase?");
   });
 }
-/* Entra a la app con la marca elegida. */
-function brandUse(id){
-  var b=(state.brandpick.items||[]).filter(function(x){ return x.id===id; })[0];
-  if(!b) return;
-  state.brand={ id:b.id, name:b.name||"", logo:b.logo_url||"" };
-  saveBrand(); markBrandSession();
-  dbUpdateBrand(b.id, { last_used_at:new Date().toISOString() });
-  goHub();
+
+/* ---- Pantalla: los datos de la empresa ---- */
+function goCompany(fromHeader, err){
+  var b=state.brand||{};
+  state.empresa = { form:{ name:b.name||"", logo:b.logo||"", uploading:false },
+                    saving:false, msg:"", error:err||null, fromHeader:!!fromHeader };
+  state.error=null; state.screen="empresa"; render();
 }
-function brandNewForm(){ state.brandpick.form={ name:"", logo:"", uploading:false }; state.brandpick.msg=""; render(); }
-function brandCancelForm(){ state.brandpick.form=null; state.brandpick.msg=""; render(); }
-function brandUploadLogo(file){
-  var f=state.brandpick.form; if(!f||!file) return;
-  if(file.size>4*1024*1024){ state.brandpick.msg="El logo supera los 4 MB."; render(); return; }
-  if(!audioUploadConfigured()){ state.brandpick.msg="Para subir el logo hay que tener Cloudinary configurado. Podés seguir sólo con el nombre."; render(); return; }
-  f.uploading=true; state.brandpick.msg=""; render();
+function companyUploadLogo(file){
+  var s=state.empresa, f=s&&s.form; if(!f||!file) return;
+  if(file.size>4*1024*1024){ s.msg="El logo supera los 4 MB."; render(); return; }
+  if(!audioUploadConfigured()){ s.msg="Para subir el logo hay que tener Cloudinary configurado. Podés seguir sólo con el nombre."; render(); return; }
+  f.uploading=true; s.msg=""; render();
   var uid="marca_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
   uploadAudioToCloudinary(file, "marcas/"+uid).then(function(url){
-    f.logo=url; f.uploading=false; state.brandpick.msg="Logo cargado."; render();
-  }).catch(function(){ f.uploading=false; state.brandpick.msg="No pude subir el logo. Probá con otra imagen."; render(); });
+    f.logo=url; f.uploading=false; s.msg="Logo cargado."; render();
+  }).catch(function(){ f.uploading=false; s.msg="No pude subir el logo. Probá con otra imagen."; render(); });
 }
-function brandSaveNew(){
-  var f=state.brandpick.form; if(!f||state.brandpick.saving) return;
+function companySave(){
+  var s=state.empresa, f=s&&s.form; if(!f||s.saving) return;
   var name=(f.name||"").trim();
-  if(!name){ state.brandpick.msg="Escribí el nombre de la empresa."; render(); return; }
-  state.brandpick.saving=true; state.brandpick.error=null; render();
-  dbCreateBrand({ name:name, logo_url:f.logo||null }).then(function(b){
-    state.brandpick.saving=false; state.brandpick.form=null;
-    state.brandpick.items=[b].concat(state.brandpick.items||[]);
-    state.brand={ id:b.id, name:b.name||"", logo:b.logo_url||"" };
-    saveBrand(); markBrandSession();
+  if(!name){ s.msg="Escribí el nombre de la empresa."; render(); return; }
+  s.saving=true; s.error=null; s.msg=""; render();
+  var row={ name:name, logo_url:f.logo||null, last_used_at:new Date().toISOString() };
+  var id=(state.brand&&state.brand.id)||null;
+  var guardar = id
+    ? dbUpdateBrand(id, row).then(function(b){ return b || { id:id, name:name, logo_url:row.logo_url }; })
+    : dbCreateBrand(row);
+  guardar.then(function(b){
+    s.saving=false;
+    setBrandFromRow(b);
+    state.empresa=null;
     goHub();
   }).catch(function(){
-    state.brandpick.saving=false;
-    state.brandpick.error="No pude guardar la empresa. ¿Corriste sql_marca.sql en Supabase?";
+    s.saving=false;
+    s.error="No pude guardar los datos de la empresa. ¿Corriste sql_marca.sql en Supabase?";
     render();
   });
 }
-function brandDelete(id){
-  if(!confirm("¿Sacar esta empresa de tu lista? Los trabajos ya enviados no se tocan.")) return;
-  dbDeleteBrand(id).then(function(){
-    state.brandpick.items=(state.brandpick.items||[]).filter(function(x){ return x.id!==id; });
-    if(state.brand && state.brand.id===id){ state.brand={ id:null, name:"", logo:"" }; saveBrand(); }
-    render();
-  });
-}
-/* Entrar sin marca: los mails salen sin logo ni nombre de empresa. */
-function brandSkip(){
-  state.brand={ id:null, name:"", logo:"" };
-  saveBrand(); markBrandSession();
-  goHub();
-}
-Screens["brand-pick"] = function(){
-  var s=state.brandpick||{};
-  var u=currentUser();
-  var html='<div style="max-width:720px;margin:0 auto">';
+Screens["empresa"] = function(){
+  var s=state.empresa||{}, f=s.form||{}, u=currentUser();
+  /* La primera vez es obligatorio: sin nombre no se puede mandar un mail con la marca. */
+  var primera = !(state.brand && state.brand.id);
+  var html='<div style="max-width:560px;margin:0 auto">';
   html+='<div class="hdr">' +
     '<div class="hdr-mark">'+logoMark(36)+'</div>' +
     '<div><h1 class="hdr-title">Talent<span class="dot">IA</span></h1><p class="hdr-sub"><span class="hdr-slogan">“Elegir mejor”</span><span class="hdr-sep">·</span>Consultora de RR.HH.</p></div>' +
@@ -9931,59 +9904,24 @@ Screens["brand-pick"] = function(){
       '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>' +
     '</div></div>';
   html+='<div style="margin-bottom:20px">' +
-    '<span class="eyebrow">Tu marca</span>' +
-    '<h2 style="font-size:22px;font-weight:600;margin:6px 0 5px;letter-spacing:-.02em">¿Con qué empresa vas a trabajar?</h2>' +
-    '<p style="margin:0;font-size:13.5px;color:var(--muted);max-width:560px">El nombre y el logo que elijas acá salen en todos los mails que mandes durante esta sesión: invitaciones a entrevistas, pedidos de firma, encuestas de clima y avisos del portal.</p>' +
+    '<span class="eyebrow">Tu empresa</span>' +
+    '<h2 style="font-size:22px;font-weight:600;margin:6px 0 5px;letter-spacing:-.02em">'+(primera?'Cargá los datos de tu empresa':'Datos de tu empresa')+'</h2>' +
+    '<p style="margin:0;font-size:13.5px;color:var(--muted)">El nombre y el logo salen en todos los mails que manda esta cuenta: invitaciones a entrevistas, pedidos de firma, encuestas de clima y avisos del portal.</p>' +
   '</div>';
   if (s.error) html+=Note("err", esc(s.error));
-  if (s.msg) html+=Note("ok", esc(s.msg));
-  if (s.loading){ html+='<div class="center-block">'+ic('loader',26,'spin')+'<p>Buscando tus empresas…</p></div></div>'; return html; }
-
-  if (s.form){
-    var f=s.form;
-    html+='<div class="card">' +
-      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">'+((s.items&&s.items.length)?'Agregar otra empresa':'Cargá tu empresa')+'</h3>' +
-      '<p style="margin:0 0 14px;font-size:12.5px;color:var(--muted)">Queda guardada en tu cuenta: la próxima vez la elegís con un clic.</p>' +
-      '<label class="field"><span class="field-label">Nombre de la empresa</span><div class="input-row"><input id="f_brand_name" value="'+esc(f.name||"")+'" placeholder="Ej: Panadería del Sur S.R.L." autocomplete="organization"></div></label>' +
-      '<div class="field" style="margin-top:12px"><span class="field-label">Logo (opcional)</span>' +
-        (f.logo?('<div style="margin:6px 0 10px"><img src="'+esc(f.logo)+'" alt="logo" style="height:52px;max-width:180px;object-fit:contain;background:var(--surface-2);border-radius:8px;padding:6px"></div>'):'') +
-        '<input id="f_brand_logo" type="file" accept="image/*" style="width:100%;font-size:12.5px;color:var(--muted)">' +
-        '<span class="field-hint">'+(f.uploading?'Subiendo…':'PNG o JPG, hasta 4 MB. Se ve arriba de todo en los mails.')+'</span>' +
-      '</div>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">' +
-        '<button class="btn btn-primary btn-sm" data-action="brand-save" '+(s.saving?'disabled':'')+'>'+(s.saving?ic('loader',15,'spin'):ic('check',15))+' Guardar y entrar</button>' +
-        ((s.items&&s.items.length)?'<button class="btn btn-ghost btn-sm" data-action="brand-cancel">Volver a la lista</button>':'') +
-      '</div>' +
-    '</div>';
-  } else {
-    html+='<div class="grid2" style="gap:12px">';
-    (s.items||[]).forEach(function(b){
-      html+='<div class="tile" style="text-align:left;height:100%;align-items:stretch;position:relative;cursor:pointer" data-action="brand-use" data-id="'+esc(b.id)+'">' +
-        '<div style="display:flex;align-items:center;gap:12px">' +
-          (b.logo_url
-            ? '<img src="'+esc(b.logo_url)+'" alt="" style="height:44px;width:44px;object-fit:contain;background:var(--surface-2);border-radius:10px;padding:4px;flex-shrink:0">'
-            : '<span style="flex-shrink:0;width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal);font-weight:800;font-size:17px">'+esc((b.name||"?")[0].toUpperCase())+'</span>') +
-          '<div style="flex:1;min-width:0">' +
-            '<p style="margin:0;font-weight:600;font-size:14.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis">'+esc(b.name||"")+'</p>' +
-            '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">'+(b.logo_url?'Con logo':'Sin logo')+'</p>' +
-          '</div>' +
-          '<span style="color:var(--muted)">'+ic('chevron',16)+'</span>' +
-        '</div>' +
-        '<button class="btn btn-ghost btn-sm" data-action="brand-del" data-id="'+esc(b.id)+'" title="Sacar de la lista" style="position:absolute;top:8px;right:8px;padding:4px 6px;color:var(--faint)">'+ic('trash',13)+'</button>' +
-      '</div>';
-    });
-    html+='<button class="tile" data-action="brand-new" style="text-align:left;height:100%;align-items:stretch;border-style:dashed">' +
-      '<div style="display:flex;align-items:center;gap:12px">' +
-        '<span style="flex-shrink:0;width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);color:var(--teal)">'+ic('plus',18)+'</span>' +
-        '<div><p style="margin:0;font-weight:600;font-size:14.5px;color:var(--ink)">Agregar empresa</p>' +
-        '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">Nombre y logo</p></div>' +
-      '</div></button>';
-    html+='</div>';
-    html+='<div style="margin-top:18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">' +
-      '<button class="btn btn-ghost btn-sm" data-action="brand-skip">Seguir sin marca</button>' +
-      '<span style="font-size:12px;color:var(--faint)">Los mails van a salir sin logo ni nombre de empresa.</span>' +
-    '</div>';
-  }
+  if (s.msg) html+=Note("info", esc(s.msg));
+  html+='<div class="card">' +
+    '<label class="field"><span class="field-label">Nombre de la empresa</span><div class="input-row"><input id="f_brand_name" value="'+esc(f.name||"")+'" placeholder="Ej: Panadería del Sur S.R.L." autocomplete="organization"></div></label>' +
+    '<div class="field" style="margin-top:12px"><span class="field-label">Logo (opcional)</span>' +
+      (f.logo?('<div style="margin:6px 0 10px"><img src="'+esc(f.logo)+'" alt="logo" style="height:52px;max-width:180px;object-fit:contain;background:var(--surface-2);border-radius:8px;padding:6px"></div>'):'') +
+      '<input id="f_brand_logo" type="file" accept="image/*" style="width:100%;font-size:12.5px;color:var(--muted)">' +
+      '<span class="field-hint">'+(f.uploading?'Subiendo…':'PNG o JPG, hasta 4 MB. Se ve arriba de todo en los mails.')+'</span>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">' +
+      '<button class="btn btn-primary btn-sm" data-action="empresa-save" '+(s.saving?'disabled':'')+'>'+(s.saving?ic('loader',15,'spin'):ic('check',15))+' '+(primera?'Guardar y entrar':'Guardar cambios')+'</button>' +
+      (primera?'':'<button class="btn btn-ghost btn-sm" data-action="empresa-back">Volver</button>') +
+    '</div>' +
+  '</div>';
   html+='</div>';
   return html;
 };
@@ -9993,7 +9931,7 @@ Screens["brand-pick"] = function(){
 var BRAND_PUBLIC_SCREENS = {
   "home":1, "loading":1, "invite-landing":1, "invite-error":1, "interview":1,
   "cand-code":1, "job-public":1, "fichador":1, "sign-legajo":1, "sign-doc":1, "encuesta-public":1,
-  "rec-login":1, "rec-signup":1, "rec-pending":1, "brand-pick":1
+  "rec-login":1, "rec-signup":1, "rec-pending":1, "empresa":1
 };
 function BrandChip(){
   if (!(supaConfigured() && isLoggedIn())) return "";
@@ -10002,10 +9940,10 @@ function BrandChip(){
   var n=brandName(), l=brandLogoUrl();
   var inner = n
     ? ((l?'<img src="'+esc(l)+'" alt="" style="height:20px;max-width:56px;object-fit:contain;border-radius:4px">':'')+'<span style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(n)+'</span>')
-    : ('<span style="color:var(--faint)">Sin marca</span>');
-  return '<button class="btn btn-sm" data-action="brand-change" title="Cambiar la empresa de esta sesión" ' +
+    : ('<span style="color:var(--faint)">Cargá tu empresa</span>');
+  return '<button class="btn btn-sm" data-action="brand-change" title="Editar los datos de tu empresa" ' +
     'style="gap:7px;padding:5px 10px;background:var(--surface-2);border:1px solid var(--border-soft);color:var(--muted);font-size:12px;font-weight:600">' +
-    inner + '<span style="color:var(--faint);font-weight:400">· Cambiar</span></button>';
+    inner + '<span style="color:var(--faint);font-weight:400">· Editar</span></button>';
 }
 
 

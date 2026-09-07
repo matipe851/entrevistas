@@ -1,9 +1,14 @@
 -- ============================================================
---  Marca de la empresa (white-label por usuario)
+--  Marca de la empresa (white-label por cuenta)
 --
---  Cada usuario carga las empresas con las que trabaja (nombre + logo) y
---  elige una al iniciar sesión. La marca activa se usa en toda la app y,
---  sobre todo, viaja en TODOS los mails que se mandan desde adentro.
+--  Cada cuenta es una empresa: guarda una sola fila con su nombre y su logo,
+--  que se cargan la primera vez que se entra y después se editan desde el
+--  encabezado. La marca se usa en toda la app y, sobre todo, viaja en TODOS
+--  los mails que se mandan desde adentro.
+--
+--  Si una cuenta quedó con varias filas de la versión anterior (cuando se
+--  elegía empresa al entrar), la app toma la última usada; las demás se
+--  pueden borrar a mano desde el editor de Supabase.
 --
 --  Correr una sola vez en el SQL Editor de Supabase.
 -- ============================================================
@@ -21,7 +26,7 @@ create index if not exists brands_owner_idx on public.brands (owner, last_used_a
 
 alter table public.brands enable row level security;
 
--- A diferencia del resto de la app, acá cada uno ve y edita SOLO sus empresas.
+-- A diferencia del resto de la app, acá cada cuenta ve y edita SOLO su empresa.
 drop policy if exists "brands_select" on public.brands;
 create policy "brands_select" on public.brands
   for select to authenticated using (owner = auth.uid());
