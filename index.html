@@ -470,12 +470,16 @@ function getGoogleTokens(){ return lget("voz_gtok"); }
 function setGoogleTokens(t){ try{ if(t) localStorage.setItem("voz_gtok", JSON.stringify(t)); else localStorage.removeItem("voz_gtok"); }catch(e){} }
 function googleConnected(){ var g=getGoogleTokens(); return !!(g && g.access_token); }
 function siteBaseForRedirect(){ try{ var l=window.location; return l.origin + l.pathname; }catch(e){ return PROD_BASE; } }
-function startGoogleLogin(){
+function startGoogleLogin(opts){
   if(!supaConfigured()){ state.error="Falta configurar Supabase."; render(); return; }
-  var redirect = siteBaseForRedirect();
+  opts = opts || {};
+  var redirect = opts.redirect || siteBaseForRedirect();
+  // La consultora necesita permisos de Gmail para mandar las entrevistas;
+  // el candidato del mentor no, y pedírselos espantaría a la mitad.
+  var scopes = opts.scopes || ("email profile " + GOOGLE_SEND_SCOPE + " " + GOOGLE_READ_SCOPE);
   var url = supaBase() + "/auth/v1/authorize?provider=google" +
     "&redirect_to=" + encodeURIComponent(redirect) +
-    "&scopes=" + encodeURIComponent("email profile " + GOOGLE_SEND_SCOPE + " " + GOOGLE_READ_SCOPE) +
+    "&scopes=" + encodeURIComponent(scopes) +
     "&access_type=offline&prompt=consent";
   try{ window.location.assign(url); }catch(e){ window.location.href = url; }
 }
@@ -1713,6 +1717,8 @@ var state = {
   plan:  { loading:false, items:null, error:null, msg:"", form:null, saving:false, filter:"", focus:null, pending:null },
   com:   { loading:false, items:null, error:null, msg:"", form:null, saving:false, recipInput:"", send:null, pending:null },
   mod3:  { loading:false, kpis:null },
+  /* Mentor IA (producto para candidatos, otra puerta) */
+  mentor:{ loading:false, sessions:null, error:null, msg:"", form:null, current:null, report:null, proc:null, saved:null },
   encp: null,
   fichador: null,
   sign: null,
@@ -1753,9 +1759,9 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v37.0-r105";
+var APP_VERSION = "v38.0-r106";
 function Header(){
-  var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
+  var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
   return '' +
   '<div class="hdr">' +
@@ -1793,10 +1799,16 @@ Screens.home = function(){
     '<p class="brand-slogan">“Elegir mejor”</p>' +
     '<p style="margin:14px 0 0;font-size:13.5px;color:var(--muted);line-height:1.55">Selección y gestión de personas con inteligencia artificial: datos que ordenan la decisión, personas que la toman.</p>' +
   '</div>' +
-  '<div style="max-width:460px;margin:0 auto">' +
-    '<button class="tile tile-dark" data-action="go-recruiter" style="width:100%">' + ic('briefcase',24) + '<h3>Ingresar a la consultora</h3><p>Iniciá sesión con tu cuenta para acceder a las áreas de RR. HH. Por ahora está activo el Módulo 1: Reclutamiento y selección.</p></button>' +
+  '<div style="max-width:460px;margin:0 auto;display:grid;gap:12px">' +
+    '<button class="tile tile-dark" data-action="go-recruiter" style="width:100%">' + ic('briefcase',24) + '<h3>Ingresar a la consultora</h3><p>Para equipos de RR. HH.: reclutamiento y selección, administración de personal, clima y cultura. Se entra con la cuenta de la empresa.</p></button>' +
+    '<button class="tile" data-action="go-mentor" style="width:100%;border-color:var(--brick)">' +
+      '<span style="color:var(--brick)">' + ic('mic',24) + '</span>' +
+      '<h3>Mentor para entrevistas con IA</h3>' +
+      '<p>¿Tenés una entrevista esta semana? Practicala hablando con nuestra IA y recibí un informe con qué mejorar. Primer simulacro gratis.</p>' +
+      '<span style="margin-top:6px;font-size:11.5px;font-weight:700;color:var(--brick);letter-spacing:.03em">PARA QUIEN BUSCA TRABAJO ›</span>' +
+    '</button>' +
   '</div>' +
-  '<p class="footer-note">Los candidatos acceden únicamente por el enlace de la entrevista que les compartís.</p>';
+  '<p class="footer-note">Son dos accesos distintos: la consultora entra con su cuenta de empresa y quien busca trabajo se registra solo en Mentor IA.</p>';
 };
 
 Screens["pin-set"] = function(){
@@ -4710,6 +4722,635 @@ Screens["mod3-comunicacion"] = function(){
     { action:"go-planes",     icon:"square", label:"Planes de acción (área 5)" },
     { action:"go-valores",    icon:"trophy", label:"Valores y cultura (área 4)" }
   ]);
+  return html;
+};
+
+/* =====================================================================
+   MENTOR IA · Simulador de entrevistas para quien busca trabajo
+
+   Es el segundo producto de la casa y entra por otra puerta: el que se
+   registra acá NO es la consultora, es un candidato. Por eso tiene su
+   propio login (sin aprobación de administrador, sin permisos de Gmail)
+   y sus propias tablas, donde cada uno ve únicamente lo suyo.
+
+   Casi todo el motor ya existía del lado de la consultora y se reutiliza
+   tal cual: la grabación por voz con cronómetro, la repregunta cuando la
+   respuesta es floja, la transcripción con IA y la lectura del CV en PDF.
+   Lo propio de este producto son las preguntas, la vara con la que se
+   corrige y el informe.
+   ===================================================================== */
+
+var MENTOR_NIVELES = {
+  junior: { short:"Junior",      label:"Sin experiencia o hasta 2 años" },
+  semi:   { short:"Semi senior", label:"Entre 2 y 5 años" },
+  senior: { short:"Senior",      label:"Más de 5 años o con gente a cargo" }
+};
+var MENTOR_NIVEL_ORDER = ["junior","semi","senior"];
+var MENTOR_DIMS = {
+  claridad:       { label:"Claridad",       desc:"Si se te entiende y si cerrás con un resultado concreto." },
+  seguridad:      { label:"Seguridad",      desc:"Si te plantás, sin disculparte de más." },
+  conocimiento:   { label:"Conocimiento",   desc:"Sustancia técnica para el nivel al que apuntás." },
+  actitud:        { label:"Actitud",        desc:"Energía, y cómo hablás de trabajos anteriores." },
+  compatibilidad: { label:"Compatibilidad", desc:"Cuánto encajás con este puesto en particular." }
+};
+var MENTOR_DIM_ORDER = ["claridad","seguridad","conocimiento","actitud","compatibilidad"];
+
+/* ---- Por qué puerta entró el usuario ----
+   Se guarda antes de mandarlo a Google y se lee al volver, porque el
+   redirect de OAuth se lleva puesto todo el estado de la página. */
+function currentDoor(){ try{ var d=lget("voz_door"); return (typeof d==="string")?d:""; }catch(e){ return ""; } }
+function setDoor(d){ try{ lset("voz_door", d||""); }catch(e){} }
+function isMentorDoor(){ return currentDoor()==="mentor"; }
+
+function mentorScoreColor(sc){
+  sc=Number(sc);
+  if(!isFinite(sc)) return "var(--muted)";
+  return sc>=7.5 ? "var(--green)" : sc>=5.5 ? "var(--amber)" : "var(--brick)";
+}
+function mentorScoreLabel(sc){
+  sc=Number(sc)||0;
+  if(sc>=8.5) return "Estás listo";
+  if(sc>=7)   return "Bien encaminado";
+  if(sc>=5.5) return "Te falta pulir";
+  if(sc>=4)   return "Hay que trabajarlo";
+  return "Mejor seguir practicando";
+}
+
+/* ---- Base de datos (RLS por usuario: cada uno ve sólo lo suyo) ---- */
+function dbEnsureMentorProfile(){
+  var u=currentUser(); if(!u||!u.id) return Promise.resolve(null);
+  var meta=u.user_metadata||{};
+  return supaFetch("/rest/v1/mentor_profiles?on_conflict=id", {
+    method:"POST",
+    headers:{ Prefer:"resolution=merge-duplicates,return=representation" },
+    body:JSON.stringify({ id:u.id, email:u.email||null, full_name:meta.full_name||meta.name||null })
+  }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+function dbListMentorSessions(){
+  return climaList("/rest/v1/mentor_sessions?select=id,position,company,level,score,status,created_at&order=created_at.desc&limit=50");
+}
+function dbGetMentorSession(id){
+  return climaList("/rest/v1/mentor_sessions?select=*&id=eq."+encodeURIComponent(id)+"&limit=1")
+    .then(function(rows){ return rows[0]||null; });
+}
+function dbCreateMentorSession(row){ return climaInsert("mentor_sessions", row); }
+function dbUpdateMentorSession(id, patch){ return climaPatch("mentor_sessions", id, patch); }
+function dbDeleteMentorSession(id){ return climaDelete("mentor_sessions", id); }
+
+/* ---- Entrada y sesión ---- */
+function goMentor(){
+  setDoor("mentor");
+  state.error=null; resetInterview();
+  if (supaConfigured() && isLoggedIn()){ mentorAfterAuth(); return; }
+  state.screen="mentor-landing"; render();
+}
+function mentorLogin(){
+  setDoor("mentor");
+  // Al candidato no se le piden permisos de Gmail: sólo su nombre y su mail.
+  // Y se vuelve siempre a la raíz del sitio, que es la URL que Supabase
+  // tiene autorizada (aunque haya entrado por /mentor).
+  var raiz;
+  try{ raiz = window.location.origin + "/"; }catch(e){ raiz = null; }
+  startGoogleLogin({ scopes:"email profile", redirect:raiz });
+}
+/* A dónde cae el candidato cuando vuelve de Google. No pasa por la
+   aprobación del administrador: esa puerta es la de la consultora. */
+function mentorAfterAuth(){
+  setDoor("mentor");
+  state.mentor.error=null; state.mentor.msg="";
+  state.screen="mentor-home"; render();
+  dbEnsureMentorProfile();
+  loadMentorSessions();
+}
+function loadMentorSessions(){
+  if(!(supaConfigured() && isLoggedIn())){ state.mentor.sessions=[]; render(); return; }
+  state.mentor.loading=true; render();
+  dbListMentorSessions().then(function(items){
+    state.mentor.loading=false; state.mentor.sessions=items||[];
+    if(state.screen==="mentor-home") render();
+  }).catch(function(){
+    state.mentor.loading=false; state.mentor.sessions=[];
+    state.mentor.error="No pude cargar tus simulacros. ¿Corriste el SQL del mentor (sql_mentor.sql) en Supabase?";
+    render();
+  });
+}
+
+/* ---- Armar un simulacro ---- */
+function mentorNewForm(){
+  var prev=(state.mentor.sessions||[])[0];
+  state.mentor.form={
+    position:(prev&&prev.position)||"", company:"", level:(prev&&prev.level)||"semi",
+    jobDesc:"", cvText:"", cvName:"", cvLoading:false, starting:false
+  };
+  state.mentor.error=null; state.mentor.msg="";
+  state.screen="mentor-new"; render();
+}
+function mentorCvFile(file){
+  var f=state.mentor.form; if(!f||!file) return;
+  f.cvName=file.name||"CV.pdf"; f.cvLoading=true; f.cvText=""; render();
+  extractPdfText(file).then(function(txt){
+    f.cvLoading=false;
+    f.cvText=String(txt||"").slice(0,12000);
+    if(!f.cvText) state.mentor.msg="No pude leer el texto del PDF (puede ser un escaneo). Igual podés seguir sin CV.";
+    render();
+  }).catch(function(){ f.cvLoading=false; f.cvText=""; render(); });
+}
+function mentorStart(){
+  var f=state.mentor.form; if(!f||f.starting) return;
+  var pos=(f.position||"").trim();
+  if(!pos){ state.mentor.error="Escribí a qué puesto te estás postulando."; render(); return; }
+  f.starting=true; state.mentor.error=null; render();
+
+  fetch("/api/analyze", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({
+      task:"mentor_questions", position:pos, company:(f.company||"").trim(),
+      level:f.level||"semi", jobDesc:(f.jobDesc||"").slice(0,4000), cvText:(f.cvText||"").slice(0,6000), count:6
+    })
+  }).then(function(r){ return r.json(); }).then(function(j){
+    if(!(j&&j.ok&&Array.isArray(j.questions)&&j.questions.length)) throw new Error("sin preguntas");
+    mentorLaunch(f, j.questions);
+  }).catch(function(){
+    // Si la IA no responde, se arma la entrevista con el banco local: el
+    // usuario practica igual y no se queda con la pantalla colgada.
+    try{
+      var qs=buildQuestions({ position:pos, company:(f.company||"").trim(), focus:"", level:(f.level==="junior"?"Junior":f.level==="senior"?"Senior":"Semi-Senior"), language:"es", includeEnglish:false, count:"6" });
+      if(qs && qs.length){ state.mentor.msg="La IA no estaba disponible: armé la entrevista con nuestro banco de preguntas."; mentorLaunch(f, null, qs); return; }
+    }catch(e){}
+    f.starting=false;
+    state.mentor.error="No pude preparar las preguntas. Probá de nuevo en un minuto.";
+    render();
+  });
+}
+/* Deja todo listo y le pasa el control al motor de entrevista que ya existe. */
+function mentorLaunch(f, aiQuestions, localQuestions){
+  var qs;
+  if (localQuestions) qs=localQuestions;
+  else qs=aiQuestions.slice(0,8).map(function(q,i){
+    var secs=parseInt(q.seconds,10); if(!isFinite(secs)||secs<45||secs>210) secs=100;
+    return { id:"m"+i, text:String(q.text||"").trim(), category:(q.category||"Experiencia"),
+             seconds:secs, lang:"es", criterio:String(q.criterio||"").slice(0,600) };
+  }).filter(function(q){ return q.text; });
+
+  state.config = {
+    position:(f.position||"").trim(), company:(f.company||"").trim(), focus:"",
+    level:(MENTOR_NIVELES[f.level]||MENTOR_NIVELES.semi).short, language:"es",
+    includeEnglish:false, count:String(qs.length), followups:true,
+    recruiterEmail:"", selectedCVs:[], validDays:3
+  };
+  state.questions=qs; state.answers={}; state.idx=0; state.report=null;
+  rt.analyzed={}; rt.autoStartedFor={};
+  state.interviewMode="mentor";
+  state.mentor.current={ level:f.level, jobDesc:f.jobDesc||"", cvText:f.cvText||"", questions:qs, id:null };
+  state.mentor.report=null; state.mentor.form=null;
+  state.screen="interview"; render();
+
+  // La sesión se abre en la base ya mismo, así queda registro aunque
+  // después se corte la conexión.
+  if (supaConfigured() && isLoggedIn()){
+    var u=currentUser();
+    dbCreateMentorSession({
+      user_id:u&&u.id, email:(u&&u.email)||null,
+      position:state.config.position, company:state.config.company||null, level:f.level,
+      job_desc:(f.jobDesc||"").slice(0,4000)||null, cv_text:(f.cvText||"").slice(0,12000)||null,
+      questions:qs.map(function(q){ return { id:q.id, text:q.text, category:q.category, criterio:q.criterio||"" }; }),
+      status:"en_curso"
+    }).then(function(s){ if(s&&s.id) state.mentor.current.id=s.id; }).catch(function(){});
+  }
+}
+
+/* ---- Del final de la entrevista al informe ---- */
+/* Lo que se le manda a la IA por cada respuesta: la transcripción y lo
+   que midió el navegador (duración, muletillas, silencios, ritmo). */
+function mentorAnswerPayload(){
+  return state.questions.map(function(q){
+    var a=state.answers[q.id]||{};
+    var sg=a.signals||{};
+    var m=speechMetrics(a.transcript||"");
+    var wpm=(sg.durationSec)?(m.words/(sg.durationSec/60)):0;
+    return {
+      question:q.text, criterio:q.criterio||"",
+      transcript:(a.transcript||"").slice(0,3000),
+      signals:{
+        durationSec:+(sg.durationSec||0).toFixed(1),
+        longestSilence:+(sg.longestSilence||0).toFixed(1),
+        words:m.words, fillers:m.fillers, wpm:+wpm.toFixed(0), spoke:sg.spoke!==false
+      }
+    };
+  });
+}
+function mentorFinish(){
+  state.mentor.proc={ step:"transcribiendo", pct:15 };
+  state.mentor.error=null;
+  state.screen="mentor-processing"; render();
+
+  withTimeout(transcribeAnswersWithAI(), 60000).catch(function(){})
+    .then(function(){
+      state.mentor.proc={ step:"evaluando", pct:60 }; render();
+      var c=state.mentor.current||{};
+      return fetch("/api/analyze", {
+        method:"POST", headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({
+          task:"mentor_report", position:state.config.position, company:state.config.company,
+          level:c.level||"semi", answers:mentorAnswerPayload()
+        })
+      }).then(function(r){ return r.json(); });
+    })
+    .then(function(j){
+      if(!(j&&j.ok&&j.report)) throw new Error("sin informe");
+      mentorShowReport(j.report, false);
+    })
+    .catch(function(){
+      // Nunca dejamos al usuario sin devolución: si la IA falla, se arma
+      // un informe con lo que midió el navegador.
+      mentorShowReport(mentorLocalReport(), true);
+    });
+}
+/* Informe de respaldo, sin IA: sale de las señales medidas y del
+   evaluador local que ya usa la consultora. */
+function mentorLocalReport(){
+  var payload=mentorAnswerPayload();
+  var contestadas=payload.filter(function(p){ return (p.transcript||"").length>10; });
+  var prom=function(f){ return contestadas.length ? contestadas.reduce(function(a,p){ return a+f(p); },0)/contestadas.length : 0; };
+  var dur=prom(function(p){ return p.signals.durationSec; });
+  var mul=prom(function(p){ return p.signals.words ? p.signals.fillers/p.signals.words : 0; });
+  var sil=prom(function(p){ return p.signals.longestSilence; });
+  var pal=prom(function(p){ return p.signals.words; });
+  var nota=function(v){ return Math.max(1, Math.min(10, Math.round(v*10)/10)); };
+  var claridad=nota(pal>=70?7.5:pal>=40?6:4.5);
+  var seguridad=nota(8 - Math.min(3.5, mul*22) - Math.min(2, sil/3));
+  var cobertura=state.questions.length ? contestadas.length/state.questions.length : 0;
+  var base=nota((claridad+seguridad)/2 * (0.6+0.4*cobertura));
+  var dims=[
+    { key:"claridad", score:claridad, comentario:"Estimado por la extensión y el ritmo de tus respuestas (promedio de "+Math.round(pal)+" palabras y "+Math.round(dur)+" segundos).", evidencia:"" },
+    { key:"seguridad", score:seguridad, comentario:"Estimado por muletillas y silencios ("+(mul*100).toFixed(1)+"% de muletillas, silencio más largo promedio de "+sil.toFixed(1)+"s).", evidencia:"" }
+  ];
+  return {
+    score:base, titular:"Informe parcial: la IA no estuvo disponible",
+    resumen:"Esta vez no pudimos analizar el contenido de tus respuestas, así que el informe sale sólo de lo que midió tu navegador mientras hablabas: cuánto hablaste, a qué ritmo y cuántas muletillas usaste. Repetí el simulacro en un rato para tener la devolución completa.",
+    dimensiones:dims, fortalezas:[], mejoras:[
+      { titulo:"Volvé a intentarlo", detalle:"El análisis de contenido no está disponible en este momento.", como:"Repetí el simulacro en unos minutos: las respuestas que grabaste no se pierden." }
+    ],
+    reescrituras:[], preguntas_al_entrevistador:[], si_fuera_real:"", parcial:true,
+    contestadas:contestadas.length, total:state.questions.length
+  };
+}
+function mentorShowReport(report, parcial){
+  report=report||{};
+  if(parcial) report.parcial=true;
+  state.mentor.report=report;
+  state.mentor.proc=null;
+  state.screen="mentor-report"; render();
+  // Se guarda el simulacro terminado (transcripciones + informe).
+  var c=state.mentor.current||{};
+  if (supaConfigured() && isLoggedIn()){
+    var payload={
+      answers:mentorAnswerPayload(), report:report,
+      score:(typeof report.score==="number"?report.score:null), status:"listo"
+    };
+    var p = c.id ? dbUpdateMentorSession(c.id, payload)
+                 : dbCreateMentorSession(Object.assign({
+                     user_id:(currentUser()||{}).id, email:(currentUser()||{}).email||null,
+                     position:state.config.position, company:state.config.company||null,
+                     level:c.level||"semi", questions:(c.questions||[]).map(function(q){ return { id:q.id, text:q.text, category:q.category }; })
+                   }, payload));
+    p.then(function(){ state.mentor.sessions=null; }).catch(function(){});
+  }
+}
+/* Abrir un simulacro guardado del historial. */
+function mentorOpenSession(id){
+  state.mentor.error=null; state.mentor.loading=true; state.screen="mentor-report"; state.mentor.report=null; render();
+  dbGetMentorSession(id).then(function(s){
+    state.mentor.loading=false;
+    if(!s||!s.report){ state.mentor.error="Ese simulacro no tiene informe guardado."; render(); return; }
+    state.mentor.report=s.report;
+    state.mentor.current={ id:s.id, level:s.level, questions:s.questions||[] };
+    state.config=Object.assign({}, state.config, { position:s.position||"", company:s.company||"" });
+    state.mentor.saved=s;
+    render();
+  }).catch(function(){ state.mentor.loading=false; state.mentor.error="No pude abrir ese simulacro."; render(); });
+}
+function mentorDeleteSession(id){
+  if(!confirm("¿Borrar este simulacro y su informe? No se puede deshacer.")) return;
+  dbDeleteMentorSession(id).then(function(){
+    state.mentor.sessions=(state.mentor.sessions||[]).filter(function(x){ return x.id!==id; });
+    state.mentor.msg="Simulacro borrado."; render();
+  }).catch(function(){ state.mentor.error="No pude borrarlo."; render(); });
+}
+
+/* ---- Informe en PDF ---- */
+function mentorPdf(){
+  var r=state.mentor.report; if(!r) return;
+  if(!(window.html2canvas && window.jspdf && window.jspdf.jsPDF)){
+    state.mentor.error="No pude generar el PDF en este navegador. Probá desde una computadora."; render(); return;
+  }
+  var pos=state.config.position||"", comp=state.config.company||"";
+  var dims=(r.dimensiones||[]).map(function(d){
+    var dm=MENTOR_DIMS[d.key]||{label:d.key};
+    var pct=Math.max(0,Math.min(100,(Number(d.score)||0)*10));
+    return '<div style="margin-bottom:11px">'+
+      '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:#111;font-weight:600">'+esc(dm.label)+'</span><span style="color:#666">'+(Number(d.score)||0)+'/10</span></div>'+
+      '<div style="height:7px;background:#eceff4;border-radius:4px"><div style="height:7px;width:'+pct+'%;background:#1F55B0;border-radius:4px"></div></div>'+
+      (d.comentario?('<div style="font-size:11px;color:#555;margin-top:4px">'+esc(d.comentario)+'</div>'):'')+
+    '</div>';
+  }).join('');
+  var lista=function(arr, campo){
+    return (arr||[]).map(function(x){
+      return '<div style="padding:8px 0;border-bottom:1px solid #eee">'+
+        '<div style="font-size:12.5px;font-weight:700;color:#111">'+esc(x.titulo||"")+'</div>'+
+        '<div style="font-size:12px;color:#555;margin-top:2px">'+esc(x.detalle||"")+'</div>'+
+        (x[campo]?('<div style="font-size:11.5px;color:#777;margin-top:3px;font-style:italic">'+esc(x[campo])+'</div>'):'')+
+      '</div>';
+    }).join('');
+  };
+  var wrap=document.createElement("div");
+  wrap.style.cssText="position:fixed;left:-10000px;top:0;width:720px;background:#ffffff;color:#111;padding:44px;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box";
+  wrap.innerHTML=
+    '<div style="border-bottom:3px solid #A83C15;padding-bottom:13px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:flex-end">'+
+      '<div><div style="font-size:21px;font-weight:800;color:#A83C15">Mentor IA · Informe de tu simulacro</div>'+
+      '<div style="font-size:12px;color:#888;margin-top:2px">'+esc(pos)+(comp?(' · '+esc(comp)):'')+' — '+fmtDateTimeShort(Date.now())+'</div></div>'+
+      '<div style="text-align:right"><div style="font-size:34px;font-weight:800;color:#111;line-height:1">'+((Number(r.score)||0).toFixed(1))+'</div><div style="font-size:11px;color:#888">de 10</div></div>'+
+    '</div>'+
+    (r.titular?('<div style="font-size:15px;font-weight:700;color:#111;margin-bottom:6px">'+esc(r.titular)+'</div>'):'')+
+    (r.resumen?('<div style="font-size:12.5px;color:#444;line-height:1.55;margin-bottom:18px">'+esc(r.resumen)+'</div>'):'')+
+    '<div style="font-size:13px;font-weight:800;color:#111;margin-bottom:10px">Cómo te fue en cada cosa</div>'+dims+
+    ((r.fortalezas||[]).length?('<div style="font-size:13px;font-weight:800;color:#111;margin:18px 0 4px">Lo que hiciste bien</div>'+lista(r.fortalezas,"evidencia")):'')+
+    ((r.mejoras||[]).length?('<div style="font-size:13px;font-weight:800;color:#111;margin:18px 0 4px">Lo que tenés que mejorar</div>'+lista(r.mejoras,"como")):'')+
+    ((r.preguntas_al_entrevistador||[]).length?('<div style="font-size:13px;font-weight:800;color:#111;margin:18px 0 6px">Preguntas para hacerle al entrevistador</div>'+
+      (r.preguntas_al_entrevistador||[]).map(function(q){ return '<div style="font-size:12px;color:#444;padding:3px 0">· '+esc(q)+'</div>'; }).join('')):'')+
+    '<div style="margin-top:26px;border-top:1px solid #eee;padding-top:10px;font-size:10.5px;color:#999">Generado por Mentor IA · TalentIA — practicá tu entrevista antes de darla en serio.</div>';
+  document.body.appendChild(wrap);
+  html2canvas(wrap, { scale:2, backgroundColor:"#ffffff" }).then(function(canvas){
+    try{
+      var pdf=new window.jspdf.jsPDF({ unit:"pt", format:"a4" });
+      var pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+      var iw=pw-56, ih=canvas.height*(iw/canvas.width);
+      var img=canvas.toDataURL("image/jpeg",0.92);
+      var y=28, resto=ih;
+      pdf.addImage(img, "JPEG", 28, y, iw, ih);
+      while (resto > ph-56){ resto-=(ph-56); pdf.addPage(); y=28-(ih-resto); pdf.addImage(img, "JPEG", 28, y, iw, ih); }
+      pdf.save("informe_"+(pos||"entrevista").toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,40)+".pdf");
+    }catch(e){}
+    try{ document.body.removeChild(wrap); }catch(e){}
+  }).catch(function(){ try{ document.body.removeChild(wrap); }catch(e){} });
+}
+
+/* =====================  PANTALLAS  ===================== */
+function mentorHeader(compact){
+  var u=currentUser();
+  return '<div class="hdr" style="margin-bottom:'+(compact?'16px':'26px')+'">'+
+    '<div class="hdr-mark" style="color:var(--brick)">'+ic('mic',30)+'</div>'+
+    '<div><h1 class="hdr-title" style="font-size:19px">Mentor<span class="dot"> IA</span></h1>'+
+      '<p class="hdr-sub" style="font-size:12px">Practicá tu entrevista antes de darla en serio</p></div>'+
+    '<div style="margin-left:auto;display:flex;align-items:center;gap:9px;flex-wrap:wrap">'+
+      (u&&u.email?('<span style="font-size:12px;color:var(--faint)">'+esc(u.email)+'</span>'):'')+
+      (isLoggedIn()?('<button class="btn btn-ghost btn-sm" data-action="mentor-home">'+ic('home',13)+' Mis simulacros</button>'+
+                     '<button class="btn btn-ghost btn-sm" data-action="logout">Salir</button>'):'')+
+    '</div>'+
+  '</div>';
+}
+/* Puerta pública del producto: qué es y cómo se entra. */
+Screens["mentor-landing"] = function(){
+  var paso=function(n,t,d){
+    return '<div style="display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--border-soft)">'+
+      '<span style="flex-shrink:0;width:26px;height:26px;border-radius:8px;background:var(--brick-tint);color:var(--brick);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">'+n+'</span>'+
+      '<div><p style="margin:0;font-size:14px;font-weight:700;color:var(--ink)">'+esc(t)+'</p>'+
+      '<p style="margin:2px 0 0;font-size:13px;color:var(--muted);line-height:1.55">'+esc(d)+'</p></div></div>';
+  };
+  return mentorHeader() +
+  '<div style="max-width:560px;margin:0 auto">'+
+    '<h2 style="font-size:25px;font-weight:700;letter-spacing:-.02em;margin:0 0 10px;line-height:1.2">Tenés una entrevista esta semana.<br>Practicala hoy.</h2>'+
+    '<p style="font-size:14.5px;color:var(--muted);line-height:1.6;margin:0 0 20px">Te hacemos una entrevista real, hablada y con tiempo, para el puesto al que te estás postulando. Al final te damos el informe que escribiría un reclutador sobre vos: qué dijiste mal, qué contestar en su lugar y qué preguntas conviene que hagas.</p>'+
+    ErrBox()+
+    '<button class="btn btn-block" data-action="mentor-login" style="background:#fff;border:1px solid var(--border);color:#1f2937;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600;padding:13px">'+googleG(18)+' Entrar con Google y practicar</button>'+
+    '<p style="margin:10px 0 26px;font-size:12px;color:var(--faint);text-align:center">Tu primer simulacro es gratis. No pedimos tarjeta ni permisos de tu correo.</p>'+
+    '<div class="card">'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Cómo funciona</h3>'+
+      '<p style="margin:0 0 6px;font-size:12.5px;color:var(--muted)">Quince minutos, desde el celular o la computadora.</p>'+
+      paso(1,"Nos contás a qué puesto vas","El puesto, la empresa si la sabés y tu CV si querés que las preguntas sean sobre tu experiencia.")+
+      paso(2,"Te hacemos seis preguntas, habladas","Con tiempo, como en la real. Si titubeás o contestás corto, te repreguntamos.")+
+      paso(3,"Te damos el informe","Puntaje, qué hiciste bien, qué corregir, y tus dos peores respuestas reescritas como las diría alguien que queda.")+
+    '</div>'+
+    '<p style="margin:22px 0 0;font-size:12px;color:var(--faint);text-align:center">Hecho por <b>TalentIA</b>, consultora de RR.HH. Te evalúa la misma vara con la que las consultoras miran candidatos.<br>'+
+      '<button class="backlink" data-action="home" style="margin-top:10px">'+ic('back',13)+' Volver al inicio</button></p>'+
+  '</div>';
+};
+/* Casa del candidato: empezar uno nuevo y ver los anteriores. */
+Screens["mentor-home"] = function(){
+  var m=state.mentor;
+  var u=currentUser();
+  var nombre=((u&&u.user_metadata&&(u.user_metadata.full_name||u.user_metadata.name))||"").split(" ")[0];
+  var html=mentorHeader(true);
+  html+='<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px">'+
+    '<div><h2 style="font-size:21px;font-weight:700;letter-spacing:-.02em;margin:0">'+(nombre?('Hola, '+esc(nombre)+'.'):'Hola.')+'</h2>'+
+    '<p style="margin:4px 0 0;font-size:13.5px;color:var(--muted)">¿Para qué entrevista querés prepararte?</p></div>'+
+    '<button class="btn btn-primary" data-action="mentor-new">'+ic('mic',15)+' Nuevo simulacro</button>'+
+  '</div>';
+  if (m.msg) html+=Note("ok", esc(m.msg));
+  if (m.error) html+=Note("err", esc(m.error));
+  if (m.loading || m.sessions===null) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Buscando tus simulacros…</p></div>';
+
+  var listos=(m.sessions||[]).filter(function(s){ return s.status==="listo"; });
+  if (!listos.length){
+    html+='<div class="center-block" style="padding:30px 14px">'+ic('mic',28)+
+      '<h2 style="font-size:16px">Todavía no practicaste</h2>'+
+      '<p>Son quince minutos y te vas con un informe concreto de qué mejorar. Necesitás un lugar tranquilo y auriculares con micrófono, si tenés.</p>'+
+      '<button class="btn btn-primary btn-sm" data-action="mentor-new" style="margin-top:12px">'+ic('mic',14)+' Empezar mi primer simulacro</button></div>';
+    return html;
+  }
+  // Evolución: lo que hace que valga la pena volver.
+  if (listos.length>1){
+    var ord=listos.slice().reverse();
+    var prim=Number(ord[0].score)||0, ult=Number(ord[ord.length-1].score)||0;
+    var dif=ult-prim;
+    html+='<div class="card" style="margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">'+
+      '<div><p style="margin:0;font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em">Tu evolución</p>'+
+      '<p style="margin:4px 0 0;font-size:22px;font-weight:800;color:'+(dif>=0?'var(--green)':'var(--brick)')+'">'+(dif>=0?'+':'')+dif.toFixed(1)+' puntos</p>'+
+      '<p style="margin:2px 0 0;font-size:12.5px;color:var(--muted)">del primer simulacro ('+prim.toFixed(1)+') al último ('+ult.toFixed(1)+')</p></div>'+
+      '<div style="flex:1;min-width:180px;display:flex;align-items:flex-end;gap:6px;height:60px">'+
+        ord.map(function(s){
+          var h=Math.max(6, Math.round((Number(s.score)||0)*6));
+          return '<div title="'+esc(s.position||"")+': '+(Number(s.score)||0).toFixed(1)+'" style="flex:1;max-width:26px;height:'+h+'px;border-radius:3px 3px 0 0;background:'+mentorScoreColor(s.score)+'"></div>';
+        }).join('')+
+      '</div></div>';
+  }
+  html+='<div style="display:grid;gap:8px">';
+  (m.sessions||[]).forEach(function(s){
+    var listo=(s.status==="listo");
+    var sc=Number(s.score);
+    html+='<div class="qa-item" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
+      '<span style="flex-shrink:0;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);color:'+mentorScoreColor(sc)+';font-weight:800;font-size:16px">'+(listo&&isFinite(sc)?sc.toFixed(1):ic('clock',18))+'</span>'+
+      '<div style="flex:1;min-width:160px">'+
+        '<p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(s.position||"Simulacro")+'</p>'+
+        '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">'+(s.company?(esc(s.company)+' · '):'')+
+          esc((MENTOR_NIVELES[s.level]||{short:""}).short)+' · '+climaFmtDate(s.created_at)+
+          (listo?'':' · quedó a medias')+'</p>'+
+      '</div>'+
+      (listo?('<button class="btn btn-ghost btn-sm" data-action="mentor-open" data-id="'+esc(s.id)+'">'+ic('eye',13)+' Ver informe</button>'):'')+
+      '<button class="btn btn-ghost btn-sm" data-action="mentor-del" data-id="'+esc(s.id)+'" style="color:var(--brick)">'+ic('trash',13)+'</button>'+
+    '</div>';
+  });
+  html+='</div>';
+  return html;
+};
+/* Configurar el simulacro: una sola pantalla. */
+Screens["mentor-new"] = function(){
+  var f=state.mentor.form||{};
+  var html=mentorHeader(true);
+  html+='<button class="backlink" data-action="mentor-home">'+ic('back',13)+' Volver</button>';
+  html+='<h2 style="font-size:21px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px">Contame de la entrevista</h2>'+
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px;max-width:60ch">Con el puesto alcanza para empezar. Cuanto más nos cuentes, más parecidas van a ser las preguntas a las que te van a hacer de verdad.</p>';
+  if (state.mentor.error) html+=Note("err", esc(state.mentor.error));
+  if (state.mentor.msg) html+=Note("info", esc(state.mentor.msg));
+  html+='<div class="card" style="max-width:620px">';
+  html+='<label class="field"><span class="field-label">¿A qué puesto te postulás?</span><div class="input-row">'+ic('briefcase',15)+
+    '<input id="f_mt_pos" value="'+esc(f.position||"")+'" placeholder="Ej: Vendedor de salón, Analista de sistemas, Recepcionista"></div></label>';
+  html+='<label class="field" style="margin-top:12px"><span class="field-label">Empresa <span style="color:var(--faint);font-weight:400">(opcional)</span></span><div class="input-row">'+ic('building',15)+
+    '<input id="f_mt_comp" value="'+esc(f.company||"")+'" placeholder="Si la sabés, las preguntas se adaptan a ella"></div></label>';
+  html+='<div class="field" style="margin-top:14px"><span class="field-label">¿Cuánta experiencia tenés?</span><div style="display:flex;gap:8px;flex-wrap:wrap">'+
+    MENTOR_NIVEL_ORDER.map(function(k){
+      var on=((f.level||"semi")===k), N=MENTOR_NIVELES[k];
+      return '<button class="btn btn-sm" data-action="mentor-level" data-l="'+k+'" style="flex-direction:column;align-items:flex-start;gap:1px;padding:9px 13px;'+
+        (on?'background:var(--brick-tint);color:var(--brick);border:1px solid var(--brick)':'background:transparent;color:var(--muted);border:1px solid var(--border)')+'">'+
+        '<span style="font-weight:700;font-size:12.5px">'+esc(N.short)+'</span><span style="font-size:11px">'+esc(N.label)+'</span></button>';
+    }).join('')+'</div></div>';
+  html+='<label class="field" style="margin-top:14px"><span class="field-label">Pegá el aviso del puesto <span style="color:var(--faint);font-weight:400">(opcional, pero cambia mucho)</span></span>'+
+    '<div class="input-row" style="align-items:flex-start"><textarea id="f_mt_jd" rows="4" placeholder="Copiá y pegá el texto de la búsqueda tal como lo viste publicado.">'+esc(f.jobDesc||"")+'</textarea></div></label>';
+  html+='<div class="field" style="margin-top:14px"><span class="field-label">Tu CV en PDF <span style="color:var(--faint);font-weight:400">(opcional)</span></span>'+
+    '<label style="display:inline-flex;align-items:center;gap:9px;padding:11px 14px;border:1px dashed var(--border);border-radius:var(--r);cursor:pointer;font-size:13px;color:var(--muted);width:100%">'+
+      ic('file',16)+'<span>'+(f.cvLoading?'Leyendo tu CV…':(f.cvName?esc(f.cvName):'Elegir archivo PDF'))+'</span>'+
+      '<input type="file" id="f_mt_cv" accept="application/pdf" style="display:none">'+
+    '</label>'+
+    (f.cvText?('<span class="field-hint" style="color:var(--green)">'+ic('check',12)+' Listo: vamos a preguntarte sobre tu experiencia real.</span>'):
+      '<span class="field-hint">Si lo subís, al menos una pregunta va a ser sobre algo puntual de tu CV.</span>')+
+  '</div>';
+  html+='<div class="note note-info" style="margin-top:16px">'+ic('mic',15)+'<span><b>Vas a hablar en voz alta.</b> Buscá un lugar tranquilo: el navegador te va a pedir permiso para usar el micrófono y cada pregunta tiene tiempo, como en una entrevista real.</span></div>';
+  html+='<button class="btn btn-primary btn-block" data-action="mentor-start" style="margin-top:16px" '+(f.starting?'disabled':'')+'>'+
+    (f.starting?ic('loader',15,'spin'):ic('mic',15))+' '+(f.starting?'Preparando tus preguntas…':'Empezar la entrevista')+'</button>';
+  html+='</div>';
+  return html;
+};
+Screens["mentor-processing"] = function(){
+  var p=state.mentor.proc||{};
+  var pasos=[["transcribiendo","Escuchando lo que dijiste"],["evaluando","Corrigiendo con la vara del reclutador"]];
+  var html=mentorHeader(true);
+  html+='<div class="card" style="max-width:520px;margin:0 auto;text-align:center">'+
+    '<div style="color:var(--brick);display:flex;justify-content:center;margin-bottom:10px">'+ic('loader',34,'spin')+'</div>'+
+    '<h2 style="font-size:19px;margin:0 0 6px">Armando tu informe</h2>'+
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px">Tarda menos de un minuto. No cierres la ventana.</p>'+
+    '<div style="text-align:left;max-width:340px;margin:0 auto">'+
+      pasos.map(function(s){
+        var activo=(p.step===s[0]);
+        var hecho=(s[0]==="transcribiendo" && p.step==="evaluando");
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;font-size:13.5px;color:'+(activo?'var(--ink)':hecho?'var(--green)':'var(--faint)')+'">'+
+          (hecho?ic('check',16):activo?ic('loader',16,'spin'):ic('square',16))+'<span>'+esc(s[1])+'</span></div>';
+      }).join('')+
+    '</div>'+
+  '</div>';
+  return html;
+};
+/* El informe. Es el producto: acá se juega si vuelve o no. */
+Screens["mentor-report"] = function(){
+  var r=state.mentor.report;
+  var html=mentorHeader(true);
+  if (state.mentor.loading) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Abriendo tu informe…</p></div>';
+  if (state.mentor.error) return html+Note("err", esc(state.mentor.error))+'<button class="btn btn-ghost btn-sm" data-action="mentor-home">Volver a mis simulacros</button>';
+  if (!r) return html+Note("err","No encontré el informe.");
+  var sc=Number(r.score)||0;
+  var pos=state.config.position||"", comp=state.config.company||"";
+
+  html+='<button class="backlink" data-action="mentor-home">'+ic('back',13)+' Mis simulacros</button>';
+  if (r.parcial) html+=Note("warn","Este informe es parcial: no pudimos analizar el contenido de tus respuestas. Repetí el simulacro en un rato para tener la devolución completa.");
+
+  // Puntaje
+  html+='<div class="card" style="margin-bottom:14px">'+
+    '<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">'+
+      '<div style="flex-shrink:0;width:92px;height:92px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--surface-2);border:3px solid '+mentorScoreColor(sc)+'">'+
+        '<span style="font-size:28px;font-weight:800;line-height:1;color:'+mentorScoreColor(sc)+'">'+sc.toFixed(1)+'</span>'+
+        '<span style="font-size:10.5px;color:var(--faint)">de 10</span></div>'+
+      '<div style="flex:1;min-width:200px">'+
+        '<p style="margin:0;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)">'+esc(mentorScoreLabel(sc))+'</p>'+
+        '<h2 style="margin:4px 0 6px;font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.25">'+esc(r.titular||("Tu simulacro para "+pos))+'</h2>'+
+        '<p style="margin:0;font-size:12.5px;color:var(--muted)">'+esc(pos)+(comp?(' · '+esc(comp)):'')+'</p>'+
+      '</div>'+
+    '</div>'+
+    (r.resumen?('<p style="margin:16px 0 0;font-size:14px;color:var(--ink);line-height:1.6;border-top:1px solid var(--border-soft);padding-top:14px">'+esc(r.resumen)+'</p>'):'')+
+    (r.si_fuera_real?('<div class="note note-warn" style="margin:14px 0 0">'+ic('alert',15)+'<span><b>Si esta entrevista era de verdad:</b> '+esc(r.si_fuera_real)+'</span></div>'):'')+
+  '</div>';
+
+  // Dimensiones
+  if ((r.dimensiones||[]).length){
+    html+='<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 12px;font-size:15px;color:var(--ink)">Cómo te fue en cada cosa</h3>';
+    (r.dimensiones||[]).forEach(function(d){
+      var dm=MENTOR_DIMS[d.key]||{ label:d.key, desc:"" };
+      var s=Number(d.score)||0;
+      html+='<div style="padding:11px 0;border-top:1px solid var(--border-soft)">'+
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:5px">'+
+          '<span style="font-size:13.5px;font-weight:700;color:var(--ink)">'+esc(dm.label)+'</span>'+
+          '<span style="font-size:13px;font-weight:700;color:'+mentorScoreColor(s)+'">'+s+'/10</span></div>'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'+encBar(s*10, mentorScoreColor(s))+'</div>'+
+        (d.comentario?('<p style="margin:0;font-size:13px;color:var(--muted);line-height:1.55">'+esc(d.comentario)+'</p>'):'')+
+        (d.evidencia?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--ink);border-left:2px solid var(--border);padding-left:10px;font-style:italic">“'+esc(d.evidencia)+'”</p>'):'')+
+      '</div>';
+    });
+    html+='</div>';
+  }
+
+  // Fortalezas y mejoras
+  var bloque=function(titulo, items, campo, color){
+    if(!items||!items.length) return '';
+    var h='<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 10px;font-size:15px;color:var(--ink)">'+esc(titulo)+'</h3>';
+    items.forEach(function(x){
+      h+='<div style="padding:11px 0;border-top:1px solid var(--border-soft)">'+
+        '<p style="margin:0;font-size:13.5px;font-weight:700;color:'+color+'">'+esc(x.titulo||"")+'</p>'+
+        (x.detalle?('<p style="margin:4px 0 0;font-size:13px;color:var(--muted);line-height:1.55">'+esc(x.detalle)+'</p>'):'')+
+        (x[campo]?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--ink);'+(campo==="evidencia"?'border-left:2px solid var(--border);padding-left:10px;font-style:italic':'')+'">'+(campo==="evidencia"?('“'+esc(x[campo])+'”'):('<b>Cómo:</b> '+esc(x[campo])))+'</p>'):'')+
+      '</div>';
+    });
+    return h+'</div>';
+  };
+  html+=bloque("Lo que hiciste bien", r.fortalezas, "evidencia", "var(--green)");
+  html+=bloque("Lo que tenés que mejorar", r.mejoras, "como", "var(--brick)");
+
+  // Reescrituras: el pedazo más valioso del informe
+  if ((r.reescrituras||[]).length){
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Tu respuesta y cómo la diría alguien que queda</h3>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Con tu misma experiencia. Leelas en voz alta un par de veces antes de la entrevista.</p>';
+    (r.reescrituras||[]).forEach(function(x){
+      html+='<div style="padding:14px 0;border-top:1px solid var(--border-soft)">'+
+        '<p style="margin:0 0 10px;font-size:13px;font-weight:700;color:var(--ink)">'+esc(x.pregunta||"")+'</p>'+
+        '<div class="grid2" style="gap:10px">'+
+          '<div style="padding:11px 13px;border-radius:10px;background:var(--surface-2)">'+
+            '<p style="margin:0 0 5px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)">Lo que dijiste</p>'+
+            '<p style="margin:0;font-size:12.5px;color:var(--muted);line-height:1.55">'+esc(x.tuya||"")+'</p></div>'+
+          '<div style="padding:11px 13px;border-radius:10px;background:var(--green-tint)">'+
+            '<p style="margin:0 0 5px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--green)">Cómo se dice</p>'+
+            '<p style="margin:0;font-size:12.5px;color:var(--ink);line-height:1.55">'+esc(x.mejor||"")+'</p></div>'+
+        '</div>'+
+        (x.porque?('<p style="margin:8px 0 0;font-size:12.5px;color:var(--muted)"><b>Por qué funciona:</b> '+esc(x.porque)+'</p>'):'')+
+      '</div>';
+    });
+    html+='</div>';
+  }
+
+  // Preguntas para el entrevistador
+  if ((r.preguntas_al_entrevistador||[]).length){
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Preguntas que te conviene hacerle a vos</h3>'+
+      '<p style="margin:0 0 10px;font-size:12.5px;color:var(--muted)">Cuando te digan “¿tenés alguna pregunta?”, no digas que no.</p>'+
+      (r.preguntas_al_entrevistador||[]).map(function(q){
+        return '<p style="margin:0;padding:9px 0;border-top:1px solid var(--border-soft);font-size:13.5px;color:var(--ink)">'+ic('msg',14)+' '+esc(q)+'</p>';
+      }).join('')+
+    '</div>';
+  }
+
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'+
+    '<button class="btn btn-primary btn-sm" data-action="mentor-pdf">'+ic('download',14)+' Descargar el informe en PDF</button>'+
+    '<button class="btn btn-ghost btn-sm" data-action="mentor-again">'+ic('rotate',14)+' Practicar de nuevo</button>'+
+    '<button class="btn btn-ghost btn-sm" data-action="mentor-home">'+ic('home',14)+' Mis simulacros</button>'+
+  '</div>';
+  html+='<p style="margin:16px 0 0;font-size:11.5px;color:var(--faint);max-width:60ch">Este informe es una práctica: lo escribe una IA con el criterio de un reclutador, no una empresa que te esté evaluando de verdad.</p>';
   return html;
 };
 
@@ -7747,8 +8388,11 @@ Screens.interview = function(){
   var answer = state.answers[q.id];
   var answered = !!(answer && answer.blobUrl);
   var timedOut = !!(answer && answer.noAnswer);
-  var isCandidate = state.interviewMode === "candidate";
-  var lastLabel = isCandidate ? "Enviar respuestas" : "Terminar entrevista";
+  var isMentor = state.interviewMode === "mentor";
+  // El mentor se comporta como el candidato (reloj corriendo desde que
+  // aparece la pregunta); sólo cambia a dónde va al terminar.
+  var isCandidate = state.interviewMode === "candidate" || isMentor;
+  var lastLabel = isMentor ? "Ver mi informe" : (isCandidate ? "Enviar respuestas" : "Terminar entrevista");
 
   var ring = 2*Math.PI*54;
   var progress = state.qTiming ? state.timeLeft/(state.timeTotal || q.seconds) : 1;
@@ -9922,7 +10566,7 @@ function doSignup(email, password, captchaToken){
     render();
   }).catch(function(){ state.busy=false; state.error="No pude conectar. Revisá tu conexión."; render(); });
 }
-function doLogout(){ supaLogout(); state.empresa=null; state.dash={loading:false,items:null,error:null,detail:null}; state.admin={loading:false,items:null,error:null}; state.myApproved=null; state.screen="home"; render(); }
+function doLogout(){ supaLogout(); setDoor(""); state.mentor={ loading:false, sessions:null, error:null, msg:"", form:null, current:null, report:null, proc:null, saved:null }; state.empresa=null; state.dash={loading:false,items:null,error:null,detail:null}; state.admin={loading:false,items:null,error:null}; state.myApproved=null; state.screen="home"; render(); }
 function loadDashboard(){
   if(!supaConfigured() || !isLoggedIn()) return;
   state.dash.loading=true; state.dash.error=null; render();
@@ -9930,6 +10574,9 @@ function loadDashboard(){
     .catch(function(){ state.dash.loading=false; state.dash.error="No pude cargar las entrevistas."; render(); });
 }
 function routeAfterAuth(){
+  // Quien entró por la puerta del mentor es un candidato: va a su propio
+  // panel y no pasa por la aprobación de administrador de la consultora.
+  if (isMentorDoor()){ mentorAfterAuth(); return; }
   state.myApproved = null;
   loadBrandForUser();
   // La cuenta ES la empresa: se entra derecho y, si todavía no cargó sus datos, se piden una única vez.
@@ -10398,7 +11045,7 @@ function startRecording(q){
     startMeter(stream); rt.startTime = Date.now();
     startRecognition(q);
     state.recording = true;
-    if (state.interviewMode === "candidate"){
+    if (state.interviewMode === "candidate" || state.interviewMode === "mentor"){
       // El cronómetro ya viene corriendo desde que apareció la pregunta.
       if (!state.qTiming) startQuestionTimer(q);
       render();
@@ -10413,7 +11060,7 @@ function startRecording(q){
 /* Cronómetro de la pregunta: arranca cuando la pregunta aparece (modo candidato). */
 function startQuestionTimer(q){
   clearTimeout(rt.timerId);
-  state.timeLeft = questionTime(q, state.interviewMode === "candidate");
+  state.timeLeft = questionTime(q, state.interviewMode === "candidate" || state.interviewMode === "mentor");
   state.timeTotal = state.timeLeft;
   state.qTiming = true;
   render();
@@ -10552,7 +11199,7 @@ function fetchFollowupAI(q, transcript){
 
 function reRecord(q){
   // En modo candidato solo se puede regrabar mientras quede tiempo.
-  if (state.interviewMode === "candidate" && !state.qTiming) return;
+  if ((state.interviewMode === "candidate" || state.interviewMode === "mentor") && !state.qTiming) return;
   var a = state.answers[q.id];
   if (a && a.blobUrl && a.blobUrl.indexOf("blob:")===0) URL.revokeObjectURL(a.blobUrl);
   delete state.answers[q.id];
@@ -10566,7 +11213,14 @@ function nextQuestion(){
   // Repreguntas con IA (solo candidato, si están activadas): analizamos la respuesta y, si es floja
   // o genérica, insertamos una repregunta puntual antes de avanzar.
   var cq = state.questions[state.idx];
-  if (state.interviewMode === "candidate" && state.config.followups && cq && !rt.analyzed[cq.id] && (cq.depth||0) < 2){
+  // En el mentor las repreguntas se limitan a 2 por simulacro: son el diferencial,
+  // pero si el candidato titubea en todas, la práctica se hace eterna y la abandona.
+  var tope = true;
+  if (state.interviewMode === "mentor"){
+    var yaHay = state.questions.filter(function(q){ return q && q.isFollowup; }).length;
+    tope = (yaHay < 2);
+  }
+  if (tope && (state.interviewMode === "candidate" || state.interviewMode === "mentor") && state.config.followups && cq && !rt.analyzed[cq.id] && (cq.depth||0) < 2){
     var a = state.answers[cq.id];
     if (a && (a.blobUrl || a.blob || (a.transcript && a.transcript.length >= 8))){
       rt.analyzed[cq.id] = true;
@@ -10579,6 +11233,7 @@ function nextQuestion(){
 }
 function advanceQuestion(){
   if (state.idx < state.questions.length-1){ state.idx += 1; render(); }
+  else if (state.interviewMode === "mentor") mentorFinish();
   else if (state.interviewMode === "candidate") submitAnswers();
   else { state.screen = "review"; render(); }
 }
@@ -10618,7 +11273,18 @@ function bind(){
       if (ev) ev.stopPropagation(); // evita que un botón dentro de una fila clickeable dispare ambos
       var act = el.getAttribute("data-action");
       if (act === "home") goHome();
-      else if (act === "go-recruiter") enterRecruiter();
+      else if (act === "go-recruiter"){ setDoor("consultora"); enterRecruiter(); }
+      /* ---- Mentor IA (la otra puerta) ---- */
+      else if (act === "go-mentor") goMentor();
+      else if (act === "mentor-login") mentorLogin();
+      else if (act === "mentor-home"){ setDoor("mentor"); state.mentor.error=null; state.mentor.report=null; state.screen="mentor-home"; render(); if(state.mentor.sessions===null) loadMentorSessions(); }
+      else if (act === "mentor-new") mentorNewForm();
+      else if (act === "mentor-level"){ if(state.mentor.form){ state.mentor.form.level=el.getAttribute("data-l")||"semi"; render(); } }
+      else if (act === "mentor-start") mentorStart();
+      else if (act === "mentor-open") mentorOpenSession(el.getAttribute("data-id"));
+      else if (act === "mentor-del") mentorDeleteSession(el.getAttribute("data-id"));
+      else if (act === "mentor-pdf") mentorPdf();
+      else if (act === "mentor-again") mentorNewForm();
       else if (act === "go-candcode"){ state.error=null; state.screen="cand-code"; render(); }
       else if (act === "go-recruiterhome") goRecruiterHome();
       else if (act === "go-hub") goHub();
@@ -11086,6 +11752,11 @@ function bind(){
   document.querySelectorAll("input[data-plantask]").forEach(function(el){
     el.addEventListener("change", function(){ planToggleTask(el.getAttribute("data-plan"), el.getAttribute("data-plantask")); });
   });
+  /* ---- Mentor IA: configurar el simulacro ---- */
+  if ((f=document.getElementById("f_mt_pos"))) f.addEventListener("input", function(e){ if(state.mentor.form) state.mentor.form.position=e.target.value; });
+  if ((f=document.getElementById("f_mt_comp"))) f.addEventListener("input", function(e){ if(state.mentor.form) state.mentor.form.company=e.target.value; });
+  if ((f=document.getElementById("f_mt_jd"))) f.addEventListener("input", function(e){ if(state.mentor.form) state.mentor.form.jobDesc=e.target.value; });
+  if ((f=document.getElementById("f_mt_cv"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) mentorCvFile(file); });
   /* ---- Módulo 3 · área 6: comunicación interna ---- */
   if ((f=document.getElementById("f_com_title"))) f.addEventListener("input", function(e){ if(state.com.form) state.com.form.title=e.target.value; });
   if ((f=document.getElementById("f_com_body"))) f.addEventListener("input", function(e){ if(state.com.form) state.com.form.body=e.target.value; });
@@ -11499,8 +12170,8 @@ function bind(){
   /* review screen */
   if ((f=document.getElementById("evalBtn"))) f.addEventListener("click", evaluate);
 
-  /* candidate: the clock starts as soon as the question appears (recording is manual) */
-  if (state.screen === "interview" && state.interviewMode === "candidate"){
+  /* candidato y mentor: el reloj arranca apenas aparece la pregunta (grabar es manual) */
+  if (state.screen === "interview" && (state.interviewMode === "candidate" || state.interviewMode === "mentor")){
     var cq = state.questions[state.idx];
     if (cq && !state.answers[cq.id] && !state.qTiming && !rt.autoStartedFor[cq.id]){
       rt.autoStartedFor[cq.id] = true;
@@ -11767,6 +12438,16 @@ var pendingEpp = (function(){
   return "";
 })();
 
+// ¿Entró por la puerta del mentor? (?mentor=1 o la ruta /mentor)
+var pendingMentor = (function(){
+  try{
+    var loc = window.location || {};
+    if (/[?&]mentor=1/.test(loc.search || "")) return true;
+    if (/^\/mentor\/?$/i.test(loc.pathname || "")) return true;
+  }catch(e){}
+  return false;
+})();
+
 // Ruteo de arranque:
 if (handleOAuthRedirect()){
   // Volvimos de "Iniciar sesión con Google": ya guardamos la sesión y los tokens de Gmail.
@@ -11782,14 +12463,19 @@ if (handleOAuthRedirect()){
   loadEncuestaPublic(pendingEnc);   // empleado respondiendo la encuesta de clima (público)
 } else if (pendingFichar){
   loadFichador(pendingFichar);      // empleado fichando (fichador público)
+} else if (pendingMentor || isMentorDoor()){
+  goMentor();                       // Mentor IA: la puerta de quien busca trabajo
 } else if (pendingJob){
   loadJobByCode(pendingJob);        // persona en búsqueda laboral: aviso público del portal
 } else if (state.screen === "invite-landing"){
   render();                         // candidato con link viejo (#e=)
 } else if (pendingCode){
   loadInviteByCode(pendingCode);    // candidato con link corto (?c=)
+} else if (!supaConfigured() || isLoggedIn()){
+  enterRecruiter();   // con sesión abierta, cada uno va a su casa (lo decide routeAfterAuth)
 } else {
-  enterRecruiter();   // reclutador: login o panel
+  // Visitante nuevo: ahora hay dos productos, así que lo primero es elegir puerta.
+  state.screen = "home"; render();
 }
 })();
 </script>
