@@ -1706,6 +1706,13 @@ var state = {
   offb: { loading:false, items:null, error:null, msg:"", emp:null, form:null, saving:false },
   clima: { loading:false, items:null, error:null, msg:"", form:null, saving:false, current:null,
            tab:"resultados", responses:null, respLoading:false, round:"", recipInput:"", send:null },
+  /* Módulo 3 · áreas 2 a 6 */
+  enps:  { loading:false, error:null, msg:"", surveys:null, responses:null, surveyId:"" },
+  fb:    { loading:false, items:null, error:null, msg:"", form:null, saving:false, filter:{ kind:"", valueId:"", empId:"", archived:false } },
+  val:   { loading:false, items:null, error:null, msg:"", form:null, saving:false },
+  plan:  { loading:false, items:null, error:null, msg:"", form:null, saving:false, filter:"", focus:null, pending:null },
+  com:   { loading:false, items:null, error:null, msg:"", form:null, saving:false, recipInput:"", send:null, pending:null },
+  mod3:  { loading:false, kpis:null },
   encp: null,
   fichador: null,
   sign: null,
@@ -1732,7 +1739,8 @@ var hasSpeech = typeof window !== "undefined" && (window.SpeechRecognition || wi
    ================================================================ */
 var app = document.getElementById("app");
 var REC_SHELL_SCREENS = { "rec-home":"dash", "cv-home":"cvs", "jobs-home":"jobs", "config":"config" };
-var MOD3_SHELL_SCREENS = { "mod3-home":"home", "mod3-encuestas":"encuestas", "mod3-encuesta-new":"encuestas", "mod3-encuesta":"encuestas" };
+var MOD3_SHELL_SCREENS = { "mod3-home":"home", "mod3-encuestas":"encuestas", "mod3-encuesta-new":"encuestas", "mod3-encuesta":"encuestas",
+  "mod3-enps":"enps", "mod3-feedback":"feedback", "mod3-valores":"valores", "mod3-planes":"planes", "mod3-comunicacion":"comunicacion" };
 var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion", "mod2-beneficios":"beneficios", "mod2-reportes":"reportes", "mod2-offboarding":"offboarding" };
 function render(){
   var out = Screens[state.screen]();
@@ -1745,7 +1753,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v36.0-r104";
+var APP_VERSION = "v37.0-r105";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2011,8 +2019,8 @@ Screens["hub"] = function(){
       desc:"El ciclo completo del empleado, desde el legajo hasta el egreso.",
       areas:"12 áreas · Legajo · Asistencia · Licencias · Reportes" },
     { n:"03", icon:"globe", title:"Clima y cultura", action:"go-module-clima",
-      desc:"Encuestas de clima, eNPS, feedback y planes de acción.",
-      areas:"6 áreas · Encuestas de clima activas" }
+      desc:"Encuestas de clima, eNPS, feedback, valores, planes de acción y comunicación interna.",
+      areas:"6 áreas · Todas activas y enlazadas entre sí" }
   ];
   var card = function(o){
     return '<button class="tile" data-action="'+o.action+'" style="width:100%;height:100%;gap:0;padding:24px;align-items:stretch">' +
@@ -2076,22 +2084,91 @@ Screens["mod2-home"] = function(){
 };
 
 /* ===================== MÓDULO 3: CLIMA Y CULTURA ===================== */
+/* Indicadores del panel: se leen de las seis áreas de una sola pasada.
+   Si a alguna tabla todavía no le corrieron el SQL, esa parte queda en cero
+   y el panel se muestra igual. */
+function loadMod3Panel(){
+  if(!(supaConfigured() && isLoggedIn())){ state.mod3.kpis=null; return; }
+  var nada=function(){ return []; };
+  state.mod3.loading=true;
+  Promise.all([
+    dbListSurveys().catch(nada), dbListAllResponses().catch(nada), dbListPlans().catch(nada),
+    dbListRecognitions().catch(nada), dbListValues().catch(nada), dbListAnnouncements().catch(nada)
+  ]).then(function(r){
+    state.mod3.loading=false;
+    var surveys=r[0]||[], responses=r[1]||[], plans=r[2]||[], recs=r[3]||[], vals=r[4]||[], anns=r[5]||[];
+    // Se guardan en el estado de cada área: al entrar, ya están.
+    state.clima.items=surveys; state.enps.surveys=surveys; state.enps.responses=responses;
+    state.plan.items=plans; state.fb.items=recs; state.val.items=vals; state.com.items=anns;
+    var a=enpsCompute(surveys, responses);
+    var now=new Date();
+    state.mod3.kpis={
+      surveys:surveys.length,
+      activas:surveys.filter(function(x){ return x.status==="activa"; }).length,
+      responses:responses.length,
+      enps:a.tot.score, sat:a.tot.sat,
+      planesAbiertos:plans.filter(function(x){ return x.status!=="hecho" && x.status!=="cancelado"; }).length,
+      planesHechos:plans.filter(function(x){ return x.status==="hecho"; }).length,
+      recsMes:recs.filter(function(x){ var d=new Date(x.created_at); return !isNaN(d.getTime()) && d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth(); }).length,
+      valores:vals.filter(function(v){ return v.active!==false; }).length,
+      anuncios:anns.filter(function(x){ return x.status==="publicado"; }).length,
+      floja:(a.dims.length?a.dims[0]:null)
+    };
+    if(state.screen==="mod3-home") render();
+  }).catch(function(){ state.mod3.loading=false; });
+}
 Screens["mod3-home"] = function(){
   var areas = [
     { active:true, action:"go-encuestas", icon:"list", tag:"Activo", title:"1 · Encuestas de clima", desc:"Plantilla lista de Great Place to Work®, programación mensual/trimestral/anual y envío masivo por mail. Resultados anónimos por dimensión." },
-    { icon:"eye",      tag:"Próximamente", title:"2 · eNPS y satisfacción",       desc:"Medición del Employee Net Promoter Score y de la satisfacción del personal en el tiempo." },
-    { icon:"msg",      tag:"Próximamente", title:"3 · Feedback y reconocimiento",  desc:"Canal de feedback continuo, felicitaciones y reconocimientos entre colaboradores." },
-    { icon:"trophy",   tag:"Próximamente", title:"4 · Valores y cultura",          desc:"Valores de la empresa, encuestas de alineamiento cultural y embajadores de cultura." },
-    { icon:"square",   tag:"Próximamente", title:"5 · Planes de acción",           desc:"Del diagnóstico a la acción: iniciativas, responsables y seguimiento del impacto." },
-    { icon:"send",     tag:"Próximamente", title:"6 · Comunicación interna",       desc:"Anuncios, novedades y campañas internas para mantener al equipo conectado." }
+    { active:true, action:"go-enps", icon:"eye", tag:"Activo", title:"2 · eNPS y satisfacción", desc:"El eNPS y la satisfacción de todas las encuestas, ronda a ronda, por área y por dimensión. Marca dónde apretar primero." },
+    { active:true, action:"go-feedback", icon:"msg", tag:"Activo", title:"3 · Feedback y reconocimiento", desc:"El muro del equipo: reconocimientos, felicitaciones y devoluciones, dirigidos a gente del legajo y etiquetados con los valores." },
+    { active:true, action:"go-valores", icon:"trophy", tag:"Activo", title:"4 · Valores y cultura", desc:"Los valores escritos como conductas observables. Desde acá se genera la encuesta de alineamiento cultural." },
+    { active:true, action:"go-planes", icon:"square", tag:"Activo", title:"5 · Planes de acción", desc:"Del diagnóstico a la acción: responsable del legajo, fecha compromiso y tareas que se tildan. Guarda de qué encuesta salió." },
+    { active:true, action:"go-comunicacion", icon:"send", tag:"Activo", title:"6 · Comunicación interna", desc:"Novedades, resultados y campañas por mail. Los anuncios se arman con un clic desde las otras áreas." }
   ];
-  return Header() +
+  var k=state.mod3.kpis;
+  var html = Header() +
     backlink("go-hub","Volver a áreas") +
     '<div style="margin-bottom:6px"><span class="eyebrow">Módulo 3</span>' +
       '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('globe',20)+'<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">Clima y Cultura</h2></div>' +
     '</div>' +
-    '<p style="font-size:13px;color:var(--muted);margin:6px 0 18px">Herramientas para medir y mejorar el clima laboral, la cultura y el compromiso del equipo. Vamos a ir activando cada área.</p>' +
-    '<div class="grid2">' + areaCards(areas) + '</div>';
+    '<p style="font-size:13px;color:var(--muted);margin:6px 0 18px;max-width:760px">Seis áreas para medir y mejorar el clima, la cultura y el compromiso del equipo. No son islas: la encuesta alimenta el eNPS, el eNPS abre planes de acción, los valores etiquetan los reconocimientos y todo se puede contar por comunicación interna.</p>';
+  // Indicadores vivos
+  if (k){
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:20px">' +
+      encKpi("eNPS", k.enps==null?"—":String(k.enps), k.responses+" respuestas", enpsColor(k.enps)) +
+      encKpi("Satisfacción", k.sat==null?"—":(k.sat+"/100"), k.activas+" encuesta"+(k.activas===1?"":"s")+" activa"+(k.activas===1?"":"s"), favColor(k.sat)) +
+      encKpi("Planes abiertos", k.planesAbiertos, k.planesHechos+" ya terminados", k.planesAbiertos?"var(--teal)":"var(--muted)") +
+      encKpi("Reconocimientos", k.recsMes, "este mes · "+k.valores+" valores", "var(--purple)") +
+      encKpi("Anuncios", k.anuncios, "publicados al equipo", "var(--ink)") +
+    '</div>';
+    if (k.floja && k.floja.favPct<70){
+      html += Note("warn", 'Lo más flojo hoy es <b>'+esc(k.floja.label)+'</b> ('+k.floja.favPct+'% de respuestas favorables). ' +
+        '<button class="btn btn-ghost btn-sm" data-action="plan-from-dim" data-d="'+esc(k.floja.key)+'" style="margin-left:8px">'+ic('plus',12)+' Abrir un plan de acción</button>');
+    }
+  } else if (state.mod3.loading){
+    html += '<p style="font-size:12.5px;color:var(--faint);margin:0 0 16px">'+ic('loader',12,'spin')+' Calculando los indicadores del módulo…</p>';
+  }
+  html += '<div class="grid2">' + areaCards(areas) + '</div>';
+  // Mapa de vínculos: qué área alimenta a cuál
+  var flecha=function(a,b,txt,act){
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--border-soft)">' +
+      '<span style="flex-shrink:0;font-size:11.5px;font-weight:700;color:var(--teal-strong);white-space:nowrap;min-width:118px">'+a+' → '+b+'</span>' +
+      '<span style="flex:1;min-width:180px;font-size:12.5px;color:var(--muted);line-height:1.55">'+txt+'</span>' +
+      (act?('<button class="btn btn-ghost btn-sm" data-action="'+act[0]+'" style="flex-shrink:0">'+ic(act[2]||'chevron',12)+' '+act[1]+'</button>'):'') +
+    '</div>';
+  };
+  html += '<div class="card" style="margin-top:20px">' +
+    '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Cómo se conectan las áreas</h3>' +
+    '<p style="margin:0 0 8px;font-size:12.5px;color:var(--muted)">Cada área le pasa el trabajo a la siguiente. Este es el circuito completo, de la pregunta a la acción contada.</p>' +
+    flecha('Encuestas','eNPS','Las respuestas de todas las encuestas arman el eNPS y la satisfacción histórica, ronda a ronda.',['go-enps','Ver eNPS','eye']) +
+    flecha('eNPS','Planes','Desde la dimensión más floja se abre un plan que se queda con la encuesta y el dato que lo justifica.',['go-planes','Ver planes','square']) +
+    flecha('Valores','Encuestas','Los valores generan una encuesta de alineamiento cultural con una afirmación por valor.',['go-valores','Ver valores','trophy']) +
+    flecha('Valores','Feedback','Cada reconocimiento se etiqueta con el valor que la persona puso en juego.',['go-feedback','Ver el muro','msg']) +
+    flecha('Legajo','Feedback y Planes','A quién se reconoce y quién es responsable de cada plan sale del legajo del Módulo 2.',['go-legajo','Ver legajo','users']) +
+    flecha('Todas','Comunicación','Resultados, planes, valores y reconocimientos se convierten en un anuncio por mail con un clic.',['go-comunicacion','Ver anuncios','send']) +
+  '</div>';
+  return html;
 };
 
 /* ===================== MÓDULO 3 · ÁREA 1: ENCUESTAS DE CLIMA ===================== */
@@ -2104,9 +2181,10 @@ var CLIMA_DIMS = {
   imparcialidad: { label:"Imparcialidad", color:"var(--amber)",  desc:"Equidad en la paga, en el trato y en los ascensos." },
   orgullo:       { label:"Orgullo",       color:"var(--purple)", desc:"Orgullo por el propio trabajo, el equipo y la empresa." },
   camaraderia:   { label:"Camaradería",   color:"var(--brick)",  desc:"Cercanía, hospitalidad y sentido de equipo." },
+  valores:       { label:"Valores",       color:"var(--teal-strong)", desc:"Alineamiento con los valores que declara la empresa (área 4)." },
   general:       { label:"General",       color:"var(--muted)",  desc:"Preguntas generales de la encuesta." }
 };
-var CLIMA_DIM_ORDER = ["credibilidad","respeto","imparcialidad","orgullo","camaraderia","general"];
+var CLIMA_DIM_ORDER = ["credibilidad","respeto","imparcialidad","orgullo","camaraderia","valores","general"];
 /* Escala de 5 puntos, la clásica del Trust Index. */
 var CLIMA_SCALE_LABELS = ["Casi siempre falso","Muchas veces falso","A veces sí, a veces no","Muchas veces verdadero","Casi siempre verdadero"];
 var CLIMA_SCALE_SHORT  = ["Casi nunca","Pocas veces","A veces","Muchas veces","Casi siempre"];
@@ -2406,6 +2484,11 @@ function encOpen(id, tab){
   state.clima.recipInput=climaEmails(s).join(", ");
   state.screen="mod3-encuesta"; render();
   encLoadResponses(id);
+  // Los planes de acción del área 5 se traen en segundo plano para poder mostrar
+  // los que nacieron de esta encuesta al pie de los resultados.
+  if(state.plan.items===null && supaConfigured() && isLoggedIn()){
+    dbListPlans().then(function(ps){ state.plan.items=ps||[]; if(state.screen==="mod3-encuesta") render(); }).catch(function(){ state.plan.items=[]; });
+  }
 }
 function encLoadResponses(id){
   if(!(supaConfigured() && isLoggedIn())){ state.clima.responses=[]; render(); return; }
@@ -2775,7 +2858,8 @@ function encResultsTab(s){
           '<span style="font-size:13px;font-weight:600;color:var(--ink)">'+esc(dm.label)+'</span>'+
           '<span style="font-size:12px;color:var(--muted)">'+d.favPct+'% favorable · promedio '+d.avg.toFixed(2)+'</span>'+
         '</div>'+
-        '<div style="display:flex;align-items:center;gap:10px">'+encBar(d.favPct, dm.color)+'</div>'+
+        '<div style="display:flex;align-items:center;gap:10px">'+encBar(d.favPct, dm.color)+
+          '<button class="btn btn-ghost btn-sm" data-action="plan-from-survey-dim" data-d="'+esc(k)+'" title="Abrir un plan de acción para esta dimensión" style="white-space:nowrap">'+ic('plus',12)+' Plan</button></div>'+
       '</div>';
     });
     html+='</div>';
@@ -2813,6 +2897,28 @@ function encResultsTab(s){
     html+='</div>';
   }
   html+='<button class="btn btn-ghost btn-sm" data-action="enc-csv">'+ic('download',14)+' Descargar resultados en CSV</button>';
+  // Planes de acción que nacieron de esta encuesta (área 5)
+  var pls=(state.plan.items||[]).filter(function(p){ return p.survey_id===s.id; });
+  if (pls.length){
+    html+='<div class="card" style="margin-top:16px"><h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Planes de acción de esta encuesta ('+pls.length+')</h3>'+
+      '<p style="margin:0 0 10px;font-size:12.5px;color:var(--muted)">Lo que se decidió hacer con estos resultados.</p>';
+    pls.forEach(function(p){
+      var pr=planProgress(p), st=PLAN_STATUS[p.status]||PLAN_STATUS.propuesto;
+      html+='<div style="padding:9px 0;border-top:1px solid var(--border-soft);display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+        '<span style="flex:1;min-width:170px;font-size:13px;color:var(--ink)">'+esc(p.title||"")+
+          (p.dimension?(' <span style="color:var(--faint);font-size:11.5px">· '+esc((CLIMA_DIMS[p.dimension]||{label:p.dimension}).label)+'</span>'):'')+'</span>'+
+        '<span style="font-size:12px;color:var(--muted)">'+pr.done+'/'+pr.total+' tareas</span>'+
+        climaChip(esc(st.label), st.color)+
+        '<button class="btn btn-ghost btn-sm" data-action="plan-open" data-id="'+esc(p.id)+'">'+ic('chevron',12)+' Ver</button>'+
+      '</div>';
+    });
+    html+='</div>';
+  }
+  html+=climaLinks([
+    { action:"plan-from-survey-dim", icon:"square", label:"Crear un plan con la dimensión más floja (área 5)" },
+    { action:"go-enps",              icon:"eye",    label:"Ver el eNPS histórico (área 2)" },
+    { action:"com-from-survey",      icon:"send",   label:"Comunicar estos resultados (área 6)" }
+  ]);
   return html;
 }
 function encQuestionsTab(s){
@@ -3071,6 +3177,1539 @@ Screens["encuesta-public"] = function(){
   html+='<button class="btn btn-primary btn-block" data-action="encp-send" style="margin-top:16px" '+(p.sending?'disabled':'')+'>'+(p.sending?ic('loader',15,'spin'):ic('send',15))+' '+(p.sending?'Enviando…':'Enviar mis respuestas')+'</button>';
   html+='<p style="margin:12px 0 0;font-size:11.5px;color:var(--faint);text-align:center">Podés responder desde el celular. Lleva pocos minutos.</p>';
   html+='</div>';
+  return html;
+};
+
+/* =====================================================================
+   MÓDULO 3 · ÁREAS 2 A 6 (eNPS, Feedback, Valores, Planes y Comunicación)
+
+   Las seis áreas no son islas: comparten los mismos datos y se llaman
+   entre sí. El mapa de vínculos es este:
+
+     1 Encuestas  ──▶ 2 eNPS          (el eNPS histórico sale de las
+                                        respuestas de todas las encuestas)
+     1 Encuestas  ──▶ 5 Planes        ("Crear plan de acción" desde una
+                                        dimensión floja; el plan se queda
+                                        con la encuesta y la dimensión)
+     4 Valores    ──▶ 1 Encuestas     (genera una encuesta de alineamiento
+                                        cultural con un ítem por valor)
+     4 Valores    ──▶ 3 Feedback      (cada reconocimiento se etiqueta con
+                                        el valor que la persona puso en juego)
+     3 Feedback   ──▶ Módulo 2        (a quién se reconoce sale del legajo;
+                                        se puede saltar a su desempeño)
+     5 Planes     ──▶ Módulo 2        (el responsable sale del legajo)
+     2/1/3/4/5    ──▶ 6 Comunicación  (todo se puede difundir por mail:
+                                        resultados, planes, valores, elogios)
+   ===================================================================== */
+
+/* ---- Base de datos ---- */
+/* Lista genérica: si la tabla no existe (falta correr el SQL) tira error,
+   así cada área puede avisarlo en pantalla en vez de mostrarse vacía. */
+function climaList(path){
+  return supaFetch(path).then(function(r){
+    if(!r.ok) throw new Error("query_failed");
+    return r.json().then(function(j){ return Array.isArray(j)?j:[]; });
+  });
+}
+function climaInsert(table, row){
+  return supaFetch("/rest/v1/"+table, { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function climaPatch(table, id, patch){
+  return supaFetch("/rest/v1/"+table+"?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function climaDelete(table, id){
+  return supaFetch("/rest/v1/"+table+"?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; });
+}
+/* Todas las respuestas de todas las encuestas (para el eNPS histórico). */
+function dbListAllResponses(){ return climaList("/rest/v1/climate_responses?select=*&order=submitted_at.desc&limit=5000"); }
+/* Valores de la empresa */
+function dbListValues(){ return climaList("/rest/v1/culture_values?select=*&order=sort.asc,created_at.asc"); }
+function dbCreateValue(row){ return climaInsert("culture_values", row); }
+function dbUpdateValue(id, patch){ return climaPatch("culture_values", id, patch); }
+function dbDeleteValue(id){ return climaDelete("culture_values", id); }
+/* Reconocimientos y feedback */
+function dbListRecognitions(){ return climaList("/rest/v1/recognitions?select=*&order=created_at.desc&limit=1000"); }
+function dbCreateRecognition(row){ return climaInsert("recognitions", row); }
+function dbUpdateRecognition(id, patch){ return climaPatch("recognitions", id, patch); }
+function dbDeleteRecognition(id){ return climaDelete("recognitions", id); }
+/* Planes de acción */
+function dbListPlans(){ return climaList("/rest/v1/action_plans?select=*&order=created_at.desc&limit=500"); }
+function dbCreatePlan(row){ return climaInsert("action_plans", row); }
+function dbUpdatePlan(id, patch){ return climaPatch("action_plans", id, patch); }
+function dbDeletePlan(id){ return climaDelete("action_plans", id); }
+/* Anuncios de comunicación interna */
+function dbListAnnouncements(){ return climaList("/rest/v1/announcements?select=*&order=created_at.desc&limit=500"); }
+function dbCreateAnnouncement(row){ return climaInsert("announcements", row); }
+function dbUpdateAnnouncement(id, patch){ return climaPatch("announcements", id, patch); }
+function dbDeleteAnnouncement(id){ return climaDelete("announcements", id); }
+
+/* ---- Piezas visuales compartidas por las áreas 2 a 6 ---- */
+/* Encabezado igual en todas: ícono, título, bajada y (opcional) botón a la derecha. */
+function climaHead(icon, title, desc, rightHtml){
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
+      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic(icon,20)+
+        '<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">'+esc(title)+'</h2></div>' +
+      (rightHtml||'') +
+    '</div>' +
+    '<p style="font-size:13px;color:var(--muted);margin:0 0 16px;max-width:760px">'+desc+'</p>';
+}
+/* Barra de vínculos con otras áreas: la "vinculación" a la vista. */
+function climaLinks(items){
+  if(!items || !items.length) return "";
+  return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px;padding-top:12px;border-top:1px solid var(--border-soft)">' +
+    items.map(function(it){
+      var attrs=(it.attrs||"");
+      return '<button class="btn btn-ghost btn-sm" data-action="'+it.action+'"'+attrs+'>'+ic(it.icon||'chevron',13)+' '+esc(it.label)+'</button>';
+    }).join('') + '</div>';
+}
+/* Gráfico de barras de una serie, con línea de base en el cero.
+   Sirve para el eNPS (que va de -100 a 100) y para índices de 0 a 100. */
+function climaTrend(rows, opts){
+  opts=opts||{};
+  rows=rows||[];
+  if(!rows.length) return chartEmpty(opts.empty||"Todavía no hay datos suficientes.");
+  var min=(opts.min==null?0:opts.min), max=(opts.max==null?100:opts.max);
+  var W=Math.max(320, rows.length*70), H=176, PAD_T=24, PAD_B=30;
+  var span=(max-min)||1;
+  var yOf=function(v){ v=Math.max(min,Math.min(max,v)); return PAD_T+(H-PAD_T-PAD_B)*(1-((v-min)/span)); };
+  var zeroY=yOf(Math.max(min, Math.min(max, 0)));
+  var body=rows.map(function(r,i){
+    var slot=W/rows.length, cx=(i+0.5)*slot, bw=Math.min(26, slot-20);
+    var vy=yOf(r.v), top=Math.min(vy, zeroY), h=Math.max(3, Math.abs(vy-zeroY));
+    var col=r.color||opts.color||"var(--ch-1)";
+    var lab=(r.text!=null?r.text:String(r.v));
+    return '<g><title>'+esc(r.label+": "+lab+(r.hint?(" · "+r.hint):""))+'</title>' +
+      '<rect x="'+(cx-bw/2).toFixed(1)+'" y="'+top.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="3" fill="'+col+'"/>' +
+      '<text x="'+cx.toFixed(1)+'" y="'+(top-7).toFixed(1)+'" text-anchor="middle" font-size="10.5" font-weight="500" fill="var(--muted)">'+esc(lab)+'</text>' +
+      '<text x="'+cx.toFixed(1)+'" y="'+(H-10)+'" text-anchor="middle" font-size="10.5" fill="var(--muted)">'+esc(r.label)+'</text></g>';
+  }).join("");
+  return '<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" preserveAspectRatio="xMinYMid meet" role="img" aria-label="'+esc(opts.aria||"Evolución")+'" style="min-width:'+W+'px;max-width:100%">' +
+    '<line x1="0" y1="'+zeroY.toFixed(1)+'" x2="'+W+'" y2="'+zeroY.toFixed(1)+'" stroke="var(--ch-grid)" stroke-width="1"/>'+body+'</svg></div>';
+}
+function enpsColor(sc){ return sc==null?"var(--muted)":(sc>=30?"var(--green)":(sc>=0?"var(--amber)":"var(--brick)")); }
+function favColor(p){ return p==null?"var(--muted)":(p>=70?"var(--green)":(p>=50?"var(--amber)":"var(--brick)")); }
+/* Cómo se lee un eNPS, en criollo. */
+function enpsReading(sc){
+  if(sc==null) return "Todavía no hay respuestas con la pregunta de eNPS.";
+  if(sc>=50) return "Excelente: la mayoría recomienda trabajar acá.";
+  if(sc>=30) return "Muy bueno: hay más gente que recomienda que la que no.";
+  if(sc>=10) return "Aceptable, con lugar para mejorar.";
+  if(sc>=0)  return "Justo en el límite: promotores y detractores se compensan.";
+  return "En rojo: hay más detractores que promotores. Conviene trabajarlo.";
+}
+
+/* =====================================================================
+   ÁREA 2 · eNPS Y SATISFACCIÓN
+   No tiene datos propios: lee las respuestas de las encuestas del área 1
+   y las mira en el tiempo (ronda a ronda), por área y por dimensión.
+   ===================================================================== */
+/* Agrega respuestas de VARIAS encuestas a la vez.
+   La satisfacción se normaliza a un índice de 0 a 100 para poder comparar
+   encuestas aunque tengan escalas distintas. */
+function enpsCompute(surveys, responses){
+  var meta={};
+  (surveys||[]).forEach(function(s){
+    var m={};
+    (Array.isArray(s.questions)?s.questions:[]).forEach(function(q){ if(q&&q.id) m[q.id]=q; });
+    meta[s.id]={ q:m, scale:s.scale||5, title:s.title||"Encuesta de clima" };
+  });
+  var mk=function(){ return { resp:0, en:0, prom:0, pas:0, det:0, esum:0, favT:0, favN:0, satSum:0 }; };
+  var tot=mk(), byRound={}, byArea={}, bySurvey={}, dims={};
+  (responses||[]).forEach(function(r){
+    var mt=meta[r.survey_id]; if(!mt) return;
+    var scale=mt.scale, favMin=scale-1;
+    var rk=String(r.round||"")||"sin-ronda";
+    var ak=String(r.area||"").trim()||"Sin área";
+    byRound[rk]=byRound[rk]||mk(); byArea[ak]=byArea[ak]||mk(); bySurvey[r.survey_id]=bySurvey[r.survey_id]||mk();
+    var slots=[tot, byRound[rk], byArea[ak], bySurvey[r.survey_id]];
+    slots.forEach(function(x){ x.resp++; });
+    var a=(r.answers&&typeof r.answers==="object")?r.answers:{};
+    Object.keys(a).forEach(function(qid){
+      var q=mt.q[qid]; if(!q || q.type==="text") return;
+      var n=Number(a[qid]); if(!isFinite(n)) return;
+      if(q.type==="enps"){
+        slots.forEach(function(x){ x.en++; x.esum+=n; if(n>=9) x.prom++; else if(n>=7) x.pas++; else x.det++; });
+        return;
+      }
+      var fav=(n>=favMin)?1:0;
+      var sat=(scale>1)?((n-1)*100/(scale-1)):0;
+      slots.forEach(function(x){ x.favT++; x.favN+=fav; x.satSum+=sat; });
+      var dk=q.dim||"general";
+      dims[dk]=dims[dk]||{ n:0, fav:0, satSum:0 };
+      dims[dk].n++; dims[dk].fav+=fav; dims[dk].satSum+=sat;
+    });
+  });
+  var fin=function(x){
+    x.score = x.en ? Math.round((x.prom-x.det)*100/x.en) : null;
+    x.favPct = x.favT ? Math.round(x.favN*100/x.favT) : null;
+    x.sat = x.favT ? Math.round(x.satSum/x.favT) : null;
+    x.avg = x.en ? (x.esum/x.en) : null;
+    return x;
+  };
+  fin(tot);
+  var rounds=Object.keys(byRound).sort(function(a,b){ return String(a).localeCompare(String(b)); })
+    .map(function(k){ var x=fin(byRound[k]); return { key:k, label:(k==="sin-ronda"?"Sin ronda":climaRoundLabel(k)), d:x }; });
+  var areas=Object.keys(byArea).map(function(k){ return { key:k, d:fin(byArea[k]) }; })
+    .sort(function(a,b){ return (b.d.score==null?-999:b.d.score)-(a.d.score==null?-999:a.d.score); });
+  var surveysAgg=Object.keys(bySurvey).map(function(k){ return { id:k, title:(meta[k]&&meta[k].title)||"Encuesta", d:fin(bySurvey[k]) }; })
+    .sort(function(a,b){ return b.d.resp-a.d.resp; });
+  var dimList=CLIMA_DIM_ORDER.filter(function(k){ return dims[k] && dims[k].n; }).map(function(k){
+    var d=dims[k];
+    return { key:k, label:(CLIMA_DIMS[k]||{label:k}).label, color:(CLIMA_DIMS[k]||{}).color||"var(--teal)",
+             n:d.n, favPct:Math.round(d.fav*100/d.n), sat:Math.round(d.satSum/d.n) };
+  }).sort(function(a,b){ return a.favPct-b.favPct; });
+  return { tot:tot, rounds:rounds, areas:areas, surveys:surveysAgg, dims:dimList };
+}
+function goEnps(){
+  state.error=null; state.enps.msg=""; state.enps.error=null;
+  state.screen="mod3-enps"; render(); loadEnps();
+}
+function loadEnps(){
+  if(!(supaConfigured() && isLoggedIn())){ state.enps.surveys=[]; state.enps.responses=[]; render(); return; }
+  state.enps.loading=true; state.enps.error=null; render();
+  Promise.all([ dbListSurveys(), dbListAllResponses() ]).then(function(res){
+    state.enps.loading=false;
+    state.enps.surveys=res[0]||[];
+    state.enps.responses=res[1]||[];
+    state.clima.items=state.enps.surveys;   // así "abrir la encuesta" funciona desde acá
+    if(state.plan.items===null) dbListPlans().then(function(p){ state.plan.items=p||[]; }).catch(function(){});
+    render();
+  }).catch(function(){
+    state.enps.loading=false; state.enps.error="No pude leer las respuestas de las encuestas.";
+    render();
+  });
+}
+/* Respuestas filtradas por la encuesta elegida en el selector. */
+function enpsResponses(){
+  var rs=state.enps.responses||[];
+  var sid=state.enps.surveyId||"";
+  return sid ? rs.filter(function(r){ return r.survey_id===sid; }) : rs;
+}
+function enpsDownloadCSV(){
+  var a=enpsCompute(state.enps.surveys||[], enpsResponses());
+  var out=[["eNPS y satisfacción"],[]];
+  out.push(["Respuestas", a.tot.resp]);
+  out.push(["eNPS", a.tot.score==null?"—":a.tot.score]);
+  out.push(["Promotores", a.tot.prom]); out.push(["Pasivos", a.tot.pas]); out.push(["Detractores", a.tot.det]);
+  out.push(["Índice de satisfacción (0-100)", a.tot.sat==null?"—":a.tot.sat]);
+  out.push(["Favorabilidad (%)", a.tot.favPct==null?"—":a.tot.favPct]);
+  out.push([]); out.push(["Ronda","Respuestas","eNPS","Satisfacción","Favorabilidad (%)"]);
+  a.rounds.forEach(function(r){ out.push([r.label, r.d.resp, r.d.score==null?"":r.d.score, r.d.sat==null?"":r.d.sat, r.d.favPct==null?"":r.d.favPct]); });
+  out.push([]); out.push(["Área","Respuestas","eNPS","Satisfacción"]);
+  a.areas.forEach(function(r){ out.push([r.key, r.d.resp, r.d.score==null?"":r.d.score, r.d.sat==null?"":r.d.sat]); });
+  out.push([]); out.push(["Dimensión","Respuestas","Favorabilidad (%)","Satisfacción"]);
+  a.dims.forEach(function(d){ out.push([d.label, d.n, d.favPct, d.sat]); });
+  try{
+    var blob=new Blob(["﻿"+toCSV(out)], { type:"text/csv;charset=utf-8" });
+    var url=URL.createObjectURL(blob);
+    plainBrowserDownload(url, "enps_satisfaccion.csv");
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  }catch(e){}
+}
+Screens["mod3-enps"] = function(){
+  var e=state.enps;
+  var html=Header()+backlink("go-module-clima","Volver a Clima y Cultura");
+  html+=climaHead('eye', 'eNPS y satisfacción',
+    'El eNPS y la satisfacción de todas las encuestas del área 1, juntos y en el tiempo. No se carga nada acá: los números salen solos de lo que responde el equipo.',
+    '<button class="btn btn-ghost btn-sm" data-action="enps-csv">'+ic('download',13)+' Exportar CSV</button>');
+  if (e.msg) html+=Note("ok", esc(e.msg));
+  if (e.error) html+=Note("err", esc(e.error));
+  if (e.loading || e.responses===null) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Calculando…</p></div>';
+
+  var rs=enpsResponses();
+  var a=enpsCompute(e.surveys||[], rs);
+  if (!(e.surveys||[]).length){
+    return html+'<div class="center-block" style="padding:28px 12px">'+ic('eye',26)+
+      '<h2 style="font-size:16px">Todavía no hay encuestas</h2>'+
+      '<p>El eNPS se calcula con la pregunta “¿qué tan probable es que recomiendes trabajar acá?”, que ya viene en las plantillas del área 1.</p>'+
+      '<button class="btn btn-primary btn-sm" data-action="go-encuestas" style="margin-top:12px">'+ic('list',14)+' Ir a Encuestas de clima</button></div>';
+  }
+  // Selector de encuesta (todas o una sola)
+  html+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'+
+    '<span style="font-size:12px;color:var(--muted)">Encuesta:</span>'+
+    '<button class="btn btn-sm" data-action="enps-survey" data-s="" style="'+(!e.surveyId?'background:var(--teal-tint);color:var(--teal-strong)':'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">Todas</button>'+
+    (e.surveys||[]).map(function(s){
+      var on=(e.surveyId===s.id);
+      return '<button class="btn btn-sm" data-action="enps-survey" data-s="'+esc(s.id)+'" style="'+(on?'background:var(--teal-tint);color:var(--teal-strong)':'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">'+esc(s.title||"Encuesta")+'</button>';
+    }).join('')+'</div>';
+
+  if (!a.tot.resp){
+    html+='<div class="center-block" style="padding:26px 12px">'+ic('eye',26)+'<h2 style="font-size:16px">Sin respuestas todavía</h2>'+
+      '<p>Cuando el equipo empiece a responder, acá vas a ver el eNPS ronda a ronda.</p>'+
+      '<button class="btn btn-primary btn-sm" data-action="go-encuestas" style="margin-top:12px">'+ic('send',14)+' Enviar una encuesta</button></div>';
+    return html;
+  }
+  var t=a.tot;
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">'+
+    encKpi("eNPS", t.score==null?"—":String(t.score), enpsReading(t.score), enpsColor(t.score))+
+    encKpi("Promotores", t.en?(Math.round(t.prom*100/t.en)+"%"):"—", t.prom+" de "+t.en+" respuestas", "var(--green)")+
+    encKpi("Detractores", t.en?(Math.round(t.det*100/t.en)+"%"):"—", t.det+" de "+t.en+" respuestas", "var(--brick)")+
+    encKpi("Satisfacción", t.sat==null?"—":(t.sat+"/100"), "índice general del clima", favColor(t.sat))+
+    encKpi("Respuestas", t.resp, (e.surveys||[]).length+" encuesta"+((e.surveys||[]).length===1?"":"s"), "var(--ink)")+
+  '</div>';
+
+  // Evolución ronda a ronda
+  if (a.rounds.length){
+    var enRows=a.rounds.filter(function(r){ return r.d.score!=null; }).map(function(r){
+      return { label:r.label, v:r.d.score, color:enpsColor(r.d.score), hint:r.d.resp+" respuestas" };
+    });
+    var satRows=a.rounds.filter(function(r){ return r.d.sat!=null; }).map(function(r){
+      return { label:r.label, v:r.d.sat, color:"var(--ch-1)", hint:r.d.resp+" respuestas" };
+    });
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">eNPS ronda a ronda</h3>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Promotores (9 y 10) menos detractores (0 a 6), sobre 100. Arriba del cero está bien; abajo, hay que trabajarlo.</p>'+
+      climaTrend(enRows, { min:-100, max:100, aria:"eNPS por ronda", empty:"Ninguna encuesta respondida incluye la pregunta de eNPS." })+
+    '</div>';
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Satisfacción ronda a ronda</h3>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Índice de 0 a 100 armado con todas las afirmaciones de la encuesta.</p>'+
+      climaTrend(satRows, { min:0, max:100, aria:"Satisfacción por ronda" })+
+    '</div>';
+  }
+  // Reparto promotores / pasivos / detractores
+  if (t.en){
+    var seg=function(label, n, color){
+      var pct=Math.round(n*100/t.en);
+      return '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px">'+
+        '<span style="color:var(--ink);font-weight:600">'+label+'</span><span style="color:var(--muted)">'+n+' · '+pct+'%</span></div>'+
+        '<div style="display:flex;align-items:center;gap:10px">'+encBar(pct, color)+'</div></div>';
+    };
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 12px;font-size:15px;color:var(--ink)">Quiénes son</h3>'+
+      seg("Promotores (9-10)", t.prom, "var(--green)")+
+      seg("Pasivos (7-8)", t.pas, "var(--amber)")+
+      seg("Detractores (0-6)", t.det, "var(--brick)")+
+      '<p style="margin:8px 0 0;font-size:12px;color:var(--muted)">Nota promedio: '+(t.avg==null?"—":t.avg.toFixed(1))+' / 10.</p>'+
+    '</div>';
+  }
+  // Por área / equipo
+  var areasReal=a.areas.filter(function(x){ return x.key!=="Sin área"; });
+  if (areasReal.length){
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Por área o equipo</h3>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Sólo aparece si la encuesta pide el área. Sigue siendo anónimo: se ve el grupo, nunca la persona.</p>';
+    areasReal.forEach(function(x){
+      html+='<div style="padding:9px 0;border-top:1px solid var(--border-soft);display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
+        '<span style="flex:1;min-width:140px;font-size:13px;color:var(--ink)">'+esc(x.key)+'</span>'+
+        '<span style="font-size:12px;color:var(--muted)">'+x.d.resp+' resp.</span>'+
+        climaChip('eNPS '+(x.d.score==null?'—':x.d.score), enpsColor(x.d.score))+
+        climaChip('Satisf. '+(x.d.sat==null?'—':x.d.sat), favColor(x.d.sat))+
+        '<button class="btn btn-ghost btn-sm" data-action="plan-from-area" data-a="'+esc(x.key)+'">'+ic('plus',12)+' Plan de acción</button>'+
+      '</div>';
+    });
+    html+='</div>';
+  }
+  // Dimensiones: de la más floja a la más fuerte, con acceso directo a armar el plan
+  if (a.dims.length){
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Dónde apretar primero</h3>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Las dimensiones ordenadas de la más floja a la más fuerte. Desde cada una podés abrir un plan de acción (área 5).</p>';
+    a.dims.forEach(function(d){
+      html+='<div style="padding:10px 0;border-top:1px solid var(--border-soft)">'+
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">'+
+          '<span style="font-size:13px;font-weight:600;color:var(--ink)">'+esc(d.label)+'</span>'+
+          '<span style="font-size:12px;color:var(--muted)">'+d.favPct+'% favorable · '+d.n+' respuestas</span>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:10px">'+encBar(d.favPct, d.color)+
+          '<button class="btn btn-ghost btn-sm" data-action="plan-from-dim" data-d="'+esc(d.key)+'" style="white-space:nowrap">'+ic('plus',12)+' Plan</button></div>'+
+      '</div>';
+    });
+    html+='</div>';
+  }
+  // Aporte de cada encuesta + acceso directo a su detalle (área 1)
+  if (a.surveys.length>1 && !e.surveyId){
+    html+='<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 10px;font-size:15px;color:var(--ink)">Encuestas que alimentan estos números</h3>';
+    a.surveys.forEach(function(x){
+      html+='<div style="padding:9px 0;border-top:1px solid var(--border-soft);display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+        '<span style="flex:1;min-width:160px;font-size:13px;color:var(--ink)">'+esc(x.title)+'</span>'+
+        '<span style="font-size:12px;color:var(--muted)">'+x.d.resp+' resp.</span>'+
+        climaChip('eNPS '+(x.d.score==null?'—':x.d.score), enpsColor(x.d.score))+
+        '<button class="btn btn-ghost btn-sm" data-action="enc-open" data-id="'+esc(x.id)+'">'+ic('chevron',12)+' Abrir</button>'+
+      '</div>';
+    });
+    html+='</div>';
+  }
+  // Planes ya abiertos a partir de estas encuestas
+  var linked=(state.plan.items||[]).filter(function(p){ return p.source==="encuesta"||p.source==="enps"; });
+  if (linked.length){
+    html+='<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 10px;font-size:15px;color:var(--ink)">Planes de acción abiertos desde el clima ('+linked.length+')</h3>';
+    linked.slice(0,6).forEach(function(p){
+      html+='<div style="padding:9px 0;border-top:1px solid var(--border-soft);display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+        '<span style="flex:1;min-width:160px;font-size:13px;color:var(--ink)">'+esc(p.title||"")+'</span>'+
+        climaChip(esc((PLAN_STATUS[p.status]||{label:p.status}).label), (PLAN_STATUS[p.status]||{color:"var(--muted)"}).color)+
+        '<button class="btn btn-ghost btn-sm" data-action="plan-open" data-id="'+esc(p.id)+'">'+ic('chevron',12)+' Ver</button>'+
+      '</div>';
+    });
+    html+='</div>';
+  }
+  html+=climaLinks([
+    { action:"go-encuestas", icon:"list",   label:"Ir a las encuestas (área 1)" },
+    { action:"plan-from-enps", icon:"square", label:"Crear un plan de acción (área 5)" },
+    { action:"com-from-enps", icon:"send",  label:"Comunicar estos resultados (área 6)" }
+  ]);
+  return html;
+};
+
+/* =====================================================================
+   ÁREA 3 · FEEDBACK Y RECONOCIMIENTO
+   El muro donde queda registrado lo que se hizo bien. Cada mensaje va
+   dirigido a una persona del legajo (Módulo 2) y se etiqueta con el valor
+   de la empresa que puso en juego (área 4), así el reconocimiento deja de
+   ser una palmada suelta y pasa a ser evidencia de la cultura.
+   ===================================================================== */
+var FB_KINDS = {
+  reconocimiento: { label:"Reconocimiento",     icon:"trophy",  color:"var(--green)",  tint:"var(--green-tint)",  hint:"Alguien hizo algo que merece destacarse." },
+  felicitacion:   { label:"Felicitación",       icon:"sparkle", color:"var(--purple)", tint:"var(--purple-tint)", hint:"Un logro, un aniversario, una buena noticia." },
+  feedback:       { label:"Feedback a mejorar", icon:"msg",     color:"var(--amber)",  tint:"var(--amber-tint)",  hint:"Algo para corregir, dicho en buenos términos." },
+  idea:           { label:"Idea o sugerencia",  icon:"info",    color:"var(--teal)",   tint:"var(--teal-tint)",   hint:"Una propuesta que llegó del equipo." }
+};
+var FB_KIND_ORDER = ["reconocimiento","felicitacion","feedback","idea"];
+
+function goFeedback(){
+  state.error=null; state.fb.msg=""; state.fb.error=null; state.fb.form=null;
+  state.screen="mod3-feedback"; render(); loadFeedback();
+}
+function loadFeedback(){
+  if(!(supaConfigured() && isLoggedIn())){ state.fb.items=[]; state.val.items=state.val.items||[]; render(); return; }
+  state.fb.loading=true; state.fb.error=null; render();
+  Promise.all([
+    dbListRecognitions(),
+    (state.val.items!==null?Promise.resolve(state.val.items):dbListValues().catch(function(){ return []; })),
+    (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees())
+  ]).then(function(res){
+    state.fb.loading=false; state.fb.items=res[0]||[]; state.val.items=res[1]||[]; state.emp.items=res[2]||[];
+    render();
+  }).catch(function(){
+    state.fb.loading=false; state.fb.error="No pude cargar los reconocimientos. ¿Corriste el SQL de clima (sql_clima.sql) en Supabase?";
+    render();
+  });
+}
+function fbNewForm(prefill){
+  var u=currentUser();
+  state.fb.form=Object.assign({
+    kind:"reconocimiento", to_employee_id:"", from_name:(u&&u.email?String(u.email).split("@")[0]:""),
+    value_id:"", message:"", visibility:"publico"
+  }, prefill||{});
+  state.fb.msg=""; state.fb.error=null; render();
+}
+function fbSave(){
+  var f=state.fb.form; if(!f||state.fb.saving) return;
+  var msg=(f.message||"").trim();
+  if(!msg){ state.fb.error="Escribí el mensaje: qué hizo la persona y por qué suma."; render(); return; }
+  var emp=(state.emp.items||[]).filter(function(x){ return x.id===f.to_employee_id; })[0];
+  if(!emp){ state.fb.error="Elegí a quién va dirigido."; render(); return; }
+  var row={
+    kind:f.kind||"reconocimiento",
+    to_employee_id:emp.id, to_name:empFullName(emp),
+    from_name:(f.from_name||"").trim()||null,
+    value_id:f.value_id||null,
+    message:msg, visibility:f.visibility||"publico", status:"nuevo"
+  };
+  state.fb.saving=true; state.fb.error=null; render();
+  dbCreateRecognition(row).then(function(r){
+    state.fb.saving=false; state.fb.form=null;
+    state.fb.items=[r].concat(state.fb.items||[]);
+    state.fb.msg="Listo: quedó publicado en el muro.";
+    render();
+  }).catch(function(){
+    state.fb.saving=false; state.fb.error="No pude guardar. ¿Corriste sql_clima.sql?"; render();
+  });
+}
+function fbSetStatus(id, status){
+  dbUpdateRecognition(id, { status:status }).then(function(){
+    (state.fb.items||[]).forEach(function(x){ if(x.id===id) x.status=status; });
+    state.fb.msg=(status==="archivado"?"Archivado.":"Vuelto al muro."); render();
+  }).catch(function(){ state.fb.error="No pude actualizarlo."; render(); });
+}
+function fbDelete(id){
+  if(!confirm("¿Eliminar este mensaje? No se puede deshacer.")) return;
+  dbDeleteRecognition(id).then(function(){
+    state.fb.items=(state.fb.items||[]).filter(function(x){ return x.id!==id; });
+    state.fb.msg="Mensaje eliminado."; render();
+  });
+}
+/* Los mensajes que se ven según los filtros de arriba. */
+function fbFiltered(){
+  var f=state.fb.filter||{};
+  return (state.fb.items||[]).filter(function(r){
+    if(f.kind && r.kind!==f.kind) return false;
+    if(f.valueId && r.value_id!==f.valueId) return false;
+    if(f.empId && r.to_employee_id!==f.empId) return false;
+    if(!f.archived && r.status==="archivado") return false;
+    return true;
+  });
+}
+function fbValueName(id){
+  var v=(state.val.items||[]).filter(function(x){ return x.id===id; })[0];
+  return v?(v.name||""):"";
+}
+function fbValueColor(id){
+  var v=(state.val.items||[]).filter(function(x){ return x.id===id; })[0];
+  return (v&&v.color)||"var(--teal)";
+}
+/* Cuántos reconocimientos tiene cada valor: lo usa también el área 4. */
+function fbCountByValue(){
+  var out={};
+  (state.fb.items||[]).forEach(function(r){ if(r.value_id) out[r.value_id]=(out[r.value_id]||0)+1; });
+  return out;
+}
+function fbMonthCount(){
+  var now=new Date(), y=now.getFullYear(), m=now.getMonth();
+  return (state.fb.items||[]).filter(function(r){
+    var d=new Date(r.created_at); return !isNaN(d.getTime()) && d.getFullYear()===y && d.getMonth()===m;
+  }).length;
+}
+Screens["mod3-feedback"] = function(){
+  var c=state.fb;
+  var html=Header()+backlink("go-module-clima","Volver a Clima y Cultura");
+  html+=climaHead('msg','Feedback y reconocimiento',
+    'El muro del equipo: reconocimientos, felicitaciones, devoluciones para mejorar e ideas. Cada mensaje se dirige a alguien del legajo y se etiqueta con el valor de la empresa que puso en juego.',
+    '<button class="btn btn-primary btn-sm" data-action="fb-new">'+ic('plus',14)+' Nuevo mensaje</button>');
+  if (c.msg) html+=Note("ok", esc(c.msg));
+  if (c.error) html+=Note("err", esc(c.error));
+  if (c.loading || c.items===null) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando el muro…</p></div>';
+
+  var emps=moduleEmployees();
+  var vals=(state.val.items||[]).filter(function(v){ return v.active!==false; });
+
+  // Formulario
+  if (c.form){
+    var f=c.form;
+    html+='<div class="card" style="margin-bottom:16px">';
+    html+='<h3 style="margin:0 0 12px;font-size:15px;color:var(--ink)">Nuevo mensaje</h3>';
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">';
+    FB_KIND_ORDER.forEach(function(k){
+      var K=FB_KINDS[k], on=(f.kind===k);
+      html+='<button class="btn btn-sm" data-action="fb-kind" data-k="'+k+'" style="'+(on?('background:'+K.tint+';color:'+K.color+';font-weight:600'):'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">'+ic(K.icon,13)+' '+esc(K.label)+'</button>';
+    });
+    html+='</div>';
+    html+='<p style="margin:-6px 0 12px;font-size:12px;color:var(--muted)">'+esc((FB_KINDS[f.kind]||{}).hint||"")+'</p>';
+    html+='<div class="grid2" style="gap:12px">';
+    html+='<label class="field"><span class="field-label">¿Para quién?</span><select class="bare" id="f_fb_emp">'+
+      '<option value="">— Elegí a la persona —</option>'+
+      emps.map(function(e){ return '<option value="'+esc(e.id)+'"'+(f.to_employee_id===e.id?' selected':'')+'>'+esc(empFullName(e))+(e.position?(" · "+esc(e.position)):"")+'</option>'; }).join('')+
+      '</select><span class="field-hint">La lista sale del legajo del Módulo 2.</span></label>';
+    html+='<label class="field"><span class="field-label">Valor de la empresa</span><select class="bare" id="f_fb_value">'+
+      '<option value="">— Sin valor asociado —</option>'+
+      vals.map(function(v){ return '<option value="'+esc(v.id)+'"'+(f.value_id===v.id?' selected':'')+'>'+esc(v.name||"")+'</option>'; }).join('')+
+      '</select><span class="field-hint">'+(vals.length?'Los valores se definen en el área 4.':'Todavía no cargaste valores: definilos en el área 4.')+'</span></label>';
+    html+='</div>';
+    html+='<label class="field" style="margin-top:12px"><span class="field-label">Mensaje</span><div class="input-row" style="align-items:flex-start"><textarea id="f_fb_msg" rows="3" placeholder="Contá qué hizo y por qué suma. Concreto y con nombre y apellido.">'+esc(f.message||"")+'</textarea></div></label>';
+    html+='<div class="grid2" style="gap:12px;margin-top:12px">';
+    html+='<label class="field"><span class="field-label">De parte de</span><div class="input-row"><input id="f_fb_from" value="'+esc(f.from_name||"")+'" placeholder="Tu nombre, un equipo, o dejalo vacío"></div></label>';
+    html+='<label class="field"><span class="field-label">Visibilidad</span><select class="bare" id="f_fb_vis">'+
+      '<option value="publico"'+(f.visibility!=="privado"?' selected':'')+'>Público (se ve en el muro)</option>'+
+      '<option value="privado"'+(f.visibility==="privado"?' selected':'')+'>Privado (sólo RR. HH.)</option>'+
+      '</select></label>';
+    html+='</div>';
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">'+
+      '<button class="btn btn-primary btn-sm" data-action="fb-save" '+(c.saving?'disabled':'')+'>'+(c.saving?ic('loader',14,'spin'):ic('check',14))+' Publicar</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="fb-cancel">Cancelar</button>'+
+    '</div>';
+    html+='</div>';
+  }
+
+  var all=state.fb.items||[];
+  if (!all.length && !c.form){
+    html+='<div class="center-block" style="padding:28px 12px">'+ic('msg',26)+
+      '<h2 style="font-size:16px">El muro está vacío</h2>'+
+      '<p>Empezá reconociendo algo concreto de esta semana. Lo que se reconoce, se repite.</p>'+
+      '<button class="btn btn-primary btn-sm" data-action="fb-new" style="margin-top:12px">'+ic('plus',14)+' Escribir el primero</button></div>';
+    html+=climaLinks([
+      { action:"go-valores", icon:"trophy", label:"Definir los valores (área 4)" },
+      { action:"go-legajo",  icon:"users",  label:"Ver el legajo (Módulo 2)" }
+    ]);
+    return html;
+  }
+
+  // Indicadores
+  var byVal=fbCountByValue();
+  var topVal=Object.keys(byVal).sort(function(a,b){ return byVal[b]-byVal[a]; })[0];
+  var reconocidas={}; all.forEach(function(r){ if(r.to_employee_id) reconocidas[r.to_employee_id]=1; });
+  var conValor=all.filter(function(r){ return !!r.value_id; }).length;
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">'+
+    encKpi("Este mes", fbMonthCount(), "mensajes publicados", "var(--ink)")+
+    encKpi("Personas reconocidas", Object.keys(reconocidas).length, (emps.length?("de "+emps.length+" del legajo"):""), "var(--teal)")+
+    encKpi("Con un valor asociado", all.length?(Math.round(conValor*100/all.length)+"%"):"—", "cultura hecha ejemplos", favColor(all.length?Math.round(conValor*100/all.length):null))+
+    encKpi("Valor más reconocido", topVal?esc(fbValueName(topVal)):"—", topVal?(byVal[topVal]+" menciones"):"cargá valores en el área 4", "var(--purple)")+
+  '</div>';
+
+  // Filtros
+  var ff=state.fb.filter||{};
+  html+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'+
+    '<span style="font-size:12px;color:var(--muted)">Ver:</span>'+
+    '<button class="btn btn-sm" data-action="fb-filter-kind" data-k="" style="'+(!ff.kind?'background:var(--teal-tint);color:var(--teal-strong)':'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">Todos</button>'+
+    FB_KIND_ORDER.map(function(k){
+      var on=(ff.kind===k);
+      return '<button class="btn btn-sm" data-action="fb-filter-kind" data-k="'+k+'" style="'+(on?('background:'+FB_KINDS[k].tint+';color:'+FB_KINDS[k].color):'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">'+esc(FB_KINDS[k].label)+'</button>';
+    }).join('')+
+    '<label style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin-left:6px"><input type="checkbox" id="f_fb_arch" '+(ff.archived?'checked':'')+'> Ver archivados</label>'+
+  '</div>';
+  if (vals.length){
+    html+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'+
+      '<span style="font-size:12px;color:var(--muted)">Valor:</span>'+
+      '<button class="btn btn-sm" data-action="fb-filter-value" data-v="" style="'+(!ff.valueId?'background:var(--teal-tint);color:var(--teal-strong)':'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">Todos</button>'+
+      vals.map(function(v){
+        var on=(ff.valueId===v.id);
+        return '<button class="btn btn-sm" data-action="fb-filter-value" data-v="'+esc(v.id)+'" style="'+(on?('background:var(--teal-tint);color:'+(v.color||'var(--teal)')):'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">'+esc(v.name||"")+'</button>';
+      }).join('')+'</div>';
+  }
+
+  // Muro
+  var list=fbFiltered();
+  if(!list.length) html+=Note("info","Ningún mensaje coincide con los filtros elegidos.");
+  html+='<div style="display:grid;gap:10px">';
+  list.forEach(function(r){
+    var K=FB_KINDS[r.kind]||FB_KINDS.reconocimiento;
+    var vn=r.value_id?fbValueName(r.value_id):"";
+    html+='<div class="qa-item">'+
+      '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">'+
+        '<span style="flex-shrink:0;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:'+K.tint+';color:'+K.color+'">'+ic(K.icon,17)+'</span>'+
+        '<div style="flex:1;min-width:200px">'+
+          '<p style="margin:0;font-size:14px;font-weight:700;color:var(--ink)">'+esc(r.to_name||"(sin destinatario)")+'</p>'+
+          '<p style="margin:5px 0 0;font-size:13px;color:var(--ink);line-height:1.55;white-space:pre-wrap">'+esc(r.message||"")+'</p>'+
+          '<p style="margin:7px 0 0;font-size:11.5px;color:var(--faint)">'+esc(K.label)+
+            (r.from_name?(' · de '+esc(r.from_name)):'')+
+            ' · '+climaFmtDate(r.created_at)+
+            (r.visibility==="privado"?' · privado':'')+
+            (r.status==="archivado"?' · archivado':'')+'</p>'+
+        '</div>'+
+        (vn?climaChip(esc(vn), fbValueColor(r.value_id)):'')+
+      '</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-soft)">'+
+        (r.to_employee_id?('<button class="btn btn-ghost btn-sm" data-action="fb-perf" data-e="'+esc(r.to_employee_id)+'">'+ic('eye',12)+' Ver su desempeño</button>'):'')+
+        (r.visibility!=="privado"?('<button class="btn btn-ghost btn-sm" data-action="fb-announce" data-id="'+esc(r.id)+'">'+ic('send',12)+' Difundir</button>'):'')+
+        '<button class="btn btn-ghost btn-sm" data-action="fb-arch" data-id="'+esc(r.id)+'" data-s="'+(r.status==="archivado"?"nuevo":"archivado")+'">'+ic(r.status==="archivado"?'rotate':'lock',12)+' '+(r.status==="archivado"?"Volver al muro":"Archivar")+'</button>'+
+        '<button class="btn btn-ghost btn-sm" data-action="fb-del" data-id="'+esc(r.id)+'" style="color:var(--brick)">'+ic('trash',12)+' Eliminar</button>'+
+      '</div>'+
+    '</div>';
+  });
+  html+='</div>';
+
+  // Ranking
+  var porPersona={}, porValor={};
+  all.forEach(function(r){
+    if(r.kind==="feedback") return;                       // el feedback a mejorar no entra en el ranking
+    if(r.to_name) porPersona[r.to_name]=(porPersona[r.to_name]||0)+1;
+    if(r.value_id){ var n=fbValueName(r.value_id)||"(valor borrado)"; porValor[n]=(porValor[n]||0)+1; }
+  });
+  var rowsP=Object.keys(porPersona).map(function(k){ return { label:k, v:porPersona[k] }; });
+  var rowsV=Object.keys(porValor).map(function(k){ return { label:k, v:porValor[k] }; });
+  if (rowsP.length){
+    html+='<div class="card" style="margin-top:16px"><h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Quiénes vienen siendo reconocidos</h3>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Sirve para dos cosas: celebrar, y darse cuenta de a quién nunca se le dice nada.</p>'+
+      chartHBars(rowsP, { unit:"", color:"var(--ch-1)" })+'</div>';
+  }
+  if (rowsV.length){
+    html+='<div class="card" style="margin-top:14px"><h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Qué valores se ven en la práctica</h3>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Un valor sin reconocimientos suele ser un valor que quedó sólo en el poster.</p>'+
+      chartHBars(rowsV, { color:"var(--purple)" })+'</div>';
+  }
+  html+=climaLinks([
+    { action:"go-valores",  icon:"trophy", label:"Valores y cultura (área 4)" },
+    { action:"go-legajo",   icon:"users",  label:"Legajo del empleado (Módulo 2)" },
+    { action:"com-from-fb", icon:"send",   label:"Armar una novedad con esto (área 6)" }
+  ]);
+  return html;
+};
+
+/* =====================================================================
+   ÁREA 4 · VALORES Y CULTURA
+   Acá se escriben los valores y las conductas que los hacen visibles.
+   Desde acá salen dos cosas: la encuesta de alineamiento cultural (área 1)
+   y las etiquetas con las que se reconoce a la gente (área 3).
+   ===================================================================== */
+var VAL_COLORS = ["var(--teal)","var(--green)","var(--purple)","var(--amber)","var(--brick)"];
+/* Punto de partida para quien no tiene los valores escritos todavía. */
+var VAL_SEED = [
+  { name:"Compromiso",   description:"Nos hacemos cargo de lo que decimos que vamos a hacer.", behaviors:["Avisa a tiempo cuando algo no va a llegar","Termina lo que empieza","Se ofrece cuando el equipo está corto"] },
+  { name:"Respeto",      description:"Tratamos a cada persona como nos gustaría que nos traten.", behaviors:["Escucha sin interrumpir","Cuida las formas también cuando hay presión","No habla del otro por atrás"] },
+  { name:"Trabajo en equipo", description:"El resultado es del equipo, no de una persona sola.", behaviors:["Comparte lo que sabe","Ayuda a otra área sin que se lo pidan","Comparte el mérito"] },
+  { name:"Mejora continua", description:"Buscamos hacerlo un poco mejor cada vez.", behaviors:["Propone ideas para simplificar","Aprende del error y lo cuenta","Pregunta cuando no sabe"] },
+  { name:"Honestidad",   description:"Decimos las cosas como son, aunque incomoden.", behaviors:["Da malas noticias a tiempo","Reconoce cuando se equivoca","No promete lo que no puede cumplir"] }
+];
+function goValores(){
+  state.error=null; state.val.msg=""; state.val.error=null; state.val.form=null;
+  state.screen="mod3-valores"; render(); loadValores();
+}
+function loadValores(){
+  if(!(supaConfigured() && isLoggedIn())){ state.val.items=[]; render(); return; }
+  state.val.loading=true; state.val.error=null; render();
+  Promise.all([
+    dbListValues(),
+    (state.fb.items!==null?Promise.resolve(state.fb.items):dbListRecognitions().catch(function(){ return []; }))
+  ]).then(function(res){
+    state.val.loading=false; state.val.items=res[0]||[]; state.fb.items=res[1]||[];
+    render();
+  }).catch(function(){
+    state.val.loading=false; state.val.error="No pude cargar los valores. ¿Corriste el SQL de clima (sql_clima.sql) en Supabase?";
+    render();
+  });
+}
+function valNewForm(){
+  var n=(state.val.items||[]).length;
+  state.val.form={ id:null, name:"", description:"", behaviorsText:"", color:VAL_COLORS[n%VAL_COLORS.length], sort:n };
+  state.val.msg=""; state.val.error=null; render();
+}
+function valEditForm(id){
+  var v=(state.val.items||[]).filter(function(x){ return x.id===id; })[0]; if(!v) return;
+  state.val.form={ id:v.id, name:v.name||"", description:v.description||"",
+    behaviorsText:(Array.isArray(v.behaviors)?v.behaviors:[]).join("\n"), color:v.color||"var(--teal)", sort:v.sort||0 };
+  state.val.msg=""; state.val.error=null; render();
+}
+function valSave(){
+  var f=state.val.form; if(!f||state.val.saving) return;
+  var name=(f.name||"").trim();
+  if(!name){ state.val.error="Ponele nombre al valor."; render(); return; }
+  var behaviors=String(f.behaviorsText||"").split(/\r?\n/).map(function(s){ return s.trim(); }).filter(function(s){ return !!s; });
+  var row={ name:name, description:(f.description||"").trim(), behaviors:behaviors, color:f.color||"var(--teal)", sort:f.sort||0, active:true };
+  state.val.saving=true; state.val.error=null; render();
+  var p=f.id ? dbUpdateValue(f.id, row) : dbCreateValue(row);
+  p.then(function(v){
+    state.val.saving=false; state.val.form=null;
+    if(f.id) state.val.items=(state.val.items||[]).map(function(x){ return x.id===f.id?Object.assign({},x,row):x; });
+    else state.val.items=(state.val.items||[]).concat([v]);
+    state.val.msg=f.id?"Valor actualizado.":"Valor agregado.";
+    render();
+  }).catch(function(){
+    state.val.saving=false; state.val.error="No pude guardar el valor. ¿Corriste sql_clima.sql?"; render();
+  });
+}
+function valDelete(id){
+  if(!confirm("¿Eliminar este valor? Los reconocimientos que lo mencionan quedan sin etiqueta.")) return;
+  dbDeleteValue(id).then(function(){
+    state.val.items=(state.val.items||[]).filter(function(x){ return x.id!==id; });
+    state.val.msg="Valor eliminado."; render();
+  }).catch(function(){ state.val.error="No pude eliminarlo."; render(); });
+}
+function valToggleActive(id){
+  var v=(state.val.items||[]).filter(function(x){ return x.id===id; })[0]; if(!v) return;
+  var next=(v.active===false);
+  dbUpdateValue(id, { active:next }).then(function(){
+    v.active=next; state.val.msg=next?"Valor activado.":"Valor pausado: deja de ofrecerse para etiquetar.";
+    render();
+  }).catch(function(){ state.val.error="No pude actualizarlo."; render(); });
+}
+/* Carga los 5 valores de arranque, para no empezar de la hoja en blanco. */
+function valSeed(){
+  if((state.val.items||[]).length && !confirm("Ya tenés valores cargados. ¿Sumamos igual los sugeridos?")) return;
+  state.val.saving=true; state.val.msg="Cargando valores sugeridos…"; render();
+  var base=(state.val.items||[]).length;
+  Promise.all(VAL_SEED.map(function(v,i){
+    return dbCreateValue({ name:v.name, description:v.description, behaviors:v.behaviors, color:VAL_COLORS[(base+i)%VAL_COLORS.length], sort:base+i, active:true }).catch(function(){ return null; });
+  })).then(function(rows){
+    state.val.saving=false;
+    state.val.items=(state.val.items||[]).concat(rows.filter(function(x){ return !!x; }));
+    state.val.msg="Listo: cargué "+rows.filter(function(x){return !!x;}).length+" valores. Editalos con las palabras de tu empresa.";
+    render();
+  });
+}
+/* ---- Vínculo con el área 1: encuesta de alineamiento cultural ----
+   Arma una encuesta con una afirmación por valor (dimensión "Valores"),
+   más una pregunta abierta, y la abre para revisarla antes de enviarla. */
+function valCreateSurvey(){
+  var vals=(state.val.items||[]).filter(function(v){ return v.active!==false; });
+  if(!vals.length){ state.val.error="Cargá al menos un valor antes de generar la encuesta."; render(); return; }
+  var qs=vals.map(function(v,i){
+    return { id:"val"+(i+1), dim:"valores", type:"scale",
+             text:"En el día a día se nota que acá se vive el valor «"+(v.name||"")+"»"+((v.description||"").trim()?(": "+String(v.description).trim().replace(/\.$/,"")):"")+"." };
+  });
+  qs.push({ id:"valop", dim:"valores", type:"text", text:"¿Qué valor sentís que decimos pero no practicamos? Contanos un ejemplo." });
+  var row={
+    title:"Alineamiento cultural"+(brandName()?(" · "+brandName()):""),
+    template:"custom",
+    intro:"Esta encuesta es anónima y corta. Queremos saber si los valores que escribimos se parecen a lo que pasa de verdad todos los días.",
+    questions:qs, scale:5, anonymous:true, ask_area:true,
+    status:"borrador", frequency:"anual", auto_send:false, recipients:[],
+    brand_name:brandName()||null, brand_logo:brandLogoUrl()||null
+  };
+  state.val.saving=true; state.val.msg="Generando la encuesta…"; render();
+  dbCreateSurvey(row).then(function(s){
+    state.val.saving=false; state.val.msg="";
+    state.clima.items=[s].concat(state.clima.items||[]);
+    encOpen(s.id, "preguntas");
+    state.clima.msg="Encuesta de alineamiento cultural creada con "+vals.length+" valores. Revisala, activala y enviala.";
+    render();
+  }).catch(function(){
+    state.val.saving=false; state.val.error="No pude crear la encuesta. ¿Corriste sql_encuestas.sql?"; render();
+  });
+}
+Screens["mod3-valores"] = function(){
+  var c=state.val;
+  var html=Header()+backlink("go-module-clima","Volver a Clima y Cultura");
+  html+=climaHead('trophy','Valores y cultura',
+    'Los valores de la empresa, escritos como conductas que se pueden ver. Con esto se etiquetan los reconocimientos del área 3 y se arma la encuesta de alineamiento cultural del área 1.',
+    '<button class="btn btn-primary btn-sm" data-action="val-new">'+ic('plus',14)+' Nuevo valor</button>');
+  if (c.msg) html+=Note("ok", esc(c.msg));
+  if (c.error) html+=Note("err", esc(c.error));
+  if (c.loading || c.items===null) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando los valores…</p></div>';
+
+  if (c.form){
+    var f=c.form;
+    html+='<div class="card" style="margin-bottom:16px">';
+    html+='<h3 style="margin:0 0 12px;font-size:15px;color:var(--ink)">'+(f.id?"Editar valor":"Nuevo valor")+'</h3>';
+    html+='<label class="field"><span class="field-label">Nombre</span><div class="input-row"><input id="f_val_name" value="'+esc(f.name||"")+'" placeholder="Ej: Compromiso"></div></label>';
+    html+='<label class="field" style="margin-top:12px"><span class="field-label">En una frase, ¿qué significa acá?</span><div class="input-row"><input id="f_val_desc" value="'+esc(f.description||"")+'" placeholder="Ej: Nos hacemos cargo de lo que decimos que vamos a hacer."></div></label>';
+    html+='<label class="field" style="margin-top:12px"><span class="field-label">Conductas que lo hacen visible (una por línea)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_val_beh" rows="4" placeholder="Avisa a tiempo cuando algo no va a llegar\nTermina lo que empieza">'+esc(f.behaviorsText||"")+'</textarea></div><span class="field-hint">Un valor que no se puede observar no se puede reconocer ni evaluar.</span></label>';
+    html+='<div class="field" style="margin-top:12px"><span class="field-label">Color</span><div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      VAL_COLORS.map(function(col){
+        var on=(f.color===col);
+        return '<button class="btn btn-sm" data-action="val-color" data-c="'+esc(col)+'" style="width:38px;height:32px;padding:0;background:'+col+';opacity:'+(on?'1':'.4')+';border:2px solid '+(on?'var(--ink)':'transparent')+'"></button>';
+      }).join('')+'</div></div>';
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">'+
+      '<button class="btn btn-primary btn-sm" data-action="val-save" '+(c.saving?'disabled':'')+'>'+(c.saving?ic('loader',14,'spin'):ic('check',14))+' Guardar</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="val-cancel">Cancelar</button>'+
+    '</div>';
+    html+='</div>';
+  }
+
+  if (!(c.items||[]).length && !c.form){
+    html+='<div class="center-block" style="padding:28px 12px">'+ic('trophy',26)+
+      '<h2 style="font-size:16px">Todavía no escribiste los valores</h2>'+
+      '<p>Podés arrancar con cinco valores clásicos y después cambiarlos por los tuyos, con tus palabras.</p>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px">'+
+        '<button class="btn btn-primary btn-sm" data-action="val-seed" '+(c.saving?'disabled':'')+'>'+ic('sparkle',14)+' Cargar 5 valores sugeridos</button>'+
+        '<button class="btn btn-ghost btn-sm" data-action="val-new">'+ic('plus',14)+' Escribir el mío</button>'+
+      '</div></div>';
+    return html;
+  }
+
+  var counts=fbCountByValue();
+  var totalRec=Object.keys(counts).reduce(function(a,k){ return a+counts[k]; }, 0);
+  var sinRec=(c.items||[]).filter(function(v){ return !counts[v.id]; }).length;
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">'+
+    encKpi("Valores", (c.items||[]).filter(function(v){ return v.active!==false; }).length, "activos", "var(--ink)")+
+    encKpi("Conductas escritas", (c.items||[]).reduce(function(a,v){ return a+((Array.isArray(v.behaviors)?v.behaviors:[]).length); },0), "lo observable", "var(--teal)")+
+    encKpi("Reconocimientos", totalRec, "mencionan algún valor (área 3)", "var(--purple)")+
+    encKpi("Sin usar", sinRec, sinRec?"valores que nadie reconoció todavía":"todos los valores se reconocieron", sinRec?"var(--amber)":"var(--green)")+
+  '</div>';
+
+  html+='<div style="display:grid;gap:10px">';
+  (c.items||[]).forEach(function(v){
+    var beh=Array.isArray(v.behaviors)?v.behaviors:[];
+    var n=counts[v.id]||0;
+    var off=(v.active===false);
+    html+='<div class="qa-item"'+(off?' style="opacity:.6"':'')+'>'+
+      '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">'+
+        '<span style="flex-shrink:0;width:8px;align-self:stretch;min-height:38px;border-radius:6px;background:'+(v.color||'var(--teal)')+'"></span>'+
+        '<div style="flex:1;min-width:200px">'+
+          '<p style="margin:0;font-size:15px;font-weight:700;color:var(--ink)">'+esc(v.name||"")+(off?' <span style="font-size:11px;color:var(--muted)">· pausado</span>':'')+'</p>'+
+          (v.description?('<p style="margin:4px 0 0;font-size:13px;color:var(--muted);line-height:1.55">'+esc(v.description)+'</p>'):'')+
+          (beh.length?('<ul style="margin:9px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink);line-height:1.7">'+beh.map(function(b){ return '<li>'+esc(b)+'</li>'; }).join('')+'</ul>'):
+            '<p style="margin:8px 0 0;font-size:12px;color:var(--amber)">Sin conductas escritas: agregá 2 o 3 para que se pueda reconocer.</p>')+
+        '</div>'+
+        climaChip(n+' reconocimiento'+(n===1?'':'s'), n?'var(--green)':'var(--faint)')+
+      '</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-soft)">'+
+        '<button class="btn btn-ghost btn-sm" data-action="val-edit" data-id="'+esc(v.id)+'">'+ic('file',12)+' Editar</button>'+
+        '<button class="btn btn-ghost btn-sm" data-action="val-rec" data-id="'+esc(v.id)+'">'+ic('msg',12)+' Reconocer con este valor</button>'+
+        '<button class="btn btn-ghost btn-sm" data-action="val-toggle" data-id="'+esc(v.id)+'">'+ic(off?'rotate':'lock',12)+' '+(off?'Activar':'Pausar')+'</button>'+
+        '<button class="btn btn-ghost btn-sm" data-action="val-del" data-id="'+esc(v.id)+'" style="color:var(--brick)">'+ic('trash',12)+' Eliminar</button>'+
+      '</div>'+
+    '</div>';
+  });
+  html+='</div>';
+
+  html+='<div class="card" style="margin-top:16px">'+
+    '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Medir si los valores son ciertos</h3>'+
+    '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Genera una encuesta anónima con una afirmación por cada valor activo. Se crea como borrador en el área 1 para que la revises antes de mandarla.</p>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="btn btn-teal btn-sm" data-action="val-survey" '+(c.saving?'disabled':'')+'>'+ic('list',14)+' Generar encuesta de alineamiento cultural</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="val-seed">'+ic('sparkle',13)+' Sumar valores sugeridos</button>'+
+    '</div></div>';
+
+  html+=climaLinks([
+    { action:"go-feedback",  icon:"msg",  label:"Ver el muro de reconocimientos (área 3)" },
+    { action:"go-encuestas", icon:"list", label:"Encuestas de clima (área 1)" },
+    { action:"com-from-val", icon:"send", label:"Difundir los valores al equipo (área 6)" }
+  ]);
+  return html;
+};
+
+/* =====================================================================
+   ÁREA 5 · PLANES DE ACCIÓN
+   Es el puente entre medir y hacer. Un plan casi siempre nace de otra
+   área (una dimensión floja de una encuesta, un eNPS en rojo, un valor
+   que nadie practica) y esa procedencia queda guardada: siempre se puede
+   volver a la encuesta que lo originó.
+   ===================================================================== */
+var PLAN_STATUS = {
+  propuesto: { label:"Propuesto", color:"var(--muted)"  },
+  en_curso:  { label:"En curso",  color:"var(--teal)"   },
+  hecho:     { label:"Hecho",     color:"var(--green)"  },
+  cancelado: { label:"Cancelado", color:"var(--brick)"  }
+};
+var PLAN_STATUS_ORDER = ["propuesto","en_curso","hecho","cancelado"];
+var PLAN_PRIO = {
+  alta:  { label:"Prioridad alta",  color:"var(--brick)" },
+  media: { label:"Prioridad media", color:"var(--amber)" },
+  baja:  { label:"Prioridad baja",  color:"var(--muted)" }
+};
+var PLAN_SOURCE = {
+  manual:   { label:"Creado a mano",       icon:"square" },
+  encuesta: { label:"Encuesta de clima",   icon:"list"   },
+  enps:     { label:"eNPS y satisfacción", icon:"eye"    },
+  valores:  { label:"Valores y cultura",   icon:"trophy" },
+  feedback: { label:"Feedback del equipo", icon:"msg"    }
+};
+function planProgress(p){
+  var ts=Array.isArray(p.tasks)?p.tasks:[];
+  var done=ts.filter(function(t){ return !!t.done; }).length;
+  return { done:done, total:ts.length, pct: ts.length?Math.round(done*100/ts.length):(p.status==="hecho"?100:0) };
+}
+function planOverdue(p){
+  if(!p.due_date || p.status==="hecho" || p.status==="cancelado") return false;
+  var hoy=todayISO();
+  return !!hoy && String(p.due_date).slice(0,10) < hoy;
+}
+function goPlanes(){
+  state.error=null; state.plan.msg=""; state.plan.error=null;
+  state.screen="mod3-planes"; render(); loadPlanes();
+}
+function loadPlanes(){
+  if(!(supaConfigured() && isLoggedIn())){ state.plan.items=[]; if(state.plan.pending){ var pre0=state.plan.pending; state.plan.pending=null; planNewForm(pre0); return; } render(); return; }
+  state.plan.loading=true; state.plan.error=null; render();
+  Promise.all([
+    dbListPlans(),
+    (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()),
+    (state.clima.items!==null?Promise.resolve(state.clima.items):dbListSurveys())
+  ]).then(function(res){
+    state.plan.loading=false; state.plan.items=res[0]||[]; state.emp.items=res[1]||[]; state.clima.items=res[2]||[];
+    if(state.plan.pending){ var pre=state.plan.pending; state.plan.pending=null; planNewForm(pre); return; }
+    render();
+  }).catch(function(){
+    state.plan.loading=false; state.plan.error="No pude cargar los planes. ¿Corriste el SQL de clima (sql_clima.sql) en Supabase?";
+    render();
+  });
+}
+function planNewForm(prefill){
+  state.plan.form=Object.assign({
+    id:null, title:"", description:"", source:"manual", survey_id:null, survey_title:"", dimension:"",
+    area:"", responsible_id:"", priority:"media", status:"propuesto",
+    start_date:todayISO()||"", due_date:"", tasksText:"", result:""
+  }, prefill||{});
+  state.plan.msg=""; state.plan.error=null; render();
+}
+function planEditForm(id){
+  var p=(state.plan.items||[]).filter(function(x){ return x.id===id; })[0]; if(!p) return;
+  state.plan.form={
+    id:p.id, title:p.title||"", description:p.description||"", source:p.source||"manual",
+    survey_id:p.survey_id||null, survey_title:p.survey_title||"", dimension:p.dimension||"",
+    area:p.area||"", responsible_id:p.responsible_id||"", priority:p.priority||"media", status:p.status||"propuesto",
+    start_date:String(p.start_date||"").slice(0,10), due_date:String(p.due_date||"").slice(0,10),
+    tasksText:(Array.isArray(p.tasks)?p.tasks:[]).map(function(t){ return t.text; }).join("\n"),
+    result:p.result||""
+  };
+  state.plan.msg=""; state.plan.error=null; render();
+}
+function planSave(){
+  var f=state.plan.form; if(!f||state.plan.saving) return;
+  var title=(f.title||"").trim();
+  if(!title){ state.plan.error="Ponele un título al plan: qué se va a hacer."; render(); return; }
+  // Las tareas se escriben una por línea; al editar se respeta lo ya tildado.
+  var prev={}; 
+  if(f.id){
+    var old=(state.plan.items||[]).filter(function(x){ return x.id===f.id; })[0];
+    (old && Array.isArray(old.tasks)?old.tasks:[]).forEach(function(t){ prev[t.text]=!!t.done; });
+  }
+  var tasks=String(f.tasksText||"").split(/\r?\n/).map(function(s){ return s.trim(); }).filter(function(s){ return !!s; })
+    .map(function(s,i){ return { id:"t"+i+"_"+Math.random().toString(36).slice(2,6), text:s, done:!!prev[s] }; });
+  var emp=(state.emp.items||[]).filter(function(x){ return x.id===f.responsible_id; })[0];
+  var row={
+    title:title, description:(f.description||"").trim(), source:f.source||"manual",
+    survey_id:f.survey_id||null, survey_title:f.survey_title||null, dimension:f.dimension||null,
+    area:(f.area||"").trim()||null,
+    responsible_id:emp?emp.id:null, responsible_name:emp?empFullName(emp):null,
+    priority:f.priority||"media", status:f.status||"propuesto",
+    start_date:f.start_date||null, due_date:f.due_date||null,
+    tasks:tasks, result:(f.result||"").trim()||null
+  };
+  state.plan.saving=true; state.plan.error=null; render();
+  var p=f.id ? dbUpdatePlan(f.id, row) : dbCreatePlan(row);
+  p.then(function(saved){
+    state.plan.saving=false; state.plan.form=null;
+    if(f.id) state.plan.items=(state.plan.items||[]).map(function(x){ return x.id===f.id?Object.assign({},x,row):x; });
+    else state.plan.items=[saved].concat(state.plan.items||[]);
+    state.plan.msg=f.id?"Plan actualizado.":"Plan creado. Ahora tiene dueño y fecha: eso es lo que lo hace pasar.";
+    render();
+  }).catch(function(){
+    state.plan.saving=false; state.plan.error="No pude guardar el plan. ¿Corriste sql_clima.sql?"; render();
+  });
+}
+function planSetStatus(id, status){
+  var p=(state.plan.items||[]).filter(function(x){ return x.id===id; })[0]; if(!p) return;
+  dbUpdatePlan(id, { status:status }).then(function(){
+    p.status=status;
+    state.plan.msg="Estado actualizado: "+((PLAN_STATUS[status]||{}).label||status)+".";
+    render();
+  }).catch(function(){ state.plan.error="No pude cambiar el estado."; render(); });
+}
+/* Tildar una tarea guarda el avance en el momento: el plan se ve moverse. */
+function planToggleTask(planId, taskId){
+  var p=(state.plan.items||[]).filter(function(x){ return x.id===planId; })[0]; if(!p) return;
+  var ts=Array.isArray(p.tasks)?p.tasks:[];
+  ts.forEach(function(t){ if(t.id===taskId) t.done=!t.done; });
+  p.tasks=ts;
+  var patch={ tasks:ts };
+  var pr=planProgress(p);
+  if(pr.total && pr.done===pr.total && p.status!=="hecho" && p.status!=="cancelado"){ patch.status="hecho"; p.status="hecho"; state.plan.msg="¡Plan terminado! Contá el resultado para que quede el aprendizaje."; }
+  else if(pr.done>0 && p.status==="propuesto"){ patch.status="en_curso"; p.status="en_curso"; }
+  render();
+  dbUpdatePlan(planId, patch).catch(function(){ state.plan.error="No pude guardar el avance."; render(); });
+}
+function planDelete(id){
+  if(!confirm("¿Eliminar este plan de acción? No se puede deshacer.")) return;
+  dbDeletePlan(id).then(function(){
+    state.plan.items=(state.plan.items||[]).filter(function(x){ return x.id!==id; });
+    state.plan.msg="Plan eliminado."; render();
+  });
+}
+function planFiltered(){
+  var f=state.plan.filter||"";
+  var list=(state.plan.items||[]).slice();
+  if(f) list=list.filter(function(p){ return (p.status||"propuesto")===f; });
+  var rank={ propuesto:1, en_curso:0, hecho:2, cancelado:3 };
+  return list.sort(function(a,b){
+    var ra=(rank[a.status]==null?1:rank[a.status]), rb=(rank[b.status]==null?1:rank[b.status]);
+    if(ra!==rb) return ra-rb;
+    return String(b.created_at||"").localeCompare(String(a.created_at||""));
+  });
+}
+/* ---- Puertas de entrada desde las otras áreas ---- */
+function planNewFrom(prefill){ state.plan.pending=prefill||{}; goPlanes(); }
+/* Desde el detalle de una encuesta (área 1), con la dimensión más floja. */
+function planFromSurvey(dimKey){
+  var s=state.clima.current; if(!s) return;
+  var a=climaAgg(s, climaFilteredResponses());
+  var dk=dimKey||"";
+  if(!dk){
+    var worst=null;
+    CLIMA_DIM_ORDER.forEach(function(k){
+      var d=a.dims[k]; if(!d||!d.n||k==="general") return;
+      if(!worst || d.favPct<worst.pct) worst={ key:k, pct:d.favPct };
+    });
+    dk=worst?worst.key:"";
+  }
+  var dm=CLIMA_DIMS[dk]||{ label:"" };
+  var d=a.dims[dk];
+  planNewFrom({
+    source:"encuesta", survey_id:s.id, survey_title:s.title||"Encuesta de clima", dimension:dk||null,
+    title:dk?("Mejorar "+String(dm.label).toLowerCase()):"Plan de acción del clima",
+    description:(dk&&d)
+      ? ("En «"+(s.title||"la encuesta")+"», "+String(dm.label).toLowerCase()+" quedó en "+d.favPct+"% de respuestas favorables sobre "+d.n+" respuestas. "+(dm.desc||""))
+      : ("Plan a partir de los resultados de «"+(s.title||"la encuesta")+"»."),
+    priority:(d && d.favPct!=null && d.favPct<50)?"alta":"media"
+  });
+}
+/* Desde el área 2, con la dimensión elegida o con el eNPS general. */
+function planFromEnpsDim(dimKey){
+  var a=enpsCompute(state.enps.surveys||[], enpsResponses());
+  var dm=CLIMA_DIMS[dimKey]||{ label:"clima" };
+  var d=(a.dims||[]).filter(function(x){ return x.key===dimKey; })[0];
+  planNewFrom({
+    source:"enps", dimension:dimKey||null,
+    title:"Mejorar "+String(dm.label).toLowerCase(),
+    description:d?("Sobre todas las encuestas, "+String(dm.label).toLowerCase()+" está en "+d.favPct+"% de respuestas favorables ("+d.n+" respuestas)."):"",
+    priority:(d && d.favPct<50)?"alta":"media"
+  });
+}
+function planFromEnps(){
+  var a=enpsCompute(state.enps.surveys||[], enpsResponses());
+  planNewFrom({
+    source:"enps",
+    title:"Subir el eNPS",
+    description:"eNPS actual: "+(a.tot.score==null?"—":a.tot.score)+" ("+a.tot.prom+" promotores, "+a.tot.pas+" pasivos y "+a.tot.det+" detractores sobre "+a.tot.en+" respuestas). "+enpsReading(a.tot.score),
+    priority:(a.tot.score!=null && a.tot.score<0)?"alta":"media"
+  });
+}
+function planFromArea(areaKey){
+  var a=enpsCompute(state.enps.surveys||[], enpsResponses());
+  var x=(a.areas||[]).filter(function(r){ return r.key===areaKey; })[0];
+  planNewFrom({
+    source:"enps", area:areaKey,
+    title:"Plan para "+areaKey,
+    description:x?(areaKey+" tiene un eNPS de "+(x.d.score==null?"—":x.d.score)+" y un índice de satisfacción de "+(x.d.sat==null?"—":x.d.sat)+"/100 sobre "+x.d.resp+" respuestas."):"",
+    priority:(x && x.d.score!=null && x.d.score<0)?"alta":"media"
+  });
+}
+function planOpen(id){
+  state.plan.focus=id; state.plan.filter="";
+  if(state.screen!=="mod3-planes") goPlanes(); else render();
+}
+Screens["mod3-planes"] = function(){
+  var c=state.plan;
+  var html=Header()+backlink("go-module-clima","Volver a Clima y Cultura");
+  html+=climaHead('square','Planes de acción',
+    'Del diagnóstico a la acción. Cada plan tiene un responsable del legajo, una fecha y tareas que se van tildando. Los que nacen de una encuesta se quedan con el link a esa encuesta.',
+    '<button class="btn btn-primary btn-sm" data-action="plan-new">'+ic('plus',14)+' Nuevo plan</button>');
+  if (c.msg) html+=Note("ok", esc(c.msg));
+  if (c.error) html+=Note("err", esc(c.error));
+  if (c.loading || c.items===null) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando los planes…</p></div>';
+
+  var emps=moduleEmployees();
+  if (c.form){
+    var f=c.form;
+    html+='<div class="card" style="margin-bottom:16px">';
+    html+='<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">'+(f.id?"Editar plan":"Nuevo plan de acción")+'</h3>';
+    if (f.source && f.source!=="manual"){
+      var src=PLAN_SOURCE[f.source]||PLAN_SOURCE.manual;
+      html+='<p style="margin:0 0 12px;font-size:12.5px;color:var(--teal-strong)">'+ic(src.icon,13)+' Origen: '+esc(src.label)+
+        (f.survey_title?(' · «'+esc(f.survey_title)+'»'):'')+
+        (f.dimension?(' · '+esc((CLIMA_DIMS[f.dimension]||{label:f.dimension}).label)):'')+'</p>';
+    } else { html+='<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Un buen plan dice qué se hace, quién lo hace y para cuándo.</p>'; }
+    html+='<label class="field"><span class="field-label">¿Qué vamos a hacer?</span><div class="input-row"><input id="f_plan_title" value="'+esc(f.title||"")+'" placeholder="Ej: Reunión mensual de novedades con todo el equipo"></div></label>';
+    html+='<label class="field" style="margin-top:12px"><span class="field-label">Por qué (el dato que lo justifica)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_plan_desc" rows="3" placeholder="Ej: Credibilidad quedó en 48% de respuestas favorables.">'+esc(f.description||"")+'</textarea></div></label>';
+    html+='<div class="grid2" style="gap:12px;margin-top:12px">';
+    html+='<label class="field"><span class="field-label">Responsable</span><select class="bare" id="f_plan_resp">'+
+      '<option value="">— Sin asignar —</option>'+
+      emps.map(function(e){ return '<option value="'+esc(e.id)+'"'+(f.responsible_id===e.id?' selected':'')+'>'+esc(empFullName(e))+'</option>'; }).join('')+
+      '</select><span class="field-hint">Sale del legajo (Módulo 2). Un plan sin dueño no avanza.</span></label>';
+    html+='<label class="field"><span class="field-label">Dimensión del clima</span><select class="bare" id="f_plan_dim">'+
+      '<option value="">— Ninguna en particular —</option>'+
+      CLIMA_DIM_ORDER.map(function(k){ return '<option value="'+k+'"'+(f.dimension===k?' selected':'')+'>'+esc(CLIMA_DIMS[k].label)+'</option>'; }).join('')+
+      '</select></label>';
+    html+='</div>';
+    html+='<div class="grid2" style="gap:12px;margin-top:12px">';
+    html+='<label class="field"><span class="field-label">Área o equipo alcanzado</span><div class="input-row"><input id="f_plan_area" value="'+esc(f.area||"")+'" placeholder="Ej: Depósito (o dejalo vacío si es toda la empresa)"></div></label>';
+    html+='<label class="field"><span class="field-label">Prioridad</span><select class="bare" id="f_plan_prio">'+
+      Object.keys(PLAN_PRIO).map(function(k){ return '<option value="'+k+'"'+((f.priority||"media")===k?' selected':'')+'>'+esc(PLAN_PRIO[k].label)+'</option>'; }).join('')+
+      '</select></label>';
+    html+='</div>';
+    html+='<div class="grid2" style="gap:12px;margin-top:12px">';
+    html+='<label class="field"><span class="field-label">Arranca</span><div class="input-row"><input id="f_plan_start" type="date" value="'+esc(f.start_date||"")+'"></div></label>';
+    html+='<label class="field"><span class="field-label">Fecha compromiso</span><div class="input-row"><input id="f_plan_due" type="date" value="'+esc(f.due_date||"")+'"></div></label>';
+    html+='</div>';
+    html+='<label class="field" style="margin-top:12px"><span class="field-label">Tareas (una por línea)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_plan_tasks" rows="4" placeholder="Definir día y horario\nArmar el temario con los jefes\nHacer la primera reunión">'+esc(f.tasksText||"")+'</textarea></div><span class="field-hint">Se convierten en una checklist con porcentaje de avance.</span></label>';
+    if (f.id){
+      html+='<div class="grid2" style="gap:12px;margin-top:12px">';
+      html+='<label class="field"><span class="field-label">Estado</span><select class="bare" id="f_plan_status">'+
+        PLAN_STATUS_ORDER.map(function(k){ return '<option value="'+k+'"'+((f.status||"propuesto")===k?' selected':'')+'>'+esc(PLAN_STATUS[k].label)+'</option>'; }).join('')+
+        '</select></label>';
+      html+='<label class="field"><span class="field-label">Resultado / qué pasó</span><div class="input-row"><input id="f_plan_result" value="'+esc(f.result||"")+'" placeholder="Ej: La favorabilidad subió a 71% en la ronda siguiente."></div></label>';
+      html+='</div>';
+    }
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">'+
+      '<button class="btn btn-primary btn-sm" data-action="plan-save" '+(c.saving?'disabled':'')+'>'+(c.saving?ic('loader',14,'spin'):ic('check',14))+' Guardar plan</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="plan-cancel">Cancelar</button>'+
+    '</div>';
+    html+='</div>';
+  }
+
+  var all=state.plan.items||[];
+  if(!all.length && !c.form){
+    html+='<div class="center-block" style="padding:28px 12px">'+ic('square',26)+
+      '<h2 style="font-size:16px">Todavía no hay planes</h2>'+
+      '<p>Medir sin actuar cansa al equipo: si preguntás y no pasa nada, la próxima encuesta la contesta la mitad. Empezá por la dimensión más floja.</p>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px">'+
+        '<button class="btn btn-primary btn-sm" data-action="plan-new">'+ic('plus',14)+' Crear el primero</button>'+
+        '<button class="btn btn-ghost btn-sm" data-action="go-enps">'+ic('eye',14)+' Ver dónde apretar (área 2)</button>'+
+      '</div></div>';
+    return html;
+  }
+
+  var enCurso=all.filter(function(p){ return p.status==="en_curso"; }).length;
+  var hechos=all.filter(function(p){ return p.status==="hecho"; }).length;
+  var vencidos=all.filter(planOverdue).length;
+  var avance=all.filter(function(p){ return p.status!=="cancelado"; });
+  var avgPct=avance.length?Math.round(avance.reduce(function(a,p){ return a+planProgress(p).pct; },0)/avance.length):0;
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">'+
+    encKpi("En curso", enCurso, "de "+all.length+" planes", "var(--teal)")+
+    encKpi("Terminados", hechos, all.length?(Math.round(hechos*100/all.length)+"% del total"):"", "var(--green)")+
+    encKpi("Vencidos", vencidos, vencidos?"pasaron la fecha compromiso":"ninguno pasado de fecha", vencidos?"var(--brick)":"var(--green)")+
+    encKpi("Avance promedio", avgPct+"%", "tareas tildadas", favColor(avgPct))+
+  '</div>';
+
+  html+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'+
+    '<span style="font-size:12px;color:var(--muted)">Estado:</span>'+
+    '<button class="btn btn-sm" data-action="plan-filter" data-f="" style="'+(!c.filter?'background:var(--teal-tint);color:var(--teal-strong)':'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">Todos ('+all.length+')</button>'+
+    PLAN_STATUS_ORDER.map(function(k){
+      var n=all.filter(function(p){ return (p.status||"propuesto")===k; }).length;
+      if(!n) return '';
+      var on=(c.filter===k);
+      return '<button class="btn btn-sm" data-action="plan-filter" data-f="'+k+'" style="'+(on?('background:var(--teal-tint);color:'+PLAN_STATUS[k].color):'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">'+esc(PLAN_STATUS[k].label)+' ('+n+')</button>';
+    }).join('')+'</div>';
+
+  html+='<div style="display:grid;gap:10px">';
+  planFiltered().forEach(function(p){
+    var st=PLAN_STATUS[p.status]||PLAN_STATUS.propuesto;
+    var pr=planProgress(p);
+    var over=planOverdue(p);
+    var src=PLAN_SOURCE[p.source]||PLAN_SOURCE.manual;
+    var focus=(state.plan.focus===p.id);
+    html+='<div class="qa-item"'+(focus?' style="border-color:var(--teal);background:var(--teal-tint)"':'')+'>'+
+      '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">'+
+        '<div style="flex:1;min-width:220px">'+
+          '<p style="margin:0;font-size:14.5px;font-weight:700;color:var(--ink)">'+esc(p.title||"")+'</p>'+
+          (p.description?('<p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);line-height:1.55">'+esc(p.description)+'</p>'):'')+
+          '<p style="margin:7px 0 0;font-size:11.5px;color:var(--faint)">'+ic(src.icon,11)+' '+esc(src.label)+
+            (p.survey_title?(' · «'+esc(p.survey_title)+'»'):'')+
+            (p.dimension?(' · '+esc((CLIMA_DIMS[p.dimension]||{label:p.dimension}).label)):'')+
+            (p.area?(' · '+esc(p.area)):'')+
+            (p.responsible_name?(' · responsable: '+esc(p.responsible_name)):' · sin responsable')+
+            (p.due_date?(' · para el '+climaFmtDate(p.due_date)):'')+'</p>'+
+        '</div>'+
+        (over?climaChip('Vencido','var(--brick)','var(--brick-tint)'):'')+
+        climaChip(esc((PLAN_PRIO[p.priority]||PLAN_PRIO.media).label), (PLAN_PRIO[p.priority]||PLAN_PRIO.media).color)+
+        climaChip(esc(st.label), st.color)+
+      '</div>';
+    if (pr.total){
+      html+='<div style="margin-top:12px">'+
+        '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px"><span>Avance</span><span>'+pr.done+' de '+pr.total+' tareas · '+pr.pct+'%</span></div>'+
+        '<div style="display:flex;align-items:center;gap:10px">'+encBar(pr.pct, pr.pct>=100?"var(--green)":"var(--teal)")+'</div>'+
+        '<div style="margin-top:10px;display:grid;gap:6px">'+
+          (Array.isArray(p.tasks)?p.tasks:[]).map(function(t){
+            return '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:'+(t.done?'var(--muted)':'var(--ink)')+';cursor:pointer">'+
+              '<input type="checkbox" data-plantask="'+esc(t.id)+'" data-plan="'+esc(p.id)+'" '+(t.done?'checked':'')+' style="accent-color:var(--teal);margin-top:2px">'+
+              '<span style="'+(t.done?'text-decoration:line-through':'')+'">'+esc(t.text||"")+'</span></label>';
+          }).join('')+
+        '</div></div>';
+    }
+    if (p.result) html+='<p style="margin:10px 0 0;font-size:12.5px;color:var(--green);line-height:1.5">'+ic('check',12)+' '+esc(p.result)+'</p>';
+    html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-soft)">'+
+      (p.status!=="en_curso"&&p.status!=="hecho"?('<button class="btn btn-ghost btn-sm" data-action="plan-status" data-id="'+esc(p.id)+'" data-s="en_curso">'+ic('rotate',12)+' Empezar</button>'):'')+
+      (p.status!=="hecho"?('<button class="btn btn-ghost btn-sm" data-action="plan-status" data-id="'+esc(p.id)+'" data-s="hecho">'+ic('check',12)+' Marcar hecho</button>'):
+        ('<button class="btn btn-ghost btn-sm" data-action="plan-status" data-id="'+esc(p.id)+'" data-s="en_curso">'+ic('rotate',12)+' Reabrir</button>'))+
+      '<button class="btn btn-ghost btn-sm" data-action="plan-edit" data-id="'+esc(p.id)+'">'+ic('file',12)+' Editar</button>'+
+      (p.survey_id?('<button class="btn btn-ghost btn-sm" data-action="enc-open" data-id="'+esc(p.survey_id)+'">'+ic('list',12)+' Ver la encuesta</button>'):'')+
+      '<button class="btn btn-ghost btn-sm" data-action="com-from-plan" data-id="'+esc(p.id)+'">'+ic('send',12)+' Comunicar</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="plan-del" data-id="'+esc(p.id)+'" style="color:var(--brick)">'+ic('trash',12)+' Eliminar</button>'+
+    '</div></div>';
+  });
+  html+='</div>';
+  html+=climaLinks([
+    { action:"go-enps",      icon:"eye",  label:"Ver de dónde salen los planes (área 2)" },
+    { action:"go-encuestas", icon:"list", label:"Encuestas de clima (área 1)" },
+    { action:"go-comunicacion", icon:"send", label:"Comunicación interna (área 6)" }
+  ]);
+  return html;
+};
+
+/* =====================================================================
+   ÁREA 6 · COMUNICACIÓN INTERNA
+   Cierra el círculo: lo que se midió y lo que se decidió, contado al
+   equipo. Los anuncios se arman solos desde las otras áreas (resultados,
+   planes, valores, reconocimientos) y salen por el mismo camino de mail
+   que las encuestas.
+   ===================================================================== */
+var COM_CATS = {
+  novedad:   { label:"Novedad",              color:"var(--teal)",   icon:"info"   },
+  resultado: { label:"Resultados de clima",  color:"var(--purple)", icon:"eye"    },
+  plan:      { label:"Plan de acción",       color:"var(--green)",  icon:"square" },
+  valores:   { label:"Valores y cultura",    color:"var(--amber)",  icon:"trophy" },
+  evento:    { label:"Evento",               color:"var(--brick)",  icon:"clock"  }
+};
+function goComunicacion(){
+  state.error=null; state.com.msg=""; state.com.error=null; state.com.send=null;
+  state.screen="mod3-comunicacion"; render(); loadComunicacion();
+}
+function loadComunicacion(){
+  if(!(supaConfigured() && isLoggedIn())){ state.com.items=[]; if(state.com.pending){ var pre1=state.com.pending; state.com.pending=null; comNewForm(pre1); return; } render(); return; }
+  state.com.loading=true; state.com.error=null; render();
+  Promise.all([
+    dbListAnnouncements(),
+    (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees())
+  ]).then(function(res){
+    state.com.loading=false; state.com.items=res[0]||[]; state.emp.items=res[1]||[];
+    if(state.com.pending){ var pre=state.com.pending; state.com.pending=null; comNewForm(pre); return; }
+    render();
+  }).catch(function(){
+    state.com.loading=false; state.com.error="No pude cargar los anuncios. ¿Corriste el SQL de clima (sql_clima.sql) en Supabase?";
+    render();
+  });
+}
+function comNewForm(prefill){
+  state.com.form=Object.assign({
+    id:null, title:"", body:"", category:"novedad",
+    related_type:null, related_id:null, related_label:null
+  }, prefill||{});
+  var f=state.com.form;
+  state.com.recipInput=(f.recipients||[]).map(function(r){ return r.email; }).join(", ");
+  state.com.msg=""; state.com.error=null; state.com.send=null; render();
+}
+function comEditForm(id){
+  var a=(state.com.items||[]).filter(function(x){ return x.id===id; })[0]; if(!a) return;
+  state.com.form={ id:a.id, title:a.title||"", body:a.body||"", category:a.category||"novedad",
+    related_type:a.related_type||null, related_id:a.related_id||null, related_label:a.related_label||null };
+  state.com.recipInput=(Array.isArray(a.recipients)?a.recipients:[]).map(function(r){ return (r&&r.email)||r; }).join(", ");
+  state.com.msg=""; state.com.error=null; state.com.send=null; render();
+}
+function comSave(publish){
+  var f=state.com.form; if(!f||state.com.saving) return;
+  var title=(f.title||"").trim();
+  if(!title){ state.com.error="Ponele un título al anuncio."; render(); return; }
+  var row={
+    title:title, body:(f.body||"").trim(), category:f.category||"novedad",
+    recipients:climaParseRecipients(state.com.recipInput),
+    related_type:f.related_type||null, related_id:f.related_id||null, related_label:f.related_label||null,
+    brand_name:brandName()||null, brand_logo:brandLogoUrl()||null
+  };
+  if(publish) row.status="publicado";
+  state.com.saving=true; state.com.error=null; render();
+  var p=f.id ? dbUpdateAnnouncement(f.id, row) : dbCreateAnnouncement(Object.assign({ status:publish?"publicado":"borrador" }, row));
+  p.then(function(saved){
+    state.com.saving=false;
+    if(f.id){
+      state.com.items=(state.com.items||[]).map(function(x){ return x.id===f.id?Object.assign({},x,row):x; });
+      state.com.form=null;
+    } else {
+      state.com.items=[saved].concat(state.com.items||[]);
+      state.com.form=null;
+    }
+    state.com.msg=publish?"Anuncio publicado. Ahora podés enviarlo por mail.":"Anuncio guardado como borrador.";
+    render();
+  }).catch(function(){
+    state.com.saving=false; state.com.error="No pude guardar el anuncio. ¿Corriste sql_clima.sql?"; render();
+  });
+}
+function comSetStatus(id, status){
+  dbUpdateAnnouncement(id, { status:status }).then(function(){
+    (state.com.items||[]).forEach(function(x){ if(x.id===id) x.status=status; });
+    state.com.msg=(status==="publicado"?"Anuncio publicado.":"Anuncio vuelto a borrador."); render();
+  }).catch(function(){ state.com.error="No pude cambiar el estado."; render(); });
+}
+function comTogglePin(id){
+  var a=(state.com.items||[]).filter(function(x){ return x.id===id; })[0]; if(!a) return;
+  var next=!a.pinned;
+  dbUpdateAnnouncement(id, { pinned:next }).then(function(){ a.pinned=next; render(); }).catch(function(){});
+}
+function comDelete(id){
+  if(!confirm("¿Eliminar este anuncio? No se puede deshacer.")) return;
+  dbDeleteAnnouncement(id).then(function(){
+    state.com.items=(state.com.items||[]).filter(function(x){ return x.id!==id; });
+    state.com.msg="Anuncio eliminado."; render();
+  });
+}
+/* Destinatarios: los mismos criterios que las encuestas (área 1). */
+function comApplyRecipients(id){
+  var a=(state.com.items||[]).filter(function(x){ return x.id===id; })[0];
+  var list=climaParseRecipients(state.com.recipInput);
+  if(!a){ if(state.com.form) state.com.form.recipients=list; state.com.msg=list.length+" destinatario(s) en la lista."; render(); return; }
+  dbUpdateAnnouncement(id, { recipients:list }).then(function(){
+    a.recipients=list; state.com.msg=list.length+" destinatario"+(list.length===1?"":"s")+" guardado"+(list.length===1?"":"s")+"."; render();
+  }).catch(function(){ state.com.error="No pude guardar la lista."; render(); });
+}
+function comImportEmployees(){
+  var apply=function(items){
+    var mails=(items||[]).filter(function(e){ return e.status!=="inactivo" && e.email; }).map(function(e){ return String(e.email).trim().toLowerCase(); });
+    var cur=climaParseRecipients(state.com.recipInput).map(function(r){ return r.email; });
+    mails.forEach(function(m){ if(cur.indexOf(m)<0) cur.push(m); });
+    state.com.recipInput=cur.join(", ");
+    state.com.msg=mails.length?("Sumé "+mails.length+" empleado(s) del legajo. Acordate de guardar la lista."):"Ningún empleado activo tiene email cargado en su legajo.";
+    render();
+  };
+  if(state.emp.items!==null){ apply(state.emp.items); return; }
+  state.com.msg="Buscando empleados…"; render();
+  dbListEmployees().then(function(items){ state.emp.items=items||[]; apply(state.emp.items); }).catch(function(){ state.com.msg="No pude leer el legajo."; render(); });
+}
+/* Envío por mail: mismo endpoint que las encuestas, con action "announce". */
+function comSend(id){
+  var a=(state.com.items||[]).filter(function(x){ return x.id===id; })[0]; if(!a) return;
+  var list=(Array.isArray(a.recipients)?a.recipients:[]).map(function(r){ return (r&&r.email)||r; }).filter(function(e){ return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e||"")); });
+  if(!list.length){ state.com.error="Este anuncio no tiene destinatarios cargados."; render(); return; }
+  if(!confirm("Se le va a enviar este anuncio por mail a "+list.length+" persona"+(list.length===1?"":"s")+". ¿Enviamos?")) return;
+  var ses=getSession();
+  state.com.send={ id:id, running:true, total:list.length, sent:0, failed:0, done:false, error:null };
+  state.com.error=null; state.com.msg=""; render();
+  fetch("/api/encuesta", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ action:"announce", token:ses&&ses.access_token, announcementId:id })
+  }).then(function(r){ return r.json(); }).then(function(j){
+    var sd=state.com.send||{}; sd.running=false; sd.done=true;
+    if(j&&j.ok){
+      sd.sent=j.sent||0; sd.failed=j.failed||0;
+      a.sent_at=new Date().toISOString(); a.sent_count=(a.sent_count||0)+(j.sent||0); a.status="publicado";
+      state.com.msg="Enviado a "+sd.sent+" de "+sd.total+" personas."+(sd.failed?(" "+sd.failed+" rebotaron."):"");
+    } else {
+      sd.error=climaSendError(j&&j.error); state.com.error=sd.error;
+    }
+    render();
+  }).catch(function(){
+    var sd=state.com.send||{}; sd.running=false; sd.done=true; sd.error="No pude conectarme para enviar.";
+    state.com.error=sd.error; render();
+  });
+}
+/* ---- Anuncios que se arman solos desde las otras áreas ---- */
+function comNewFrom(prefill){ state.com.pending=prefill||{}; goComunicacion(); }
+function comFromSurvey(){
+  var s=state.clima.current; if(!s) return;
+  var a=climaAgg(s, climaFilteredResponses());
+  var lineas=CLIMA_DIM_ORDER.filter(function(k){ return a.dims[k] && a.dims[k].n; })
+    .map(function(k){ return "· "+(CLIMA_DIMS[k]||{label:k}).label+": "+a.dims[k].favPct+"% favorable"; }).join("\n");
+  comNewFrom({
+    category:"resultado",
+    related_type:"encuesta", related_id:s.id, related_label:s.title||"Encuesta de clima",
+    title:"Resultados de la encuesta de clima",
+    body:"Hola a todos,\n\nYa tenemos los resultados de «"+(s.title||"la encuesta de clima")+"». Respondieron "+a.responses+" personas y esto es lo que nos dijeron:\n\n"+
+      (a.favPct!=null?("· Favorabilidad general: "+a.favPct+"%\n"):"")+
+      (a.enps.score!=null?("· eNPS: "+a.enps.score+"\n"):"")+
+      (lineas?(lineas+"\n"):"")+
+      "\nGracias a quienes se tomaron el tiempo de responder. El próximo paso son las acciones concretas que salen de esto, y las vamos a ir contando por acá.\n"
+  });
+}
+function comFromEnps(){
+  var a=enpsCompute(state.enps.surveys||[], enpsResponses());
+  comNewFrom({
+    category:"resultado",
+    title:"Cómo venimos con el clima",
+    body:"Hola a todos,\n\nEste es el resumen de lo que viene diciendo el equipo en las encuestas de clima:\n\n"+
+      "· eNPS: "+(a.tot.score==null?"—":a.tot.score)+" ("+enpsReading(a.tot.score)+")\n"+
+      "· Índice de satisfacción: "+(a.tot.sat==null?"—":(a.tot.sat+"/100"))+"\n"+
+      "· Respuestas tomadas en cuenta: "+a.tot.resp+"\n\n"+
+      (a.dims.length?("Lo más fuerte: "+a.dims[a.dims.length-1].label+". Lo que más tenemos para mejorar: "+a.dims[0].label+".\n\n"):"")+
+      "Gracias por responder. Sobre esto estamos armando los planes de acción.\n"
+  });
+}
+function comFromPlan(id){
+  var p=(state.plan.items||[]).filter(function(x){ return x.id===id; })[0]; if(!p) return;
+  var ts=(Array.isArray(p.tasks)?p.tasks:[]).map(function(t){ return "· "+t.text; }).join("\n");
+  comNewFrom({
+    category:"plan",
+    related_type:"plan", related_id:p.id, related_label:p.title||"Plan de acción",
+    title:"Qué vamos a hacer: "+(p.title||""),
+    body:"Hola a todos,\n\nEn la última encuesta de clima nos dijeron qué había para mejorar. Esto es lo que vamos a hacer al respecto:\n\n"+
+      (p.title||"")+"\n"+((p.description||"")?(p.description+"\n"):"")+"\n"+
+      (ts?("Los pasos son:\n"+ts+"\n\n"):"")+
+      (p.responsible_name?("Responsable: "+p.responsible_name+"\n"):"")+
+      (p.due_date?("Fecha compromiso: "+climaFmtDate(p.due_date)+"\n"):"")+
+      "\nCualquier idea o comentario es bienvenido.\n"
+  });
+}
+function comFromValues(){
+  var vals=(state.val.items||[]).filter(function(v){ return v.active!==false; });
+  var cuerpo=vals.map(function(v){
+    var beh=(Array.isArray(v.behaviors)?v.behaviors:[]).map(function(b){ return "   - "+b; }).join("\n");
+    return "· "+(v.name||"")+((v.description||"")?(": "+v.description):"")+(beh?("\n"+beh):"");
+  }).join("\n\n");
+  comNewFrom({
+    category:"valores",
+    related_type:"valor", related_label:"Valores de la empresa",
+    title:"Nuestros valores, en criollo",
+    body:"Hola a todos,\n\nEstos son los valores con los que trabajamos y, sobre todo, las conductas concretas en las que se ven:\n\n"+
+      cuerpo+"\n\nNo es un poster: con estos valores reconocemos el trabajo del equipo todos los meses.\n"
+  });
+}
+function comFromRecognition(id){
+  var r=(state.fb.items||[]).filter(function(x){ return x.id===id; })[0]; if(!r) return;
+  var vn=r.value_id?fbValueName(r.value_id):"";
+  comNewFrom({
+    category:"novedad",
+    related_type:"reconocimiento", related_id:r.id, related_label:r.to_name||"",
+    title:"Un reconocimiento para "+(r.to_name||"el equipo"),
+    body:"Hola a todos,\n\nQueremos compartir algo que pasó y está bueno que se sepa:\n\n"+
+      (r.message||"")+"\n\n"+
+      (vn?("Esto es exactamente el valor «"+vn+"» en acción.\n"):"")+
+      (r.from_name?("(De parte de "+r.from_name+".)\n"):"")
+  });
+}
+function comFromFeedback(){
+  var n=(state.fb.items||[]).filter(function(x){ return x.kind!=="feedback" && x.status!=="archivado"; }).length;
+  comNewFrom({
+    category:"novedad",
+    title:"Los reconocimientos del mes",
+    body:"Hola a todos,\n\nEste mes se escribieron "+n+" reconocimientos entre compañeros. Van algunos de los que más nos gustaron:\n\n· \n· \n· \n\nGracias a todos por bancar al de al lado.\n"
+  });
+}
+Screens["mod3-comunicacion"] = function(){
+  var c=state.com;
+  var html=Header()+backlink("go-module-clima","Volver a Clima y Cultura");
+  html+=climaHead('send','Comunicación interna',
+    'Novedades, resultados y campañas para el equipo. Los anuncios se arman con un clic desde las otras áreas y salen por mail a los destinatarios del legajo.',
+    '<button class="btn btn-primary btn-sm" data-action="com-new">'+ic('plus',14)+' Nuevo anuncio</button>');
+  if (c.msg) html+=Note("ok", esc(c.msg));
+  if (c.error) html+=Note("err", esc(c.error));
+  if (c.loading || c.items===null) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando los anuncios…</p></div>';
+
+  if (c.form){
+    var f=c.form;
+    html+='<div class="card" style="margin-bottom:16px">';
+    html+='<h3 style="margin:0 0 12px;font-size:15px;color:var(--ink)">'+(f.id?"Editar anuncio":"Nuevo anuncio")+'</h3>';
+    if (f.related_label) html+=Note("info", 'Este anuncio sale de <b>'+esc((f.related_type||"otra área"))+'</b>: «'+esc(f.related_label)+'». El texto ya viene armado — revisalo y ponele tus palabras.');
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">';
+    Object.keys(COM_CATS).forEach(function(k){
+      var K=COM_CATS[k], on=(f.category===k);
+      html+='<button class="btn btn-sm" data-action="com-cat" data-k="'+k+'" style="'+(on?('background:var(--teal-tint);color:'+K.color+';font-weight:600'):'background:transparent;color:var(--muted)')+';border:1px solid var(--border-soft)">'+ic(K.icon,13)+' '+esc(K.label)+'</button>';
+    });
+    html+='</div>';
+    html+='<label class="field"><span class="field-label">Título</span><div class="input-row"><input id="f_com_title" value="'+esc(f.title||"")+'" placeholder="Ej: Resultados de la encuesta de clima"></div></label>';
+    html+='<label class="field" style="margin-top:12px"><span class="field-label">Mensaje</span><div class="input-row" style="align-items:flex-start"><textarea id="f_com_body" rows="10" placeholder="Escribí como le hablás al equipo. Corto, claro y sin vueltas.">'+esc(f.body||"")+'</textarea></div><span class="field-hint">Se manda tal cual, con el logo y el nombre de tu empresa arriba.</span></label>';
+    html+='<label class="field" style="margin-top:12px"><span class="field-label">Destinatarios</span><div class="input-row" style="align-items:flex-start"><textarea id="f_com_recip" rows="3" placeholder="ana@empresa.com, juan@empresa.com…">'+esc(state.com.recipInput||"")+'</textarea></div></label>';
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'+
+      '<button class="btn btn-ghost btn-sm" data-action="com-recip-emp">'+ic('users',13)+' Traer del legajo</button>'+
+    '</div>';
+    html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">'+
+      '<button class="btn btn-primary btn-sm" data-action="com-save" data-p="1" '+(c.saving?'disabled':'')+'>'+(c.saving?ic('loader',14,'spin'):ic('check',14))+' Guardar y publicar</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="com-save" data-p="">'+ic('file',13)+' Guardar borrador</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="com-cancel">Cancelar</button>'+
+    '</div>';
+    html+='</div>';
+  }
+
+  var all=state.com.items||[];
+  if(!all.length && !c.form){
+    html+='<div class="center-block" style="padding:28px 12px">'+ic('send',26)+
+      '<h2 style="font-size:16px">Todavía no hay anuncios</h2>'+
+      '<p>Lo que se mide y no se cuenta, para el equipo no pasó. Contá los resultados de la encuesta o el plan que arrancó.</p>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px">'+
+        '<button class="btn btn-primary btn-sm" data-action="com-new">'+ic('plus',14)+' Escribir el primero</button>'+
+        '<button class="btn btn-ghost btn-sm" data-action="com-from-enps">'+ic('eye',14)+' Armar uno con los resultados</button>'+
+      '</div></div>';
+    return html;
+  }
+
+  var pubs=all.filter(function(a){ return a.status==="publicado"; }).length;
+  var enviados=all.reduce(function(a,x){ return a+(x.sent_count||0); }, 0);
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px">'+
+    encKpi("Anuncios", all.length, pubs+" publicado"+(pubs===1?"":"s"), "var(--ink)")+
+    encKpi("Mails enviados", enviados, "en total", "var(--teal)")+
+    encKpi("Borradores", all.length-pubs, "esperando salir", (all.length-pubs)?"var(--amber)":"var(--green)")+
+  '</div>';
+
+  var sorted=all.slice().sort(function(a,b){
+    if(!!b.pinned!==!!a.pinned) return b.pinned?1:-1;
+    return String(b.created_at||"").localeCompare(String(a.created_at||""));
+  });
+  html+='<div style="display:grid;gap:10px">';
+  sorted.forEach(function(a){
+    var K=COM_CATS[a.category]||COM_CATS.novedad;
+    var nrec=(Array.isArray(a.recipients)?a.recipients:[]).length;
+    var sd=(state.com.send&&state.com.send.id===a.id)?state.com.send:null;
+    html+='<div class="qa-item">'+
+      '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">'+
+        '<span style="flex-shrink:0;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);color:'+K.color+'">'+ic(K.icon,17)+'</span>'+
+        '<div style="flex:1;min-width:200px">'+
+          '<p style="margin:0;font-size:14.5px;font-weight:700;color:var(--ink)">'+(a.pinned?'📌 ':'')+esc(a.title||"")+'</p>'+
+          '<p style="margin:5px 0 0;font-size:12.5px;color:var(--muted);line-height:1.55;white-space:pre-wrap">'+esc(String(a.body||"").slice(0,320))+((String(a.body||"").length>320)?'…':'')+'</p>'+
+          '<p style="margin:7px 0 0;font-size:11.5px;color:var(--faint)">'+esc(K.label)+' · '+climaFmtDate(a.created_at)+' · '+nrec+' destinatario'+(nrec===1?'':'s')+
+            (a.sent_at?(' · enviado el '+climaFmtDate(a.sent_at)+' a '+(a.sent_count||0)):'')+
+            (a.related_label?(' · sobre «'+esc(a.related_label)+'»'):'')+'</p>'+
+        '</div>'+
+        climaChip(a.status==="publicado"?"Publicado":"Borrador", a.status==="publicado"?"var(--green)":"var(--muted)")+
+      '</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-soft)">'+
+        '<button class="btn btn-teal btn-sm" data-action="com-send" data-id="'+esc(a.id)+'" '+((sd&&sd.running)?'disabled':'')+'>'+((sd&&sd.running)?ic('loader',12,'spin'):ic('send',12))+' '+((sd&&sd.running)?'Enviando…':'Enviar por mail')+'</button>'+
+        '<button class="btn btn-ghost btn-sm" data-action="com-edit" data-id="'+esc(a.id)+'">'+ic('file',12)+' Editar</button>'+
+        (a.status==="publicado"
+          ?('<button class="btn btn-ghost btn-sm" data-action="com-status" data-id="'+esc(a.id)+'" data-s="borrador">'+ic('lock',12)+' Pasar a borrador</button>')
+          :('<button class="btn btn-ghost btn-sm" data-action="com-status" data-id="'+esc(a.id)+'" data-s="publicado">'+ic('check',12)+' Publicar</button>'))+
+        '<button class="btn btn-ghost btn-sm" data-action="com-pin" data-id="'+esc(a.id)+'">'+ic('sparkle',12)+' '+(a.pinned?'Quitar de arriba':'Fijar arriba')+'</button>'+
+        (a.related_type==="encuesta"&&a.related_id?('<button class="btn btn-ghost btn-sm" data-action="enc-open" data-id="'+esc(a.related_id)+'">'+ic('list',12)+' Ver la encuesta</button>'):'')+
+        (a.related_type==="plan"&&a.related_id?('<button class="btn btn-ghost btn-sm" data-action="plan-open" data-id="'+esc(a.related_id)+'">'+ic('square',12)+' Ver el plan</button>'):'')+
+        '<button class="btn btn-ghost btn-sm" data-action="com-del" data-id="'+esc(a.id)+'" style="color:var(--brick)">'+ic('trash',12)+' Eliminar</button>'+
+      '</div>'+
+      (sd&&sd.done&&!sd.error?Note("ok","Enviado a "+sd.sent+" de "+sd.total+" destinatarios."+(sd.failed?(" "+sd.failed+" no pudieron entregarse."):"")):'')+
+      (sd&&sd.error?Note("err", esc(sd.error)):'')+
+    '</div>';
+  });
+  html+='</div>';
+  html+='<p style="margin:14px 0 0;font-size:11.5px;color:var(--faint)">Los mails salen por el mismo servidor que las encuestas (Brevo), con el logo y el nombre de tu empresa.</p>';
+  html+=climaLinks([
+    { action:"com-from-enps", icon:"eye",    label:"Armar uno con los resultados (área 2)" },
+    { action:"go-planes",     icon:"square", label:"Planes de acción (área 5)" },
+    { action:"go-valores",    icon:"trophy", label:"Valores y cultura (área 4)" }
+  ]);
   return html;
 };
 
@@ -4943,16 +6582,16 @@ function mod2SideNav(active){
   ], sideFooterCommon());
 }
 function mod2ShellWrap(active, screenHtml){ return moduleShellWrap(mod2SideNav(active), screenHtml); }
-/* Módulo 3 (Clima y Cultura) — el área 1 ya está activa; el resto, próximamente */
+/* Módulo 3 (Clima y Cultura) — las 6 áreas activas */
 function mod3SideNav(active){
   return sideNavShell('Accesos', active, [
-    { key:'home',      action:'go-module-clima', icon:'globe', label:'Panel del módulo' },
-    { key:'encuestas', action:'go-encuestas',    icon:'list',  label:'Encuestas de clima' },
-    { icon:'eye',    label:'eNPS y satisfacción',     soon:true },
-    { icon:'msg',    label:'Feedback y reconocim.',   soon:true },
-    { icon:'trophy', label:'Valores y cultura',       soon:true },
-    { icon:'square', label:'Planes de acción',        soon:true },
-    { icon:'send',   label:'Comunicación interna',    soon:true },
+    { key:'home',         action:'go-module-clima', icon:'globe',  label:'Panel del módulo' },
+    { key:'encuestas',    action:'go-encuestas',    icon:'list',   label:'Encuestas de clima' },
+    { key:'enps',         action:'go-enps',         icon:'eye',    label:'eNPS y satisfacción' },
+    { key:'feedback',     action:'go-feedback',     icon:'msg',    label:'Feedback y reconocim.' },
+    { key:'valores',      action:'go-valores',      icon:'trophy', label:'Valores y cultura' },
+    { key:'planes',       action:'go-planes',       icon:'square', label:'Planes de acción' },
+    { key:'comunicacion', action:'go-comunicacion', icon:'send',   label:'Comunicación interna' },
     { spacer:true }
   ], sideFooterCommon());
 }
@@ -6277,7 +7916,7 @@ function goHome(){ resetInterview(); state.error=null; enterRecruiter(); }
 function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="rec-home"; render(); if (supaConfigured() && isLoggedIn()) loadDashboard(); }
 function goHub(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="hub"; render(); }
 function goMod2(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod2-home"; render(); }
-function goMod3(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod3-home"; render(); }
+function goMod3(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod3-home"; render(); loadMod3Panel(); }
 /* ---- Módulo 2 · Legajo del empleado ---- */
 function emptyEmpForm(){
   return { id:null, legajo_number:"", first_name:"", last_name:"", birth_date:"", dni:"", cuil:"", address:"", email:"", phone:"",
@@ -9012,6 +10651,65 @@ function bind(){
       else if (act === "encp-set"){ if(state.encp&&state.encp.answers){ var sy=(window.pageYOffset||0); state.encp.answers[el.getAttribute("data-id")]=el.getAttribute("data-v"); state.encp.missing=0; render(); try{ window.scrollTo(0, sy); }catch(e2){} } }
       else if (act === "encp-again"){ if(state.encp){ state.encp.already=false; render(); } }
       else if (act === "encp-send"){ encPublicSubmit(); }
+      /* ---- Módulo 3 · área 2: eNPS y satisfacción ---- */
+      else if (act === "go-enps") goEnps();
+      else if (act === "enps-survey"){ state.enps.surveyId=el.getAttribute("data-s")||""; render(); }
+      else if (act === "enps-csv"){ enpsDownloadCSV(); }
+      else if (act === "plan-from-enps"){ planFromEnps(); }
+      else if (act === "plan-from-dim"){ planFromEnpsDim(el.getAttribute("data-d")||""); }
+      else if (act === "plan-from-area"){ planFromArea(el.getAttribute("data-a")||""); }
+      else if (act === "plan-from-survey-dim"){ planFromSurvey(el.getAttribute("data-d")||""); }
+      else if (act === "com-from-enps"){ comFromEnps(); }
+      /* ---- Módulo 3 · área 3: feedback y reconocimiento ---- */
+      else if (act === "go-feedback") goFeedback();
+      else if (act === "fb-new"){ fbNewForm(); }
+      else if (act === "fb-cancel"){ state.fb.form=null; state.fb.error=null; render(); }
+      else if (act === "fb-kind"){ if(state.fb.form){ state.fb.form.kind=el.getAttribute("data-k")||"reconocimiento"; render(); } }
+      else if (act === "fb-save"){ fbSave(); }
+      else if (act === "fb-del"){ fbDelete(el.getAttribute("data-id")); }
+      else if (act === "fb-arch"){ fbSetStatus(el.getAttribute("data-id"), el.getAttribute("data-s")||"archivado"); }
+      else if (act === "fb-filter-kind"){ state.fb.filter.kind=el.getAttribute("data-k")||""; render(); }
+      else if (act === "fb-filter-value"){ state.fb.filter.valueId=el.getAttribute("data-v")||""; render(); }
+      else if (act === "fb-perf"){ var fbe=el.getAttribute("data-e"); goDesempeno(); state.perf.emp=fbe; render(); }
+      else if (act === "fb-announce"){ comFromRecognition(el.getAttribute("data-id")); }
+      else if (act === "com-from-fb"){ comFromFeedback(); }
+      /* ---- Módulo 3 · área 4: valores y cultura ---- */
+      else if (act === "go-valores") goValores();
+      else if (act === "val-new"){ valNewForm(); }
+      else if (act === "val-edit"){ valEditForm(el.getAttribute("data-id")); }
+      else if (act === "val-cancel"){ state.val.form=null; state.val.error=null; render(); }
+      else if (act === "val-save"){ valSave(); }
+      else if (act === "val-del"){ valDelete(el.getAttribute("data-id")); }
+      else if (act === "val-toggle"){ valToggleActive(el.getAttribute("data-id")); }
+      else if (act === "val-color"){ if(state.val.form){ state.val.form.color=el.getAttribute("data-c"); render(); } }
+      else if (act === "val-seed"){ valSeed(); }
+      else if (act === "val-survey"){ valCreateSurvey(); }
+      else if (act === "val-rec"){ var vrid=el.getAttribute("data-id"); goFeedback(); fbNewForm({ value_id:vrid }); }
+      else if (act === "com-from-val"){ comFromValues(); }
+      /* ---- Módulo 3 · área 5: planes de acción ---- */
+      else if (act === "go-planes") goPlanes();
+      else if (act === "plan-new"){ planNewForm(); }
+      else if (act === "plan-edit"){ planEditForm(el.getAttribute("data-id")); }
+      else if (act === "plan-cancel"){ state.plan.form=null; state.plan.error=null; render(); }
+      else if (act === "plan-save"){ planSave(); }
+      else if (act === "plan-del"){ planDelete(el.getAttribute("data-id")); }
+      else if (act === "plan-status"){ planSetStatus(el.getAttribute("data-id"), el.getAttribute("data-s")); }
+      else if (act === "plan-filter"){ state.plan.filter=el.getAttribute("data-f")||""; state.plan.focus=null; render(); }
+      else if (act === "plan-open"){ planOpen(el.getAttribute("data-id")); }
+      else if (act === "com-from-plan"){ comFromPlan(el.getAttribute("data-id")); }
+      /* ---- Módulo 3 · área 6: comunicación interna ---- */
+      else if (act === "go-comunicacion") goComunicacion();
+      else if (act === "com-new"){ comNewForm(); }
+      else if (act === "com-edit"){ comEditForm(el.getAttribute("data-id")); }
+      else if (act === "com-cancel"){ state.com.form=null; state.com.error=null; render(); }
+      else if (act === "com-cat"){ if(state.com.form){ state.com.form.category=el.getAttribute("data-k")||"novedad"; render(); } }
+      else if (act === "com-save"){ comSave(!!el.getAttribute("data-p")); }
+      else if (act === "com-status"){ comSetStatus(el.getAttribute("data-id"), el.getAttribute("data-s")); }
+      else if (act === "com-pin"){ comTogglePin(el.getAttribute("data-id")); }
+      else if (act === "com-del"){ comDelete(el.getAttribute("data-id")); }
+      else if (act === "com-send"){ comSend(el.getAttribute("data-id")); }
+      else if (act === "com-recip-emp"){ comImportEmployees(); }
+      else if (act === "com-from-survey"){ comFromSurvey(); }
       else if (act === "go-legajo") goLegajo();
       else if (act === "emp-new") newEmployee();
       else if (act === "emp-open"){ openEmployee(el.getAttribute("data-id")); }
@@ -9366,6 +11064,32 @@ function bind(){
   app.querySelectorAll("textarea.encp-text").forEach(function(el){
     el.addEventListener("input", function(){ if(state.encp&&state.encp.answers) state.encp.answers[el.getAttribute("data-id")]=el.value; });
   });
+  /* ---- Módulo 3 · área 3: feedback y reconocimiento ---- */
+  if ((f=document.getElementById("f_fb_emp"))) f.addEventListener("change", function(e){ if(state.fb.form) state.fb.form.to_employee_id=e.target.value; });
+  if ((f=document.getElementById("f_fb_value"))) f.addEventListener("change", function(e){ if(state.fb.form) state.fb.form.value_id=e.target.value; });
+  if ((f=document.getElementById("f_fb_msg"))) f.addEventListener("input", function(e){ if(state.fb.form) state.fb.form.message=e.target.value; });
+  if ((f=document.getElementById("f_fb_from"))) f.addEventListener("input", function(e){ if(state.fb.form) state.fb.form.from_name=e.target.value; });
+  if ((f=document.getElementById("f_fb_vis"))) f.addEventListener("change", function(e){ if(state.fb.form) state.fb.form.visibility=e.target.value; });
+  if ((f=document.getElementById("f_fb_arch"))) f.addEventListener("change", function(e){ state.fb.filter.archived=e.target.checked; render(); });
+  /* ---- Módulo 3 · área 4: valores y cultura ---- */
+  if ((f=document.getElementById("f_val_name"))) f.addEventListener("input", function(e){ if(state.val.form) state.val.form.name=e.target.value; });
+  if ((f=document.getElementById("f_val_desc"))) f.addEventListener("input", function(e){ if(state.val.form) state.val.form.description=e.target.value; });
+  if ((f=document.getElementById("f_val_beh"))) f.addEventListener("input", function(e){ if(state.val.form) state.val.form.behaviorsText=e.target.value; });
+  /* ---- Módulo 3 · área 5: planes de acción ---- */
+  var planBind=function(id, key){ var el=document.getElementById(id); if(el) el.addEventListener("input", function(ev){ if(state.plan.form) state.plan.form[key]=ev.target.value; }); };
+  planBind("f_plan_title","title"); planBind("f_plan_desc","description"); planBind("f_plan_area","area");
+  planBind("f_plan_start","start_date"); planBind("f_plan_due","due_date"); planBind("f_plan_tasks","tasksText"); planBind("f_plan_result","result");
+  if ((f=document.getElementById("f_plan_resp"))) f.addEventListener("change", function(e){ if(state.plan.form) state.plan.form.responsible_id=e.target.value; });
+  if ((f=document.getElementById("f_plan_dim"))) f.addEventListener("change", function(e){ if(state.plan.form) state.plan.form.dimension=e.target.value; });
+  if ((f=document.getElementById("f_plan_prio"))) f.addEventListener("change", function(e){ if(state.plan.form) state.plan.form.priority=e.target.value; });
+  if ((f=document.getElementById("f_plan_status"))) f.addEventListener("change", function(e){ if(state.plan.form) state.plan.form.status=e.target.value; });
+  document.querySelectorAll("input[data-plantask]").forEach(function(el){
+    el.addEventListener("change", function(){ planToggleTask(el.getAttribute("data-plan"), el.getAttribute("data-plantask")); });
+  });
+  /* ---- Módulo 3 · área 6: comunicación interna ---- */
+  if ((f=document.getElementById("f_com_title"))) f.addEventListener("input", function(e){ if(state.com.form) state.com.form.title=e.target.value; });
+  if ((f=document.getElementById("f_com_body"))) f.addEventListener("input", function(e){ if(state.com.form) state.com.form.body=e.target.value; });
+  if ((f=document.getElementById("f_com_recip"))) f.addEventListener("input", function(e){ state.com.recipInput=e.target.value; });
   // ---- Selector de empleado de las áreas del módulo 2 ----
   if ((f=document.getElementById("f_pick_search"))){
     var applyPickFilter=function(){
