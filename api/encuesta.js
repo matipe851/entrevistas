@@ -6,6 +6,8 @@
 //   action "get"    (público)      -> devuelve la encuesta por su código, si está activa.
 //   action "submit" (público)      -> guarda una respuesta ANÓNIMA (no guarda quién fue).
 //   action "send"   (con sesión)   -> envío masivo por mail a los destinatarios.
+//   action "announce" (con sesión) -> manda un anuncio de comunicación interna
+//                                     (Módulo 3, área 6) a su lista de destinatarios.
 //   action "cron"   (Vercel/cron)  -> manda las encuestas programadas que ya vencieron
 //                                     y deja agendado el envío siguiente.
 //
@@ -271,6 +273,47 @@ module.exports = async function handler(req, res) {
         body: JSON.stringify({ current_round: roundS, last_sent_at: nowS.toISOString() })
       });
       res.status(200).json({ ok: true, total: list.length, sent: r2.sent, failed: r2.failed, skipped: skipped, round: roundS, link: slink });
+      return;
+    }
+
+    /* ---------- announce: anuncio de comunicación interna (Módulo 3, área 6) ----------
+       Mismo camino de mail que las encuestas: cambia sólo el contenido. Va acá
+       adentro para no sumar un archivo más en /api (Vercel Hobby: 12 funciones). */
+    if (action === "announce") {
+      if (rateLimited("encann:" + clientIp(req), 12, 10 * 60 * 1000)) { res.status(429).json({ ok: false, error: "rate_limited" }); return; }
+      var cfgA = mailConfig();
+      if (!cfgA) { res.status(200).json({ ok: false, error: "no_mail_config" }); return; }
+      if (!b.token) { res.status(200).json({ ok: false, error: "no_token" }); return; }
+      var annId = String(b.announcementId || "").trim();
+      if (!annId) { res.status(200).json({ ok: false, error: "no_announcement" }); return; }
+
+      var userA = await callerUser(base, key, b.token);
+      if (!userA || !userA.id) { res.status(200).json({ ok: false, error: "unauthorized" }); return; }
+
+      var ar = await fetch(base + "/rest/v1/announcements?id=eq." + encodeURIComponent(annId) + "&select=*&limit=1", { headers: headers });
+      var arows = await ar.json();
+      if (!Array.isArray(arows) || !arows[0]) { res.status(200).json({ ok: false, error: "not_found" }); return; }
+      var ann = arows[0];
+      if (ann.owner && ann.owner !== userA.id) { res.status(200).json({ ok: false, error: "not_owner" }); return; }
+
+      var allA = recipientEmails(ann);   // misma forma que los destinatarios de una encuesta
+      if (!allA.length) { res.status(200).json({ ok: false, error: "no_recipients" }); return; }
+      var skippedA = Math.max(0, allA.length - MAX_RECIPIENTS);
+      var listA = allA.slice(0, MAX_RECIPIENTS);
+
+      var brandA = ann.brand_name ? String(ann.brand_name).trim() : "";
+      var subjectA = String(ann.title || "Novedades").slice(0, 200) + (brandA ? (" · " + brandA) : "");
+      var messageA = String(ann.body || "").slice(0, 20000) || String(ann.title || "");
+      cfgA.replyTo = isEmail(userA.email) ? userA.email : "";
+      cfgA.brandName = ann.brand_name || "";
+      cfgA.brandLogo = ann.brand_logo || "";
+
+      var rA = await sendAll(cfgA, listA, subjectA, messageA);
+      await fetch(base + "/rest/v1/announcements?id=eq." + encodeURIComponent(ann.id), {
+        method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }),
+        body: JSON.stringify({ status: "publicado", sent_at: new Date().toISOString(), sent_count: (ann.sent_count || 0) + rA.sent })
+      });
+      res.status(200).json({ ok: true, total: listA.length, sent: rA.sent, failed: rA.failed, skipped: skippedA });
       return;
     }
 
