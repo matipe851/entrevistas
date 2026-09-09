@@ -1,6 +1,7 @@
 // Función serverless (Vercel) — usa Google Gemini (nivel gratuito).
 // Tareas:
 //   - task: "questions" -> genera preguntas a medida (puesto, empresa, CV, web, dificultad por nivel)
+//   - task: "mentor_cv"  -> analiza el CV del candidato y lo reescribe para el puesto que busca
 //   - (por defecto)      -> analiza las respuestas de la entrevista
 // Clave en la variable de entorno GEMINI_API_KEY (se configura en Vercel).
 
@@ -273,6 +274,58 @@ function mentorReportPrompt(b) {
     "3 fortalezas, 3 mejoras, 2 reescrituras y 4 preguntas para hacerle al entrevistador (específicas de este puesto, que dejen bien parada a la persona).";
 }
 
+/* ---- El CV, mirado y reescrito para UN puesto concreto ----
+   La regla que gobierna todo lo de abajo es una sola: no inventar.
+   Se puede reordenar, recortar, priorizar y decir mejor lo que la
+   persona ya contó. Lo que falta se marca entre corchetes para que lo
+   complete ella, nunca lo completa el modelo. */
+function mentorCvPrompt(b) {
+  var pos = String(b.position || "").slice(0, 200);
+  var comp = String(b.company || "").slice(0, 160);
+  var lvl = MENTOR_LEVELS[String(b.level || "semi")] || MENTOR_LEVELS.semi;
+  var jd = String(b.jobDesc || "").slice(0, 4000);
+  var cv = String(b.cvText || "").slice(0, 12000);
+  return "Sos un reclutador senior argentino con veinte años de oficio leyendo CVs. " +
+    "Te traen un CV y te piden dos cosas: la verdad sobre cómo compite para un puesto, y el mismo CV reescrito para ese puesto.\n\n" +
+    "PUESTO AL QUE SE POSTULA: " + pos + ".\n" +
+    (comp ? ("EMPRESA: " + comp + ".\n") : "") +
+    "NIVEL DE LA PERSONA: " + lvl + ".\n" +
+    (jd ? ("\nAVISO DEL PUESTO (es el criterio principal: el CV se adapta a ESTO):\n\"\"\"\n" + jd + "\n\"\"\"\n") : "") +
+    "\nEL CV, TAL COMO ESTÁ HOY (texto extraído del archivo, puede venir desordenado):\n\"\"\"\n" + cv + "\n\"\"\"\n\n" +
+    "PRIMERA PARTE · EL DIAGNÓSTICO\n" +
+    "- \"score\" (0 a 10, un decimal) es qué tan bien compite el CV ORIGINAL para ESTE puesto, no lo buena que es la persona. Si el CV no tiene nada que ver con el puesto, es un 3, y se dice.\n" +
+    "- \"primera_impresion\" es lo que piensa un reclutador en los siete segundos que le da a un CV antes de decidir si lo sigue leyendo. Una o dos frases, sin anestesia.\n" +
+    "- En \"diagnostico\" van los seis frentes con su estado (bien / regular / mal) y por qué, citando algo puntual del CV.\n" +
+    "- En \"palabras_clave\" van las del aviso (o, si no hay aviso, las propias del puesto): \"presentes\" las que ya figuran en el CV y \"faltantes\" las que el aviso pide y no aparecen. No pongas en faltantes nada que la persona no pueda tener de verdad.\n\n" +
+    "SEGUNDA PARTE · EL CV ADAPTADO\n" +
+    "REGLAS QUE NO SE NEGOCIAN:\n" +
+    "1) PROHIBIDO INVENTAR. Ni un empleo, ni un título, ni una herramienta, ni un número que la persona no haya escrito. Todo lo que devuelvas tiene que poder rastrearse al CV original.\n" +
+    "2) Si un logro pide un número que la persona no puso, escribí el bullet con el hueco a la vista: \"...reduciendo el tiempo de entrega en [completar: cuánto]\", y sumá ese hueco a \"completar\".\n" +
+    "3) Los bullets empiezan con verbo en pasado, tienen una sola línea y cuentan qué hizo y qué resultado dejó. Entre 3 y 5 por experiencia, y arriba los que le sirven a ESTE puesto. Lo que no aporta al puesto se resume en uno solo o se cae.\n" +
+    "4) La experiencia va de la más nueva a la más vieja, con los períodos tal como figuran en el original.\n" +
+    "5) \"titulo\" es el título profesional con el que la persona se presenta para este puesto (ej: \"Analista de sistemas · Semi senior\"), escrito con lo que ella realmente es.\n" +
+    "6) \"resumen\" son 3 o 4 líneas en primera persona sin decir \"yo\", apuntadas al puesto, hechas con la experiencia real que hay en el CV.\n" +
+    "7) \"habilidades\" salen del CV, ordenadas por lo que pide el aviso primero.\n" +
+    "8) Sacá del CV adaptado la edad, el estado civil, el DNI, la foto y la dirección exacta: no van y pueden jugar en contra. Si estaban, decilo en \"que_cambie\".\n" +
+    "9) \"datos\" es el encabezado: \"nombre\" tal como figura y \"contacto\" en una línea (mail · teléfono · ciudad · LinkedIn) con lo que haya. Si no está, dejalo vacío y pedilo en \"completar\".\n" +
+    "10) Español rioplatense, de vos, directo. Nada de \"proactivo\", \"sinergia\", \"orientado a resultados\" ni relleno que no diga nada.\n\n" +
+    "Devolvé EXCLUSIVAMENTE este JSON:\n" +
+    '{ "score": 0, "titular": "", "primera_impresion": "", ' +
+    '"diagnostico": [ { "key": "foco|experiencia|logros|palabras_clave|redaccion|formato", "estado": "bien|regular|mal", "titulo": "", "detalle": "" } ], ' +
+    '"palabras_clave": { "presentes": [""], "faltantes": [""] }, ' +
+    '"arreglos": [ { "titulo": "", "detalle": "", "como": "" } ], ' +
+    '"datos": { "nombre": "", "contacto": "" }, ' +
+    '"cv": { "titulo": "", "resumen": "", ' +
+    '"experiencia": [ { "puesto": "", "empresa": "", "periodo": "", "bullets": [""] } ], ' +
+    '"educacion": [ { "titulo": "", "institucion": "", "periodo": "" } ], ' +
+    '"habilidades": [""], "extras": [ { "titulo": "", "detalle": "" } ] }, ' +
+    '"completar": [""], "que_cambie": [""] }\n' +
+    "\"titular\" es una frase de 8 palabras que resuma el diagnóstico. " +
+    "En \"arreglos\" van los 3 cambios que más mueven la aguja para este puesto, con el \"como\" bien concreto. " +
+    "En \"que_cambie\" van, en una línea cada uno, los cambios que hiciste respecto del original y por qué. " +
+    "En \"completar\" van los huecos que tiene que llenar la persona antes de mandarlo.";
+}
+
 var MODEL_FALLBACKS = [MODEL, "gemini-flash-latest", "gemini-2.5-flash"];
 async function callOneModel(model, key, parts, maxTokens, temp, thinkingOff) {
   var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
@@ -433,6 +486,22 @@ module.exports = async function handler(req, res) {
       var pmr = parseJson(extractText(gmr.data));
       if (!pmr || typeof pmr !== "object" || !Array.isArray(pmr.dimensiones)) { res.status(200).json({ ok: false, error: "parse_error" }); return; }
       res.status(200).json({ ok: true, report: pmr });
+      return;
+    }
+
+    // El CV del candidato: diagnóstico honesto + el mismo CV reescrito
+    // para el puesto al que se postula. Nunca inventa experiencia.
+    if (body.task === "mentor_cv") {
+      var cvPos = String(body.position || "").trim();
+      var cvTxt = String(body.cvText || "").trim();
+      if (!cvPos) { res.status(200).json({ ok: false, error: "no_position" }); return; }
+      if (cvTxt.length < 120) { res.status(200).json({ ok: false, error: "no_cv" }); return; }
+      if (body.jobDesc) body.jobDesc = String(body.jobDesc).slice(0, 4000);
+      var gcv = await callGemini(key, [{ text: mentorCvPrompt(body) }], 8192, 0.4);
+      if (!gcv.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gcv.data && gcv.data.error && gcv.data.error.message) || ("HTTP " + gcv.status) }); return; }
+      var pcv = parseJson(extractText(gcv.data));
+      if (!pcv || typeof pcv !== "object" || !pcv.cv) { res.status(200).json({ ok: false, error: "parse_error" }); return; }
+      res.status(200).json({ ok: true, cv: pcv });
       return;
     }
 

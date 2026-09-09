@@ -97,7 +97,7 @@ async function construirMetricas(base, headers) {
   var [
     perfiles, entrevistas, cvs, avisos, busquedas, empleados,
     encuestas, respuestas, planes, valores, reconocimientos, anuncios,
-    mentorPerfiles, mentorSesiones
+    mentorPerfiles, mentorSesiones, mentorCvs
   ] = await Promise.all([
     tabla(base, headers, "profiles", "id,email,approved,created_at"),
     tabla(base, headers, "interviews", "id,position,score,recommendation,candidate_email,created_at"),
@@ -112,7 +112,8 @@ async function construirMetricas(base, headers) {
     tabla(base, headers, "recognitions", "id,created_at"),
     tabla(base, headers, "announcements", "id,status,created_at"),
     tabla(base, headers, "mentor_profiles", "id,created_at"),
-    tabla(base, headers, "mentor_sessions", "id,user_id,position,level,score,status,created_at")
+    tabla(base, headers, "mentor_sessions", "id,user_id,position,level,score,status,created_at"),
+    tabla(base, headers, "mentor_cvs", "id,user_id,score,created_at")
   ]);
 
   // --- Reclutamiento ---
@@ -131,6 +132,7 @@ async function construirMetricas(base, headers) {
   var repitieron = Object.keys(porUsuario).filter(function (k) { return porUsuario[k] > 1; }).length;
   var nivel = { junior: 0, semi: 0, senior: 0 };
   ms.forEach(function (x) { if (nivel[x.level] != null) nivel[x.level]++; });
+  var mcv = mentorCvs || [];
 
   // --- Clima: eNPS real, mirando qué pregunta es la de eNPS en cada encuesta ---
   var enpsQids = {};
@@ -183,7 +185,10 @@ async function construirMetricas(base, headers) {
       repeticion: Object.keys(porUsuario).length ? Math.round(repitieron * 100 / Object.keys(porUsuario).length) : null,
       promedio: prom(listos.map(function (x) { return Number(x.score); })),
       top_puestos: top(ms, "position", 8),
-      por_nivel: nivel
+      por_nivel: nivel,
+      cvs: mcv.length,
+      cvs_d30: contarDesde(mcv, 30),
+      cvs_promedio: prom(mcv.map(function (x) { return Number(x.score); }))
     },
     personal: {
       empleados: (empleados || []).length,
@@ -221,7 +226,8 @@ async function construirMetricas(base, headers) {
         { t: "action_plans", ok: planes !== null, sql: "sql_clima.sql" },
         { t: "announcements", ok: anuncios !== null, sql: "sql_clima.sql" },
         { t: "mentor_profiles", ok: mentorPerfiles !== null, sql: "sql_mentor.sql" },
-        { t: "mentor_sessions", ok: mentorSesiones !== null, sql: "sql_mentor.sql" }
+        { t: "mentor_sessions", ok: mentorSesiones !== null, sql: "sql_mentor.sql" },
+        { t: "mentor_cvs", ok: mentorCvs !== null, sql: "sql_mentor.sql" }
       ],
       config: {
         gemini: !!process.env.GEMINI_API_KEY,
