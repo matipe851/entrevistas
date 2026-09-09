@@ -1725,7 +1725,7 @@ var state = {
   brand: { id:null, name:"", logo:"" },
   empresa: null,
   myApproved: null,
-  admin: { loading:false, items:null, error:null },
+  admin: { loading:false, items:null, error:null, tab:"metricas", metrics:null, mLoading:false, mError:null },
   audioOmitted: false, recording:false, qTiming:false, timeLeft:0, timeTotal:0, live:"", micDenied:false, analyzingId:null,
   gmailStatus: null, sendState: "idle", sendError: null, sentMessageId: null,
   autoSendState: "idle", autoSendError: null,
@@ -1759,7 +1759,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v38.0-r106";
+var APP_VERSION = "v39.0-r107";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -7140,20 +7140,209 @@ Screens["fichador"] = function(){
   return html;
 };
 
+/* =====================================================================
+   PANEL DEL DUEÑO · métricas de toda la plataforma
+
+   Los números los calcula /api/admin (acción "metrics") con la service
+   role, porque las tablas del mentor son privadas de cada candidato y
+   desde el navegador no se pueden leer ni siendo administrador. De los
+   simulacros sólo viajan agregados: nunca las respuestas de la gente.
+   ===================================================================== */
+function loadAdminMetrics(){
+  if(!isAdminUser()) return;
+  state.admin.mLoading=true; state.admin.mError=null; render();
+  adminCall("metrics").then(function(j){
+    state.admin.mLoading=false;
+    if(j&&j.ok&&j.metrics){ state.admin.metrics=j.metrics; }
+    else state.admin.mError=(j&&j.error)||"error";
+    render();
+  }).catch(function(){ state.admin.mLoading=false; state.admin.mError="network"; render(); });
+}
+/* Ficha grande de un número, con su comparación al lado. */
+function admKpi(label, valor, pie, color){
+  return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:15px 17px">'+
+    '<p style="margin:0;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)">'+esc(label)+'</p>'+
+    '<p style="margin:7px 0 0;font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.05;color:'+(color||'var(--ink)')+'">'+valor+'</p>'+
+    (pie?('<p style="margin:4px 0 0;font-size:11.5px;color:var(--muted)">'+pie+'</p>'):'')+
+  '</div>';
+}
+function admSeccion(titulo, bajada, cuerpo){
+  return '<div style="margin-top:26px">'+
+    '<h3 style="margin:0 0 2px;font-size:15px;color:var(--ink)">'+esc(titulo)+'</h3>'+
+    (bajada?('<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">'+esc(bajada)+'</p>'):'<div style="height:10px"></div>')+
+    cuerpo+'</div>';
+}
+/* Barras apiladas por mes: entrevistas y simulacros juntos, para ver
+   cuál de los dos productos se está moviendo. */
+function admSerie(serie){
+  if(!serie||!serie.length) return chartEmpty("Todavía no hay actividad registrada.");
+  var max=1;
+  serie.forEach(function(m){ max=Math.max(max, (m.entrevistas||0)+(m.simulacros||0)); });
+  var W=Math.max(340, serie.length*54), H=170, PAD_B=26, PAD_T=18;
+  var alto=H-PAD_B-PAD_T;
+  var body=serie.map(function(m,i){
+    var slot=W/serie.length, cx=(i+0.5)*slot, bw=Math.min(24, slot-16);
+    var he=Math.round(alto*((m.entrevistas||0)/max));
+    var hs=Math.round(alto*((m.simulacros||0)/max));
+    var yE=H-PAD_B-he, yS=yE-hs;
+    var tot=(m.entrevistas||0)+(m.simulacros||0);
+    return '<g><title>'+esc(m.label+": "+(m.entrevistas||0)+" entrevistas, "+(m.simulacros||0)+" simulacros")+'</title>'+
+      (he?('<rect x="'+(cx-bw/2).toFixed(1)+'" y="'+yE+'" width="'+bw.toFixed(1)+'" height="'+he+'" rx="2" fill="var(--ch-1)"/>'):'')+
+      (hs?('<rect x="'+(cx-bw/2).toFixed(1)+'" y="'+yS+'" width="'+bw.toFixed(1)+'" height="'+hs+'" rx="2" fill="var(--brick)"/>'):'')+
+      (tot?('<text x="'+cx.toFixed(1)+'" y="'+(yS-6)+'" text-anchor="middle" font-size="10.5" font-weight="500" fill="var(--muted)">'+tot+'</text>'):'')+
+      '<text x="'+cx.toFixed(1)+'" y="'+(H-9)+'" text-anchor="middle" font-size="10.5" fill="var(--muted)">'+esc(m.label)+'</text></g>';
+  }).join("");
+  return '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;color:var(--muted)">'+
+      '<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:11px;height:11px;border-radius:3px;background:var(--ch-1);display:inline-block"></span> Entrevistas (consultora)</span>'+
+      '<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:11px;height:11px;border-radius:3px;background:var(--brick);display:inline-block"></span> Simulacros (Mentor IA)</span>'+
+    '</div>'+
+    '<div style="overflow-x:auto"><svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Actividad por mes" style="min-width:'+W+'px;max-width:100%">'+
+    '<line x1="0" y1="'+(H-PAD_B)+'" x2="'+W+'" y2="'+(H-PAD_B)+'" stroke="var(--ch-grid)" stroke-width="1"/>'+body+'</svg></div>';
+}
+/* Fila simple etiqueta / valor, para los bloques de detalle. */
+function admFila(k, v, color){
+  return '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--border-soft);font-size:13px">'+
+    '<span style="color:var(--muted)">'+esc(k)+'</span>'+
+    '<span style="color:'+(color||'var(--ink)')+';font-weight:600;white-space:nowrap">'+v+'</span></div>';
+}
+function AdminMetrics(){
+  var a=state.admin;
+  if (a.mLoading || a.metrics===null){
+    return '<div class="center-block" style="padding:34px 14px">'+ic('loader',26,'spin')+'<p>Juntando los números de toda la plataforma…</p></div>';
+  }
+  if (a.mError){
+    return Note("err","No pude calcular las métricas ("+esc(a.mError)+"). Si dice <b>not_admin</b>, falta poner tu mail en la variable ADMIN_EMAILS de Vercel.")+
+      '<button class="btn btn-ghost btn-sm" data-action="reload-metrics">'+ic('rotate',13)+' Reintentar</button>';
+  }
+  var m=a.metrics, r=m.reclutamiento, mt=m.mentor, cl=m.clima, sis=m.sistema;
+  var html='';
+
+  // --- Lo primero que querés ver ---
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">'+
+    admKpi("Entrevistas", r.entrevistas, r.d30+" en los últimos 30 días", "var(--ink)")+
+    admKpi("Simulacros del mentor", mt.simulacros, mt.simulacros_d30+" en los últimos 30 días", "var(--brick)")+
+    admKpi("Usuarios del mentor", mt.usuarios, mt.usuarios_d30+" nuevos este mes", "var(--brick)")+
+    admKpi("Cuentas de la consultora", m.cuentas.aprobadas, (m.cuentas.pendientes?(m.cuentas.pendientes+" esperando aprobación"):"ninguna pendiente"), m.cuentas.pendientes?"var(--amber)":"var(--green)")+
+    admKpi("Empleados administrados", m.personal.activos, "de "+m.personal.empleados+" cargados", "var(--teal)")+
+  '</div>';
+  if (m.cuentas.pendientes){
+    html+=Note("warn","Tenés <b>"+m.cuentas.pendientes+" cuenta(s) esperando</b> que las apruebes. Están en la solapa Cuentas.");
+  }
+
+  // --- Actividad ---
+  html+=admSeccion("Actividad mes a mes","Los dos productos juntos: si la barra roja crece, el mentor está agarrando vuelo.", admSerie(m.serie));
+
+  // --- Mentor: los tres números que deciden si el producto sirve ---
+  var termColor=(mt.terminacion==null)?"var(--muted)":(mt.terminacion>=60?"var(--green)":mt.terminacion>=40?"var(--amber)":"var(--brick)");
+  html+=admSeccion("Mentor IA · los números que importan",
+    "Terminación por debajo de 60% es problema del producto, no del marketing. La repetición es el mejor predictor de que alguien pagaría.",
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">'+
+      admKpi("Terminación", mt.terminacion==null?"—":(mt.terminacion+"%"), mt.terminados+" llegaron al informe, "+mt.abandonados+" quedaron a medias", termColor)+
+      admKpi("Repetición", mt.repeticion==null?"—":(mt.repeticion+"%"), mt.repitieron+" personas practicaron más de una vez", mt.repeticion>=25?"var(--green)":"var(--amber)")+
+      admKpi("Puntaje promedio", mt.promedio==null?"—":mt.promedio, "sobre 10, de los simulacros terminados", "var(--ink)")+
+    '</div>'+
+    '<div class="grid2" style="gap:14px;margin-top:14px">'+
+      '<div class="card">'+
+        '<h4 style="margin:0 0 10px;font-size:13.5px;color:var(--ink)">Para qué puestos practican</h4>'+
+        (mt.top_puestos.length?chartHBars(mt.top_puestos.map(function(x){ return { label:x.k, v:x.n }; }), { color:"var(--brick)" }):chartEmpty("Todavía nadie hizo un simulacro."))+
+      '</div>'+
+      '<div class="card">'+
+        '<h4 style="margin:0 0 10px;font-size:13.5px;color:var(--ink)">Con cuánta experiencia llegan</h4>'+
+        admFila("Junior (hasta 2 años)", mt.por_nivel.junior)+
+        admFila("Semi senior (2 a 5)", mt.por_nivel.semi)+
+        admFila("Senior (más de 5)", mt.por_nivel.senior)+
+        '<p style="margin:12px 0 0;font-size:11.5px;color:var(--faint)">Sirve para saber a quién le estás hablando de verdad, que no siempre es a quien creés.</p>'+
+      '</div>'+
+    '</div>');
+
+  // --- Reclutamiento ---
+  var d=r.distribucion, totalNotas=d.aprobado+d.medio+d.desaprobado;
+  html+=admSeccion("Reclutamiento y selección",
+    "Lo que pasó del lado de la consultora.",
+    '<div class="grid2" style="gap:14px">'+
+      '<div class="card">'+
+        '<h4 style="margin:0 0 10px;font-size:13.5px;color:var(--ink)">Cómo les fue a los candidatos</h4>'+
+        (totalNotas?(
+          '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px"><span style="color:var(--ink);font-weight:600">Aprobados (7 o más)</span><span style="color:var(--muted)">'+d.aprobado+'</span></div>'+encBar(Math.round(d.aprobado*100/totalNotas),"var(--green)")+'</div>'+
+          '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px"><span style="color:var(--ink);font-weight:600">Medios (5 a 7)</span><span style="color:var(--muted)">'+d.medio+'</span></div>'+encBar(Math.round(d.medio*100/totalNotas),"var(--amber)")+'</div>'+
+          '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px"><span style="color:var(--ink);font-weight:600">Desaprobados</span><span style="color:var(--muted)">'+d.desaprobado+'</span></div>'+encBar(Math.round(d.desaprobado*100/totalNotas),"var(--brick)")+'</div>'+
+          '<p style="margin:10px 0 0;font-size:12px;color:var(--muted)">Puntaje promedio: <b style="color:var(--ink)">'+(r.promedio==null?"—":r.promedio)+'</b> sobre 10.</p>'+
+          '<p style="margin:8px 0 0;font-size:11.5px;color:var(--faint)">Cada candidato que no queda es alguien a quien podés ofrecerle un simulacro gratis del mentor.</p>'
+        ):chartEmpty("Todavía no hay entrevistas evaluadas."))+
+      '</div>'+
+      '<div class="card">'+
+        '<h4 style="margin:0 0 10px;font-size:13.5px;color:var(--ink)">Volumen</h4>'+
+        admFila("Entrevistas esta semana", r.d7)+
+        admFila("CVs en el banco", r.cvs+(r.cvs_d30?(' <span style="color:var(--faint);font-weight:400">(+'+r.cvs_d30+' este mes)</span>'):''))+
+        admFila("Búsquedas analizadas", r.busquedas)+
+        admFila("Avisos publicados", r.avisos+" · "+r.avisos_activos+" activos")+
+      '</div>'+
+    '</div>'+
+    (r.top_puestos.length?('<div class="card" style="margin-top:14px"><h4 style="margin:0 0 10px;font-size:13.5px;color:var(--ink)">Los puestos que más entrevistás</h4>'+
+      chartHBars(r.top_puestos.map(function(x){ return { label:x.k, v:x.n }; }), { color:"var(--ch-1)" })+'</div>'):''));
+
+  // --- Clima ---
+  if (cl.encuestas || cl.respuestas || cl.planes){
+    html+=admSeccion("Clima y cultura","Lo que está midiendo el Módulo 3.",
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">'+
+        admKpi("eNPS", cl.enps==null?"—":String(cl.enps), cl.promotores+" promotores · "+cl.detractores+" detractores", cl.enps==null?"var(--muted)":(cl.enps>=30?"var(--green)":cl.enps>=0?"var(--amber)":"var(--brick)"))+
+        admKpi("Respuestas", cl.respuestas, cl.activas+" encuesta(s) activa(s)", "var(--ink)")+
+        admKpi("Planes abiertos", cl.planes_abiertos, "de "+cl.planes+" creados", cl.planes_abiertos?"var(--teal)":"var(--muted)")+
+        admKpi("Reconocimientos", cl.reconocimientos, cl.valores+" valores definidos", "var(--purple)")+
+      '</div>');
+  }
+
+  // --- Salud del sistema: qué falta configurar ---
+  var faltan=(sis.tablas||[]).filter(function(t){ return !t.ok; });
+  var cfg=sis.config;
+  var sem=function(ok, txt){ return '<span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:'+(ok?'var(--green)':'var(--brick)')+'">'+ic(ok?'check':'alert',13)+' '+esc(txt)+'</span>'; };
+  html+=admSeccion("Estado del sistema","Qué está conectado y qué falta. Si algo de acá está en rojo, hay una parte de la app que no funciona.",
+    '<div class="card">'+
+      (faltan.length
+        ? Note("warn","Faltan <b>"+faltan.length+" tabla(s)</b> en la base. Las áreas que las usan van a mostrar un cartel de error hasta que corras su SQL:<br>"+
+            faltan.map(function(t){ return '<code>'+esc(t.t)+'</code> → '+esc(t.sql); }).join("<br>"))
+        : Note("ok","Todas las tablas están creadas. No falta correr ningún SQL."))+
+      '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px">'+
+        sem(cfg.gemini,"Inteligencia artificial (Gemini)")+
+        sem(cfg.brevo,"Envío de mails (Brevo)")+
+        sem(cfg.cloudinary,"Guardado de audios (Cloudinary)")+
+        sem(cfg.admin_emails,"Panel de administrador")+
+        sem(cfg.cron_secret,"Envío programado de encuestas")+
+      '</div>'+
+    '</div>');
+
+  html+='<p style="margin:22px 0 0;font-size:11.5px;color:var(--faint)">Calculado el '+esc(fmtDateTimeShort(Date.parse(m.generado)))+'. '+
+    'De los simulacros del mentor sólo se muestran números agregados: las respuestas de cada persona no salen nunca de su cuenta.</p>';
+  return html;
+}
+
 /* ===================== ÁREA DE ADMINISTRACIÓN (solo admin) ===================== */
 Screens["admin"] = function(){
   if (!isAdminUser()){
     return Header() + backlink("go-hub","Volver a áreas") +
       Note("err", "Esta área es solo para administradores.");
   }
+  var tab=state.admin.tab||"metricas";
+  var solapa=function(k, label, icono){
+    var on=(tab===k);
+    return '<button class="btn btn-sm" data-action="admin-tab" data-t="'+k+'" style="gap:7px;'+
+      (on?'background:var(--teal-tint);color:var(--teal-strong);border:1px solid transparent;font-weight:600':'background:transparent;color:var(--muted);border:1px solid transparent')+'">'+ic(icono,14)+' '+label+'</button>';
+  };
+  var pendientes=(state.admin.items||[]).filter(function(p){ return !p.approved; }).length;
   return Header() +
     backlink("go-hub","Volver a áreas") +
-    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;flex-wrap:wrap">' +
-      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('shield',20)+'<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">Administración</h2></div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;flex-wrap:wrap">' +
+      '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('shield',20)+'<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">Panel del dueño</h2></div>' +
       '<button class="btn btn-ghost btn-sm" data-action="reload-admin">'+ic('rotate',13)+' Actualizar</button>' +
     '</div>' +
-    '<p style="font-size:13px;color:var(--muted);margin:0 0 18px">Cuentas registradas en la consultora. Aprobá a cada persona para darle acceso, o revocá el acceso cuando quieras. Solo vos ves esta sección.</p>' +
-    AdminPanel();
+    '<p style="font-size:13px;color:var(--muted);margin:0 0 6px">Todo lo que pasa en la plataforma, los dos productos juntos. Sólo lo ves vos ('+esc((currentUser()||{}).email||"")+').</p>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 18px;border-bottom:1px solid var(--border-soft);padding-bottom:10px">'+
+      solapa("metricas","Métricas","eye")+
+      solapa("cuentas","Cuentas"+(pendientes?(" ("+pendientes+")"):""),"users")+
+    '</div>' +
+    (tab==="cuentas"
+      ? ('<p style="font-size:13px;color:var(--muted);margin:0 0 14px">Cuentas registradas en la consultora. Aprobá a cada persona para darle acceso, o revocáselo cuando quieras. Los usuarios del Mentor IA no aparecen acá: se registran solos y no tocan nada de RR. HH.</p>' + AdminPanel())
+      : AdminMetrics());
 };
 
 function guideHidden(){ try{ return lget("voz_guide")==="off"; }catch(e){ return false; } }
@@ -10510,7 +10699,13 @@ function saveMovement(){
     render();
   });
 }
-function goAdmin(){ if(!isAdminUser()) return; state.error=null; state.screen="admin"; render(); loadAdminList(); }
+function goAdmin(){
+  if(!isAdminUser()) return;
+  state.error=null; state.admin.tab=state.admin.tab||"metricas";
+  state.screen="admin"; render();
+  loadAdminList();
+  if(state.admin.metrics===null && !state.admin.mLoading) loadAdminMetrics();
+}
 
 /* ================================================================
    ACTIONS
@@ -11487,6 +11682,8 @@ function bind(){
       else if (act === "doc-sign-font"){ if(state.signdoc){ state.signdoc.font=parseInt(el.getAttribute("data-f"),10)||1; render(); } }
       else if (act === "doc-sign-do"){ doSignDoc(); }
       else if (act === "go-admin") goAdmin();
+      else if (act === "admin-tab"){ state.admin.tab=el.getAttribute("data-t")||"metricas"; render(); if(state.admin.tab==="metricas" && state.admin.metrics===null && !state.admin.mLoading) loadAdminMetrics(); if(state.admin.tab==="cuentas" && state.admin.items===null) loadAdminList(); }
+      else if (act === "reload-metrics"){ loadAdminMetrics(); }
       else if (act === "copy-bulk"){
         var lines=(state.bulk.results||[]).map(function(r){ return (r.name||"Candidato")+(r.email?(" · "+r.email):"")+" · Código: "+(r.code||"-")+" · "+(r.link||"-"); });
         copyText(lines.join("\n"), function(){ alert("Lista copiada."); });
@@ -11496,7 +11693,7 @@ function bind(){
       else if (act === "go-signup"){ state.error=null; state.screen="rec-signup"; render(); }
       else if (act === "logout") doLogout();
       else if (act === "recheck-approval") routeAfterAuth();
-      else if (act === "reload-admin") loadAdminList();
+      else if (act === "reload-admin"){ loadAdminList(); loadAdminMetrics(); }
       else if (act === "approve-rec"){ adminApprove(el.getAttribute("data-id"), true); }
       else if (act === "revoke-rec"){ if(confirm("¿Revocar el acceso de este reclutador? Vuelve a quedar pendiente.")) adminApprove(el.getAttribute("data-id"), false); }
       else if (act === "reject-rec"){ if(confirm("¿Desaprobar esta solicitud? El reclutador va a desaparecer de la lista. Si más adelante lo querés aceptar, va a tener que registrarse de nuevo.")) adminReject(el.getAttribute("data-id")); }
