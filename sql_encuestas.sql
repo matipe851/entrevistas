@@ -60,28 +60,28 @@ alter table public.climate_responses enable row level security;
 -- así que no hace falta ninguna política pública.
 drop policy if exists "climate_surveys_select" on public.climate_surveys;
 create policy "climate_surveys_select" on public.climate_surveys
-  for select to authenticated using (true);
+  for select to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "climate_surveys_insert" on public.climate_surveys;
 create policy "climate_surveys_insert" on public.climate_surveys
-  for insert to authenticated with check (true);
+  for insert to authenticated with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "climate_surveys_update" on public.climate_surveys;
 create policy "climate_surveys_update" on public.climate_surveys
-  for update to authenticated using (true) with check (true);
+  for update to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved)) with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "climate_surveys_delete" on public.climate_surveys;
 create policy "climate_surveys_delete" on public.climate_surveys
-  for delete to authenticated using (true);
+  for delete to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "climate_responses_select" on public.climate_responses;
 create policy "climate_responses_select" on public.climate_responses
-  for select to authenticated using (true);
+  for select to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "climate_responses_insert" on public.climate_responses;
 create policy "climate_responses_insert" on public.climate_responses
-  for insert to authenticated with check (true);
+  for insert to authenticated with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "climate_responses_delete" on public.climate_responses;
 create policy "climate_responses_delete" on public.climate_responses
-  for delete to authenticated using (true);
+  for delete to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));

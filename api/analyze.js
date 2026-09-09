@@ -181,6 +181,98 @@ function questionsPrompt(body, companyWeb) {
 }
 
 // Modelo principal + respaldos por si Google retira alguno.
+/* ============================================================
+   MENTOR IA · el producto para el candidato
+   Misma casa, otra vara: acá la IA no filtra postulantes, entrena a
+   una persona que tiene una entrevista esta semana.
+   ============================================================ */
+var MENTOR_LEVELS = {
+  junior: "sin experiencia o hasta 2 años",
+  semi: "entre 2 y 5 años de experiencia",
+  senior: "más de 5 años de experiencia, con gente a cargo o proyectos propios"
+};
+/* Las preguntas del simulacro. Mezcla obligatoria para que no salgan
+   seis preguntas de la misma familia. */
+function mentorQuestionsPrompt(b, companyWeb) {
+  var pos = String(b.position || "").slice(0, 200);
+  var comp = String(b.company || "").slice(0, 160);
+  var lvl = MENTOR_LEVELS[String(b.level || "semi")] || MENTOR_LEVELS.semi;
+  var jd = String(b.jobDesc || "").slice(0, 4000);
+  var cv = String(b.cvText || "").slice(0, 6000);
+  var n = Math.min(8, Math.max(4, parseInt(b.count, 10) || 6));
+  return "Sos un entrevistador de RR.HH. con veinte años de oficio, en Argentina. " +
+    "Vas a tomarle una entrevista de práctica a alguien que se postula a: " + pos + ".\n" +
+    (comp ? ("La empresa es: " + comp + ".\n") : "") +
+    "Nivel de la persona: " + lvl + ".\n" +
+    (jd ? ("\nDESCRIPCIÓN DEL PUESTO (usala para que las preguntas sean de ESTE puesto y no genéricas):\n\"\"\"\n" + jd + "\n\"\"\"\n") : "") +
+    (cv ? ("\nCV DE LA PERSONA (hacé al menos una pregunta sobre algo concreto que figure acá):\n\"\"\"\n" + cv + "\n\"\"\"\n") : "") +
+    (companyWeb ? ("\nINFO DE LA WEB DE LA EMPRESA:\n\"\"\"\n" + companyWeb.slice(0, 3000) + "\n\"\"\"\n") : "") +
+    "\nArmá " + n + " preguntas para hacerle EN VOZ ALTA, en este orden:\n" +
+    "1) Una de apertura tipo \"contame de vos\" adaptada al puesto.\n" +
+    "2) Dos de experiencia concreta (que la obliguen a dar un ejemplo real, con situación, acción y resultado).\n" +
+    "3) Una técnica o de conocimiento propia del puesto, al nivel indicado.\n" +
+    "4) Una incómoda pero justa (un hueco del CV, un cambio de rubro, por qué se fue, cómo maneja un conflicto).\n" +
+    "5) Una de motivación y encaje con la empresa o el puesto.\n" +
+    "Si pediste más de 6, sumá más de experiencia concreta.\n\n" +
+    "REGLAS:\n" +
+    "- Español rioplatense, de vos. Como se habla, no como se escribe.\n" +
+    "- Una sola pregunta por ítem. Cortas: se tienen que poder escuchar y entender de una.\n" +
+    "- Nada de preguntas trampa ni acertijos.\n" +
+    "- \"criterio\" es qué tendría que tener una buena respuesta a ESA pregunta: es lo que se usa después para corregir.\n" +
+    "- \"seconds\" es cuánto tiempo darle para responder (60 a 150 según qué tan compleja sea).\n\n" +
+    "Devolvé EXCLUSIVAMENTE este JSON:\n" +
+    '{ "questions": [ { "text": "", "category": "Presentación|Experiencia|Competencias|Técnica|Motivación", "criterio": "", "seconds": 90 } ] }';
+}
+/* El informe. Acá está el producto: la nota importa menos que la
+   evidencia y la reescritura. */
+function mentorReportPrompt(b) {
+  var pos = String(b.position || "").slice(0, 200);
+  var comp = String(b.company || "").slice(0, 160);
+  var lvl = MENTOR_LEVELS[String(b.level || "semi")] || MENTOR_LEVELS.semi;
+  var bloques = (Array.isArray(b.answers) ? b.answers : []).slice(0, 12).map(function (a, i) {
+    var sg = a.signals || {};
+    var medido = [];
+    if (sg.durationSec != null) medido.push("habló " + Math.round(sg.durationSec) + "s");
+    if (sg.words != null) medido.push(sg.words + " palabras");
+    if (sg.fillers) medido.push(sg.fillers + " muletillas");
+    if (sg.longestSilence) medido.push("silencio más largo " + sg.longestSilence + "s");
+    if (sg.wpm) medido.push(Math.round(sg.wpm) + " palabras/min");
+    return "PREGUNTA " + (i + 1) + ": " + String(a.question || "").slice(0, 500) + "\n" +
+      (a.criterio ? ("Qué se esperaba: " + String(a.criterio).slice(0, 400) + "\n") : "") +
+      "RESPUESTA (transcripción textual): " + (String(a.transcript || "").slice(0, 3000) || "[no contestó]") + "\n" +
+      (medido.length ? ("Medido: " + medido.join(", ") + "\n") : "");
+  }).join("\n");
+
+  return "Sos un reclutador senior argentino devolviéndole una crítica honesta a alguien que practicó una entrevista para: " + pos + "." +
+    (comp ? (" La empresa es " + comp + ".") : "") + " Nivel: " + lvl + ".\n\n" +
+    "TU TRABAJO: decirle la verdad de manera útil. Ni felicitarlo de gusto ni destruirlo. " +
+    "Si la respuesta fue floja, la nota tiene que ser floja: un informe amable que no sirve para nada es peor que no dárselo.\n\n" +
+    "CÓMO PUNTUAR (1 a 10 por dimensión):\n" +
+    "- claridad: ¿se entiende? ¿tiene estructura (situación, qué hizo, qué resultado)? 3=se va por las ramas y no cierra; 6=se entiende pero le sobra o le falta; 9=responde en partes y cierra con un resultado concreto.\n" +
+    "- seguridad: ¿se planta? 3=se disculpa, duda de todo, se desdice; 6=firme por momentos; 9=dice \"esto no lo manejo, lo aprendería así\" sin pedir perdón tres veces.\n" +
+    "- conocimiento: sustancia técnica para el nivel. 3=generalidades; 6=sabe pero no lo ejemplifica; 9=ejemplos concretos con herramientas, números o decisiones propias.\n" +
+    "- actitud: energía y cómo habla de trabajos anteriores. 3=se queja, culpa a otros; 6=neutro; 9=cuenta un conflicto sin hablar mal de nadie.\n" +
+    "- compatibilidad: encaje real con ESTE puesto. 3=podría estar postulándose a cualquier cosa; 9=conecta su experiencia con algo puntual del puesto o la empresa.\n\n" +
+    "REGLAS QUE NO SE NEGOCIAN:\n" +
+    "- Toda nota y todo punto flojo lleva \"evidencia\": una CITA TEXTUAL de lo que la persona dijo. Si no podés citar, no lo digas.\n" +
+    "- Usá lo medido (muletillas, silencios, duración) para la nota de seguridad y claridad, y mencionalo con el número.\n" +
+    "- En \"reescrituras\" tomá las DOS peores respuestas y reescribilas como las diría alguien que queda, usando LA EXPERIENCIA QUE LA PERSONA CONTÓ. No inventes logros que no dijo. Si no contó nada, marcá qué le tendría que haber puesto.\n" +
+    "- Si no contestó una pregunta, eso pesa y se dice.\n" +
+    "- Hablale de vos, en rioplatense, directo y sin vueltas. Nada de \"es importante destacar que\".\n\n" +
+    "LAS RESPUESTAS:\n\"\"\"\n" + bloques + "\n\"\"\"\n\n" +
+    "Devolvé EXCLUSIVAMENTE este JSON:\n" +
+    '{ "score": 0, "titular": "", "resumen": "", ' +
+    '"dimensiones": [ { "key": "claridad|seguridad|conocimiento|actitud|compatibilidad", "score": 0, "comentario": "", "evidencia": "" } ], ' +
+    '"fortalezas": [ { "titulo": "", "detalle": "", "evidencia": "" } ], ' +
+    '"mejoras": [ { "titulo": "", "detalle": "", "como": "" } ], ' +
+    '"reescrituras": [ { "pregunta": "", "tuya": "", "mejor": "", "porque": "" } ], ' +
+    '"preguntas_al_entrevistador": [ "" ], ' +
+    '"si_fuera_real": "" }\n' +
+    "\"score\" es de 0 a 10 con un decimal, coherente con las dimensiones. \"titular\" es una frase de 8 palabras que resuma la entrevista. " +
+    "\"si_fuera_real\" es qué habría pasado si esta entrevista era de verdad, en una o dos frases sin anestesia. " +
+    "3 fortalezas, 3 mejoras, 2 reescrituras y 4 preguntas para hacerle al entrevistador (específicas de este puesto, que dejen bien parada a la persona).";
+}
+
 var MODEL_FALLBACKS = [MODEL, "gemini-flash-latest", "gemini-2.5-flash"];
 async function callOneModel(model, key, parts, maxTokens, temp, thinkingOff) {
   var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
@@ -318,6 +410,29 @@ module.exports = async function handler(req, res) {
       var qsr = parsedQ && Array.isArray(parsedQ.questions) ? parsedQ.questions : null;
       if (!qsr || !qsr.length) { res.status(200).json({ ok: false, error: "parse_error" }); return; }
       res.status(200).json({ ok: true, questions: qsr, usedCV: !!(body.cvText && body.cvText.length >= 40), usedWeb: !!companyWeb });
+      return;
+    }
+
+    if (body.task === "mentor_questions") {
+      var mPos = String(body.position || "").trim();
+      if (!mPos) { res.status(200).json({ ok: false, error: "no_position" }); return; }
+      var mWeb = body.companyUrl ? await fetchCompanyWeb(body.companyUrl) : "";
+      var gmq = await callGemini(key, [{ text: mentorQuestionsPrompt(body, mWeb) }], 4096, 0.8);
+      if (!gmq.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gmq.data && gmq.data.error && gmq.data.error.message) || ("HTTP " + gmq.status) }); return; }
+      var pmq = parseJson(extractText(gmq.data));
+      var mqs = pmq && Array.isArray(pmq.questions) ? pmq.questions : null;
+      if (!mqs || !mqs.length) { res.status(200).json({ ok: false, error: "parse_error" }); return; }
+      res.status(200).json({ ok: true, questions: mqs.slice(0, 8) });
+      return;
+    }
+
+    if (body.task === "mentor_report") {
+      if (!Array.isArray(body.answers) || !body.answers.length) { res.status(200).json({ ok: false, error: "no_answers" }); return; }
+      var gmr = await callGemini(key, [{ text: mentorReportPrompt(body) }], 8192, 0.35);
+      if (!gmr.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gmr.data && gmr.data.error && gmr.data.error.message) || ("HTTP " + gmr.status) }); return; }
+      var pmr = parseJson(extractText(gmr.data));
+      if (!pmr || typeof pmr !== "object" || !Array.isArray(pmr.dimensiones)) { res.status(200).json({ ok: false, error: "parse_error" }); return; }
+      res.status(200).json({ ok: true, report: pmr });
       return;
     }
 
