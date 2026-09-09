@@ -16,8 +16,9 @@
 --    announcements  -> comunicación interna (área 6). Guardan a qué
 --                      cosa refieren (related_type / related_id).
 --
---  Correr una sola vez en el SQL Editor de Supabase, después de
---  sql_encuestas.sql.
+--  Correr una sola vez en el SQL Editor de Supabase. Si todavía no
+--  corriste sql_encuestas.sql no importa: este archivo funciona igual
+--  y el vínculo con las encuestas se agrega solo cuando esa tabla exista.
 -- ============================================================
 
 /* ---------- Área 4 · Valores y cultura ---------- */
@@ -61,7 +62,7 @@ create table if not exists public.action_plans (
   description       text,
   source            text not null default 'manual'
                     check (source in ('manual','encuesta','enps','valores','feedback')),
-  survey_id         uuid references public.climate_surveys(id) on delete set null, -- encuesta de origen (área 1)
+  survey_id         uuid,                              -- encuesta de origen (área 1); el vínculo se agrega abajo
   survey_title      text,
   dimension         text,                              -- credibilidad | respeto | … | valores
   area              text,                              -- área o equipo alcanzado
@@ -126,4 +127,18 @@ begin
     execute format('drop policy if exists "%1$s_delete" on public.%1$I', t);
     execute format('create policy "%1$s_delete" on public.%1$I for delete to authenticated using (%2$s)', t, REGLA_RRHH);
   end loop;
+end $$;
+
+/* ---------- Vínculo con las encuestas del área 1 ----------
+   Sólo se agrega si esa tabla ya existe. Si todavía no corriste
+   sql_encuestas.sql, esto se saltea y el módulo funciona igual: cuando
+   la corras, volvés a pasar este archivo y el vínculo queda hecho. */
+do $$
+begin
+  if to_regclass('public.climate_surveys') is not null
+     and not exists (select 1 from pg_constraint where conname = 'action_plans_survey_fk') then
+    alter table public.action_plans
+      add constraint action_plans_survey_fk
+      foreign key (survey_id) references public.climate_surveys(id) on delete set null;
+  end if;
 end $$;
