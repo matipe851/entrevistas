@@ -5,10 +5,12 @@
 --  propio usuario (una persona que busca trabajo), separado del
 --  usuario de la consultora.
 --
---  Dos tablas nuevas:
+--  Tres tablas nuevas:
 --    mentor_profiles -> quién es el candidato (se crea sola al entrar).
 --    mentor_sessions -> cada simulacro con sus preguntas, respuestas
 --                       transcriptas e informe.
+--    mentor_cvs      -> cada CV que subió, con el análisis y la versión
+--                       adaptada al puesto que busca.
 --
 --  Y una parte IMPORTANTE al final: cerrarle las tablas de la
 --  consultora a los usuarios del mentor. Leela antes de correr.
@@ -44,6 +46,25 @@ create table if not exists public.mentor_sessions (
 );
 create index if not exists mentor_sessions_user_idx on public.mentor_sessions (user_id, created_at desc);
 
+/* ---------- Cada CV analizado y adaptado ----------
+   Guarda el texto del CV que subió la persona y el informe con el CV
+   reescrito, así puede volver a bajarlo sin gastar otra vez la IA. */
+create table if not exists public.mentor_cvs (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null default auth.uid(),
+  email         text,
+  position      text not null,                 -- puesto al que apunta
+  company       text,
+  level         text,                          -- junior | semi | senior
+  job_desc      text,                          -- el aviso, si lo pegó
+  file_name     text,                          -- nombre del PDF original
+  cv_text       text,                          -- texto del CV tal como estaba
+  report        jsonb,                         -- diagnóstico + CV adaptado
+  score         numeric,                       -- qué tan bien competía el original
+  created_at    timestamptz not null default now()
+);
+create index if not exists mentor_cvs_user_idx on public.mentor_cvs (user_id, created_at desc);
+
 /* ---------- Seguridad: cada candidato ve SÓLO lo suyo ----------
    Ojo que acá el criterio es distinto al de la consultora: en las
    tablas de RR.HH. cualquier usuario autenticado (de la empresa) puede
@@ -51,6 +72,7 @@ create index if not exists mentor_sessions_user_idx on public.mentor_sessions (u
    ver el simulacro de otro candidato ni por casualidad. */
 alter table public.mentor_profiles enable row level security;
 alter table public.mentor_sessions enable row level security;
+alter table public.mentor_cvs enable row level security;
 
 drop policy if exists "mentor_profiles_own" on public.mentor_profiles;
 create policy "mentor_profiles_own" on public.mentor_profiles
@@ -58,6 +80,10 @@ create policy "mentor_profiles_own" on public.mentor_profiles
 
 drop policy if exists "mentor_sessions_own" on public.mentor_sessions;
 create policy "mentor_sessions_own" on public.mentor_sessions
+  for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "mentor_cvs_own" on public.mentor_cvs;
+create policy "mentor_cvs_own" on public.mentor_cvs
   for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 

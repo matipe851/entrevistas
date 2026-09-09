@@ -1718,7 +1718,8 @@ var state = {
   com:   { loading:false, items:null, error:null, msg:"", form:null, saving:false, recipInput:"", send:null, pending:null },
   mod3:  { loading:false, kpis:null },
   /* Mentor IA (producto para candidatos, otra puerta) */
-  mentor:{ loading:false, sessions:null, error:null, msg:"", form:null, current:null, report:null, proc:null, saved:null },
+  mentor:{ loading:false, sessions:null, error:null, msg:"", form:null, current:null, report:null, proc:null, saved:null,
+           cv:{ list:null, loading:false, form:null, report:null, saved:null, working:false, error:null, msg:"" } },
   encp: null,
   fichador: null,
   sign: null,
@@ -1804,7 +1805,7 @@ Screens.home = function(){
     '<button class="tile" data-action="go-mentor" style="width:100%;border-color:var(--brick)">' +
       '<span style="color:var(--brick)">' + ic('mic',24) + '</span>' +
       '<h3>Mentor para entrevistas con IA</h3>' +
-      '<p>¿Tenés una entrevista esta semana? Practicala hablando con nuestra IA y recibí un informe con qué mejorar. Primer simulacro gratis.</p>' +
+      '<p>¿Tenés una entrevista esta semana? Adaptá tu CV al puesto y practicala hablando con nuestra IA. Te devolvemos el CV reescrito y un informe con qué mejorar. El primero es gratis.</p>' +
       '<span style="margin-top:6px;font-size:11.5px;font-weight:700;color:var(--brick);letter-spacing:.03em">PARA QUIEN BUSCA TRABAJO ›</span>' +
     '</button>' +
   '</div>' +
@@ -4821,6 +4822,7 @@ function mentorAfterAuth(){
   state.screen="mentor-home"; render();
   dbEnsureMentorProfile();
   loadMentorSessions();
+  loadMentorCvs();
 }
 function loadMentorSessions(){
   if(!(supaConfigured() && isLoggedIn())){ state.mentor.sessions=[]; render(); return; }
@@ -5119,15 +5121,26 @@ Screens["mentor-landing"] = function(){
   };
   return mentorHeader() +
   '<div style="max-width:560px;margin:0 auto">'+
-    '<h2 style="font-size:25px;font-weight:700;letter-spacing:-.02em;margin:0 0 10px;line-height:1.2">Tenés una entrevista esta semana.<br>Practicala hoy.</h2>'+
-    '<p style="font-size:14.5px;color:var(--muted);line-height:1.6;margin:0 0 20px">Te hacemos una entrevista real, hablada y con tiempo, para el puesto al que te estás postulando. Al final te damos el informe que escribiría un reclutador sobre vos: qué dijiste mal, qué contestar en su lugar y qué preguntas conviene que hagas.</p>'+
+    '<h2 style="font-size:25px;font-weight:700;letter-spacing:-.02em;margin:0 0 10px;line-height:1.2">Tenés una entrevista esta semana.<br>Preparate hoy.</h2>'+
+    '<p style="font-size:14.5px;color:var(--muted);line-height:1.6;margin:0 0 20px">Dos cosas, del mismo lado del mostrador: adaptamos tu CV al puesto al que te postulás y te tomamos la entrevista, hablada y con tiempo. Al final te damos el informe que escribiría un reclutador sobre vos: qué dijiste mal, qué contestar en su lugar y qué preguntas conviene que hagas.</p>'+
     ErrBox()+
     '<button class="btn btn-block" data-action="mentor-login" style="background:#fff;border:1px solid var(--border);color:#1f2937;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600;padding:13px">'+googleG(18)+' Entrar con Google y practicar</button>'+
     '<p style="margin:10px 0 26px;font-size:12px;color:var(--faint);text-align:center">Tu primer simulacro es gratis. No pedimos tarjeta ni permisos de tu correo.</p>'+
+    '<div class="card" style="margin-bottom:12px">'+
+      '<h3 style="margin:0 0 10px;font-size:15px;color:var(--ink)">Lo que hacés acá adentro</h3>'+
+      '<div style="display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border-soft)">'+
+        '<span style="flex-shrink:0;color:var(--brick)">'+ic('file',18)+'</span>'+
+        '<div><p style="margin:0;font-size:14px;font-weight:700;color:var(--ink)">Tu CV, adaptado a ese puesto</p>'+
+        '<p style="margin:2px 0 0;font-size:13px;color:var(--muted);line-height:1.55">Lo subís y te decimos qué ve un reclutador en los siete segundos que le da. Te lo devolvemos reescrito para la búsqueda, con tu experiencia real y listo para descargar.</p></div></div>'+
+      '<div style="display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border-soft)">'+
+        '<span style="flex-shrink:0;color:var(--brick)">'+ic('mic',18)+'</span>'+
+        '<div><p style="margin:0;font-size:14px;font-weight:700;color:var(--ink)">La entrevista, practicada en serio</p>'+
+        '<p style="margin:2px 0 0;font-size:13px;color:var(--muted);line-height:1.55">Seis preguntas habladas, con reloj y con repreguntas cuando titubeás. Después, el informe con qué corregir.</p></div></div>'+
+    '</div>'+
     '<div class="card">'+
-      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Cómo funciona</h3>'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Cómo funciona el simulacro</h3>'+
       '<p style="margin:0 0 6px;font-size:12.5px;color:var(--muted)">Quince minutos, desde el celular o la computadora.</p>'+
-      paso(1,"Nos contás a qué puesto vas","El puesto, la empresa si la sabés y tu CV si querés que las preguntas sean sobre tu experiencia.")+
+      paso(1,"Nos contás a qué puesto vas","El puesto, la empresa si la sabés y tu CV —el que adaptaste acá o el que tengas— para que las preguntas sean sobre tu experiencia.")+
       paso(2,"Te hacemos seis preguntas, habladas","Con tiempo, como en la real. Si titubeás o contestás corto, te repreguntamos.")+
       paso(3,"Te damos el informe","Puntaje, qué hiciste bien, qué corregir, y tus dos peores respuestas reescritas como las diría alguien que queda.")+
     '</div>'+
@@ -5135,35 +5148,83 @@ Screens["mentor-landing"] = function(){
       '<button class="backlink" data-action="home" style="margin-top:10px">'+ic('back',13)+' Volver al inicio</button></p>'+
   '</div>';
 };
-/* Casa del candidato: empezar uno nuevo y ver los anteriores. */
+/* Casa del candidato: sus dos herramientas y lo que ya hizo con cada una. */
 Screens["mentor-home"] = function(){
   var m=state.mentor;
   var u=currentUser();
   var nombre=((u&&u.user_metadata&&(u.user_metadata.full_name||u.user_metadata.name))||"").split(" ")[0];
   var html=mentorHeader(true);
-  html+='<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px">'+
-    '<div><h2 style="font-size:21px;font-weight:700;letter-spacing:-.02em;margin:0">'+(nombre?('Hola, '+esc(nombre)+'.'):'Hola.')+'</h2>'+
-    '<p style="margin:4px 0 0;font-size:13.5px;color:var(--muted)">¿Para qué entrevista querés prepararte?</p></div>'+
-    '<button class="btn btn-primary" data-action="mentor-new">'+ic('mic',15)+' Nuevo simulacro</button>'+
+  html+='<div style="margin-bottom:18px">'+
+    '<h2 style="font-size:21px;font-weight:700;letter-spacing:-.02em;margin:0">'+(nombre?('Hola, '+esc(nombre)+'.'):'Hola.')+'</h2>'+
+    '<p style="margin:4px 0 0;font-size:13.5px;color:var(--muted)">Una entrevista se gana dos veces: primero con el CV, después hablando. Acá practicás las dos.</p>'+
   '</div>';
   if (m.msg) html+=Note("ok", esc(m.msg));
   if (m.error) html+=Note("err", esc(m.error));
-  if (m.loading || m.sessions===null) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Buscando tus simulacros…</p></div>';
+  if (m.cv.msg) html+=Note("ok", esc(m.cv.msg));
+  if (m.cv.error) html+=Note("err", esc(m.cv.error));
+
+  // Las dos puertas del producto, una al lado de la otra.
+  html+='<div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin-bottom:24px">'+
+    '<button class="tile" data-action="mentor-cv-new" style="width:100%;border-color:var(--brick)">'+
+      '<span style="color:var(--brick)">'+ic('file',24)+'</span>'+
+      '<h3>Adaptá tu CV al puesto</h3>'+
+      '<p>Subilo y te decimos qué ve un reclutador cuando lo abre. Te lo devolvemos reescrito para la búsqueda a la que te postulás, con tu experiencia real.</p>'+
+      '<span style="margin-top:6px;font-size:11.5px;font-weight:700;color:var(--brick);letter-spacing:.03em">EMPEZÁ POR ACÁ ›</span>'+
+    '</button>'+
+    '<button class="tile" data-action="mentor-new" style="width:100%">'+
+      '<span style="color:var(--brick)">'+ic('mic',24)+'</span>'+
+      '<h3>Practicá la entrevista</h3>'+
+      '<p>Seis preguntas habladas, con tiempo, como en la real. Al final, el informe que escribiría un reclutador sobre vos.</p>'+
+      '<span style="margin-top:6px;font-size:11.5px;font-weight:700;color:var(--muted);letter-spacing:.03em">QUINCE MINUTOS ›</span>'+
+    '</button>'+
+  '</div>';
+
+  html+=mentorHomeCvs();
+  html+=mentorHomeSimulacros();
+  return html;
+};
+/* Los CV que ya analizó. */
+function mentorHomeCvs(){
+  var c=state.mentor.cv;
+  var items=c.list||[];
+  if (!items.length) return '';
+  var html='<h3 style="font-size:15px;font-weight:700;color:var(--ink);margin:0 0 8px">Tus CV</h3>';
+  html+='<div style="display:grid;gap:8px;margin-bottom:24px">';
+  items.forEach(function(x){
+    var sc=Number(x.score);
+    html+='<div class="qa-item" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
+      '<span style="flex-shrink:0;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--surface-2);color:'+mentorScoreColor(sc)+';font-weight:800;font-size:16px">'+(isFinite(sc)?sc.toFixed(1):ic('file',18))+'</span>'+
+      '<div style="flex:1;min-width:160px">'+
+        '<p style="margin:0;font-weight:700;font-size:14.5px;color:var(--ink)">'+esc(x.position||"CV")+'</p>'+
+        '<p style="margin:2px 0 0;font-size:12px;color:var(--muted)">'+(x.company?(esc(x.company)+' · '):'')+
+          (x.file_name?(esc(x.file_name)+' · '):'')+climaFmtDate(x.created_at)+'</p>'+
+      '</div>'+
+      '<button class="btn btn-ghost btn-sm" data-action="mentor-cv-open" data-id="'+esc(x.id)+'">'+ic('eye',13)+' Ver el CV adaptado</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="mentor-cv-del" data-id="'+esc(x.id)+'" style="color:var(--brick)">'+ic('trash',13)+'</button>'+
+    '</div>';
+  });
+  html+='</div>';
+  return html;
+}
+/* Los simulacros que ya hizo, con su evolución. */
+function mentorHomeSimulacros(){
+  var m=state.mentor;
+  if (m.loading || m.sessions===null) return '<div class="center-block">'+ic('loader',26,'spin')+'<p>Buscando tus simulacros…</p></div>';
 
   var listos=(m.sessions||[]).filter(function(s){ return s.status==="listo"; });
-  if (!listos.length){
-    html+='<div class="center-block" style="padding:30px 14px">'+ic('mic',28)+
+  if (!(m.sessions||[]).length){
+    return '<div class="center-block" style="padding:30px 14px">'+ic('mic',28)+
       '<h2 style="font-size:16px">Todavía no practicaste</h2>'+
       '<p>Son quince minutos y te vas con un informe concreto de qué mejorar. Necesitás un lugar tranquilo y auriculares con micrófono, si tenés.</p>'+
       '<button class="btn btn-primary btn-sm" data-action="mentor-new" style="margin-top:12px">'+ic('mic',14)+' Empezar mi primer simulacro</button></div>';
-    return html;
   }
+  var html='<h3 style="font-size:15px;font-weight:700;color:var(--ink);margin:0 0 8px">Tus simulacros</h3>';
   // Evolución: lo que hace que valga la pena volver.
   if (listos.length>1){
     var ord=listos.slice().reverse();
     var prim=Number(ord[0].score)||0, ult=Number(ord[ord.length-1].score)||0;
     var dif=ult-prim;
-    html+='<div class="card" style="margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">'+
+    html+='<div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">'+
       '<div><p style="margin:0;font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em">Tu evolución</p>'+
       '<p style="margin:4px 0 0;font-size:22px;font-weight:800;color:'+(dif>=0?'var(--green)':'var(--brick)')+'">'+(dif>=0?'+':'')+dif.toFixed(1)+' puntos</p>'+
       '<p style="margin:2px 0 0;font-size:12.5px;color:var(--muted)">del primer simulacro ('+prim.toFixed(1)+') al último ('+ult.toFixed(1)+')</p></div>'+
@@ -5192,7 +5253,7 @@ Screens["mentor-home"] = function(){
   });
   html+='</div>';
   return html;
-};
+}
 /* Configurar el simulacro: una sola pantalla. */
 Screens["mentor-new"] = function(){
   var f=state.mentor.form||{};
@@ -5351,6 +5412,526 @@ Screens["mentor-report"] = function(){
     '<button class="btn btn-ghost btn-sm" data-action="mentor-home">'+ic('home',14)+' Mis simulacros</button>'+
   '</div>';
   html+='<p style="margin:16px 0 0;font-size:11.5px;color:var(--faint);max-width:60ch">Este informe es una práctica: lo escribe una IA con el criterio de un reclutador, no una empresa que te esté evaluando de verdad.</p>';
+  return html;
+};
+
+/* =====================================================================
+   MENTOR IA · MI CV
+
+   La otra mitad del producto. Antes de practicar la entrevista hay algo
+   que pasa primero: mandar el CV. Acá la persona sube el suyo, le dice a
+   qué puesto se postula, y la IA le devuelve dos cosas: qué ve un
+   reclutador cuando lo abre, y el mismo CV reescrito para ESE puesto.
+
+   La regla del producto, que también está escrita en el prompt: no se
+   inventa nada. Se reordena, se recorta y se dice mejor lo que la
+   persona ya vivió. Lo que falta queda marcado entre corchetes para que
+   lo complete ella.
+   ===================================================================== */
+
+var MENTOR_CV_FRENTES = {
+  foco:           "Foco en el puesto",
+  experiencia:    "Experiencia",
+  logros:         "Logros con números",
+  palabras_clave: "Palabras del aviso",
+  redaccion:      "Cómo está escrito",
+  formato:        "Formato y orden"
+};
+var MENTOR_CV_ESTADOS = {
+  bien:    { label:"Bien",     color:"var(--green)", tint:"var(--green-tint)", icon:"check" },
+  regular: { label:"A medias", color:"var(--amber)", tint:"var(--amber-tint)", icon:"alert" },
+  mal:     { label:"Flojo",    color:"var(--brick)", tint:"var(--brick-tint)", icon:"alert" }
+};
+
+/* La IA a veces devuelve un texto donde se esperaba una lista: todo lo
+   que se recorre pasa antes por acá. */
+function mentorCvLista(x){ return Array.isArray(x) ? x : []; }
+
+/* ---- Base de datos (RLS por usuario, igual que los simulacros) ---- */
+function dbListMentorCvs(){
+  return climaList("/rest/v1/mentor_cvs?select=id,position,company,level,score,file_name,created_at&order=created_at.desc&limit=50");
+}
+function dbGetMentorCv(id){
+  return climaList("/rest/v1/mentor_cvs?select=*&id=eq."+encodeURIComponent(id)+"&limit=1")
+    .then(function(rows){ return rows[0]||null; });
+}
+function dbCreateMentorCv(row){ return climaInsert("mentor_cvs", row); }
+function dbDeleteMentorCv(id){ return climaDelete("mentor_cvs", id); }
+
+function loadMentorCvs(){
+  var c=state.mentor.cv;
+  if(!(supaConfigured() && isLoggedIn())){ c.list=[]; render(); return; }
+  c.loading=true;
+  dbListMentorCvs().then(function(items){
+    c.loading=false; c.list=items||[];
+    if(state.screen==="mentor-home") render();
+  }).catch(function(){
+    c.loading=false; c.list=[];
+    // Si falta la tabla nueva es porque el SQL del mentor se corrió antes
+    // de que existiera esta parte: hay que volver a pasarlo.
+    c.error="No pude cargar tus CV. ¿Corriste la última versión de sql_mentor.sql en Supabase?";
+    if(state.screen==="mentor-home") render();
+  });
+}
+
+/* ---- Cargar el CV ---- */
+function mentorCvNew(){
+  var c=state.mentor.cv;
+  var prevCv=(c.list||[])[0], prevSim=(state.mentor.sessions||[])[0];
+  c.form={
+    position:(prevCv&&prevCv.position)||(prevSim&&prevSim.position)||"",
+    company:"", level:(prevCv&&prevCv.level)||(prevSim&&prevSim.level)||"semi",
+    jobDesc:"", cvText:"", cvName:"", cvLoading:false
+  };
+  c.report=null; c.saved=null; c.error=null; c.msg=""; c.working=false;
+  state.screen="mentor-cv"; render();
+}
+function mentorCvUpload(file){
+  var c=state.mentor.cv, f=c.form; if(!f||!file) return;
+  f.cvName=file.name||"CV.pdf"; f.cvLoading=true; f.cvText=""; c.error=null; c.msg=""; render();
+  extractPdfText(file).then(function(txt){
+    f.cvLoading=false;
+    f.cvText=String(txt||"").slice(0,15000);
+    if(f.cvText.length<120){
+      f.cvText="";
+      c.msg="Ese PDF no tiene texto adentro (suele pasar cuando el CV es una foto o un escaneo). Copiá y pegá el contenido en el recuadro de abajo y seguimos igual.";
+    }
+    render();
+  }).catch(function(){ f.cvLoading=false; f.cvText=""; c.error="No pude abrir ese archivo. Probá con otro PDF o pegá el texto abajo."; render(); });
+}
+
+/* ---- Analizarlo y adaptarlo ---- */
+function mentorCvAnalyze(){
+  var c=state.mentor.cv, f=c.form;
+  if(!f || c.working) return;
+  var pos=(f.position||"").trim();
+  var texto=(f.cvText||"").trim();
+  if(!pos){ c.error="Escribí a qué puesto te postulás: el CV se adapta a ese puesto, no al revés."; render(); return; }
+  if(texto.length<120){ c.error="Necesito el texto de tu CV. Subí el PDF o pegalo en el recuadro."; render(); return; }
+  c.working=true; c.error=null; c.msg=""; render();
+
+  withTimeout(fetch("/api/analyze", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({
+      task:"mentor_cv", position:pos, company:(f.company||"").trim(),
+      level:f.level||"semi", jobDesc:(f.jobDesc||"").slice(0,4000), cvText:texto.slice(0,12000)
+    })
+  }).then(function(r){ return r.json(); }), 120000).then(function(j){
+    if(!(j && j.ok && j.cv)) throw new Error((j&&j.error)||"sin_cv");
+    mentorCvShow(j.cv, null);
+  }).catch(function(e){
+    c.working=false;
+    var cual=String(e&&e.message||"");
+    c.error = cual==="timeout"
+      ? "Tardó demasiado y corté la espera. Tu CV está cargado: tocá de nuevo el botón."
+      : cual==="rate_limited"
+        ? "Probaste muchas veces seguidas. Esperá unos minutos y volvé a intentar."
+        : "No pude analizar tu CV ahora. Probá de nuevo en un minuto.";
+    render();
+  });
+}
+/* Muestra el informe y, si es nuevo, lo guarda para que pueda volver a
+   bajarlo sin gastar otra vez la IA. */
+function mentorCvShow(rep, guardado){
+  var c=state.mentor.cv;
+  c.report=rep; c.saved=guardado||null; c.working=false; c.error=null; c.msg="";
+  state.screen="mentor-cv-report"; render();
+  if (guardado) return;
+  if (!(supaConfigured() && isLoggedIn())) return;
+  var f=c.form||{}, u=currentUser();
+  dbCreateMentorCv({
+    user_id:u&&u.id, email:(u&&u.email)||null,
+    position:(f.position||"").trim(), company:(f.company||"").trim()||null, level:f.level||"semi",
+    job_desc:(f.jobDesc||"").slice(0,4000)||null, file_name:f.cvName||null,
+    cv_text:(f.cvText||"").slice(0,15000)||null, report:rep,
+    score:(isFinite(Number(rep&&rep.score)) ? Number(rep.score) : null)
+  }).then(function(row){ c.saved=row||null; c.list=null; }).catch(function(){});
+}
+function mentorCvOpen(id){
+  var c=state.mentor.cv;
+  c.error=null; c.msg=""; c.report=null; c.loading=true;
+  state.screen="mentor-cv-report"; render();
+  dbGetMentorCv(id).then(function(row){
+    c.loading=false;
+    if(!row || !row.report){ c.error="Ese CV no tiene análisis guardado."; render(); return; }
+    c.form={ position:row.position||"", company:row.company||"", level:row.level||"semi",
+             jobDesc:row.job_desc||"", cvText:row.cv_text||"", cvName:row.file_name||"", cvLoading:false };
+    mentorCvShow(row.report, row);
+  }).catch(function(){ c.loading=false; c.error="No pude abrir ese CV."; render(); });
+}
+function mentorCvDelete(id){
+  var c=state.mentor.cv;
+  if(!confirm("¿Borrar este CV y su análisis?")) return;
+  dbDeleteMentorCv(id).then(function(){
+    c.list=(c.list||[]).filter(function(x){ return x.id!==id; });
+    c.msg="CV borrado."; render();
+  }).catch(function(){ c.error="No pude borrarlo."; render(); });
+}
+/* Del CV a la entrevista: se arma el simulacro con el CV ya adaptado,
+   así las preguntas salen de lo que la persona va a mandar de verdad. */
+function mentorCvPractice(){
+  var c=state.mentor.cv, f=c.form||{};
+  var texto=mentorCvPlain(c.report) || f.cvText || "";
+  mentorNewForm();
+  var mf=state.mentor.form;
+  mf.position=f.position||""; mf.company=f.company||""; mf.level=f.level||"semi";
+  mf.jobDesc=f.jobDesc||"";
+  mf.cvText=texto.slice(0,12000);
+  mf.cvName=f.cvName||"Tu CV adaptado";
+  state.mentor.msg="Usamos el CV que acabás de adaptar: las preguntas van a salir de ahí.";
+  render();
+}
+
+/* ---- El CV adaptado, en texto plano ---- */
+function mentorCvPlain(rep){
+  rep=rep||{};
+  var cv=rep.cv||{}, d=rep.datos||{}, L=[];
+  if(d.nombre) L.push(String(d.nombre).toUpperCase());
+  if(cv.titulo) L.push(String(cv.titulo));
+  if(d.contacto) L.push(String(d.contacto));
+  if(cv.resumen){ L.push(""); L.push("PERFIL"); L.push(String(cv.resumen)); }
+  if(mentorCvLista(cv.experiencia).length){
+    L.push(""); L.push("EXPERIENCIA");
+    mentorCvLista(cv.experiencia).forEach(function(x){
+      x=x||{};
+      var cab=[x.puesto,x.empresa].filter(Boolean).join(" — ");
+      L.push((cab||"Experiencia")+(x.periodo?("  ("+x.periodo+")"):""));
+      mentorCvLista(x.bullets).forEach(function(b){ if(b) L.push("· "+b); });
+      L.push("");
+    });
+  }
+  if(mentorCvLista(cv.educacion).length){
+    L.push("FORMACIÓN");
+    mentorCvLista(cv.educacion).forEach(function(x){
+      x=x||{};
+      var cab=[x.titulo,x.institucion].filter(Boolean).join(" — ");
+      if(cab) L.push(cab+(x.periodo?("  ("+x.periodo+")"):""));
+    });
+    L.push("");
+  }
+  if(mentorCvLista(cv.habilidades).length){ L.push("HABILIDADES"); L.push(mentorCvLista(cv.habilidades).filter(Boolean).join(" · ")); L.push(""); }
+  if(mentorCvLista(cv.extras).length){
+    L.push("OTROS");
+    mentorCvLista(cv.extras).forEach(function(x){ x=x||{}; var t=[x.titulo,x.detalle].filter(Boolean).join(": "); if(t) L.push(t); });
+  }
+  return L.join("\n").replace(/\n{3,}/g,"\n\n").trim();
+}
+function mentorCvCopy(){
+  var c=state.mentor.cv;
+  var txt=mentorCvPlain(c.report);
+  if(!txt) return;
+  copyText(txt, function(){
+    c.msg="Copiado. Pegalo en Word o en Google Docs y guardalo con el formato que más te guste.";
+    c.error=null; render();
+  });
+}
+/* El PDF se arma con texto de verdad (no una captura de pantalla): así
+   los sistemas que leen CVs automáticamente pueden parsearlo. */
+function mentorCvPdf(){
+  var c=state.mentor.cv, rep=c.report;
+  if(!rep) return;
+  if(!(window.jspdf && window.jspdf.jsPDF)){
+    c.error="No pude generar el PDF en este navegador. Copiá el texto y pegalo en tu editor."; render(); return;
+  }
+  var cv=rep.cv||{}, d=rep.datos||{};
+  var doc=new window.jspdf.jsPDF({ unit:"pt", format:"a4" });
+  var W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
+  var M=52, ancho=W-M*2, y=64;
+  var TINTA=[17,24,39], GRIS=[92,102,117], ACENTO=[168,60,21];
+
+  function espacio(alto){ if (y+alto > H-52){ doc.addPage(); y=64; } }
+  function parrafo(txt, size, style, color, sangria, interlinea){
+    if(txt==null || txt==="") return;
+    sangria=sangria||0; interlinea=interlinea||1.35;
+    doc.setFont("helvetica", style||"normal"); doc.setFontSize(size);
+    doc.setTextColor(color[0], color[1], color[2]);
+    var lineas=doc.splitTextToSize(String(txt), ancho-sangria);
+    for(var i=0;i<lineas.length;i++){ espacio(size*interlinea); doc.text(lineas[i], M+sangria, y); y+=size*interlinea; }
+  }
+  function seccion(txt){
+    y+=12; espacio(34);
+    doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(ACENTO[0],ACENTO[1],ACENTO[2]);
+    doc.text(String(txt).toUpperCase(), M, y);
+    y+=6; doc.setDrawColor(219,224,231); doc.setLineWidth(0.7); doc.line(M, y, M+ancho, y); y+=15;
+  }
+  function bullet(txt){
+    if(!txt) return;
+    doc.setFont("helvetica","normal"); doc.setFontSize(10);
+    doc.setTextColor(TINTA[0],TINTA[1],TINTA[2]);
+    var lineas=doc.splitTextToSize(String(txt), ancho-16);
+    for(var i=0;i<lineas.length;i++){
+      espacio(14);
+      if(i===0){ doc.setTextColor(ACENTO[0],ACENTO[1],ACENTO[2]); doc.text("•", M, y); doc.setTextColor(TINTA[0],TINTA[1],TINTA[2]); }
+      doc.text(lineas[i], M+16, y); y+=14;
+    }
+    y+=2;
+  }
+
+  parrafo(d.nombre||"", 20, "bold", TINTA, 0, 1.2);
+  if(cv.titulo) parrafo(cv.titulo, 11.5, "normal", ACENTO, 0, 1.4);
+  if(d.contacto) parrafo(d.contacto, 9.5, "normal", GRIS, 0, 1.4);
+
+  if(cv.resumen){ seccion("Perfil"); parrafo(cv.resumen, 10, "normal", TINTA, 0, 1.42); }
+
+  if(mentorCvLista(cv.experiencia).length){
+    seccion("Experiencia");
+    mentorCvLista(cv.experiencia).forEach(function(x){
+      x=x||{};
+      espacio(30);
+      var cab=[x.puesto, x.empresa].filter(Boolean).join(" · ");
+      parrafo(cab, 11, "bold", TINTA, 0, 1.3);
+      if(x.periodo) parrafo(x.periodo, 9, "italic", GRIS, 0, 1.35);
+      y+=2;
+      mentorCvLista(x.bullets).forEach(bullet);
+      y+=6;
+    });
+  }
+  if(mentorCvLista(cv.educacion).length){
+    seccion("Formación");
+    mentorCvLista(cv.educacion).forEach(function(x){
+      x=x||{};
+      var cab=[x.titulo, x.institucion].filter(Boolean).join(" · ");
+      if(cab) parrafo(cab + (x.periodo?("  ("+x.periodo+")"):""), 10, "normal", TINTA, 0, 1.42);
+    });
+  }
+  if(mentorCvLista(cv.habilidades).length){
+    seccion("Habilidades");
+    parrafo(mentorCvLista(cv.habilidades).filter(Boolean).join("  ·  "), 10, "normal", TINTA, 0, 1.45);
+  }
+  if(mentorCvLista(cv.extras).length){
+    seccion("Otros");
+    mentorCvLista(cv.extras).forEach(function(x){
+      x=x||{};
+      var t=[x.titulo, x.detalle].filter(Boolean).join(": ");
+      if(t) parrafo(t, 10, "normal", TINTA, 0, 1.42);
+    });
+  }
+  var f=c.form||{};
+  var slug=String(f.position||"cv").toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,40);
+  try{ doc.save("cv_"+(slug||"adaptado")+".pdf"); }catch(e){
+    c.error="No pude guardar el PDF. Copiá el texto y pegalo en tu editor."; render();
+  }
+}
+
+/* ---- Pantallas de Mi CV ---- */
+function mentorCvChip(txt, color, tint){
+  return '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:600;color:'+color+';background:'+tint+'">'+esc(txt)+'</span>';
+}
+/* Cargar el CV y decir a qué puesto va. Una sola pantalla. */
+Screens["mentor-cv"] = function(){
+  var c=state.mentor.cv, f=c.form||{};
+  var html=mentorHeader(true);
+  html+='<button class="backlink" data-action="mentor-home">'+ic('back',13)+' Volver</button>';
+
+  if (c.working){
+    html+='<div class="card" style="max-width:520px;margin:0 auto;text-align:center">'+
+      '<div style="color:var(--brick);display:flex;justify-content:center;margin-bottom:10px">'+ic('loader',34,'spin')+'</div>'+
+      '<h2 style="font-size:19px;margin:0 0 6px">Leyendo tu CV</h2>'+
+      '<p style="font-size:13.5px;color:var(--muted);margin:0 0 6px;line-height:1.6">Lo estamos mirando como lo miraría un reclutador que tiene que elegir entre cien, y lo reescribimos para <b>'+esc(f.position||"el puesto")+'</b>. Tarda menos de un minuto.</p>'+
+      '<p style="font-size:12px;color:var(--faint);margin:0">No cierres la ventana.</p>'+
+    '</div>';
+    return html;
+  }
+
+  html+='<h2 style="font-size:21px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px">Tu CV, adaptado al puesto</h2>'+
+    '<p style="font-size:13.5px;color:var(--muted);margin:0 0 18px;max-width:62ch">Subí el CV que estás mandando hoy y decinos a qué puesto te postulás. Te devolvemos qué ve un reclutador cuando lo abre y el mismo CV reescrito para esa búsqueda, con tu experiencia real: no inventamos nada.</p>';
+  if (c.error) html+=Note("err", esc(c.error));
+  if (c.msg) html+=Note("info", esc(c.msg));
+
+  html+='<div class="card" style="max-width:620px">';
+  html+='<div class="field"><span class="field-label">Tu CV</span>'+
+    '<label style="display:inline-flex;align-items:center;gap:9px;padding:11px 14px;border:1px dashed '+(f.cvText?'var(--green)':'var(--border)')+';border-radius:var(--r);cursor:pointer;font-size:13px;color:var(--muted);width:100%">'+
+      ic('file',16)+'<span>'+(f.cvLoading?'Leyendo tu CV…':(f.cvName?esc(f.cvName):'Elegir archivo PDF'))+'</span>'+
+      '<input type="file" id="f_mtcv_file" accept="application/pdf" style="display:none">'+
+    '</label>'+
+    (f.cvText?('<span class="field-hint" style="color:var(--green)">'+ic('check',12)+' Leímos '+String(f.cvText.length)+' caracteres de tu CV.</span>')
+             :'<span class="field-hint">Si tu CV es una foto o un escaneo, no vamos a poder leerlo: pegá el texto acá abajo.</span>')+
+  '</div>';
+  html+='<label class="field" style="margin-top:12px"><span class="field-label">O pegá el texto de tu CV <span style="color:var(--faint);font-weight:400">(si no tenés el PDF a mano)</span></span>'+
+    '<div class="input-row" style="align-items:flex-start"><textarea id="f_mtcv_text" rows="5" placeholder="Copiá todo tu CV y pegalo acá: nombre, contacto, experiencia, estudios.">'+esc(f.cvText||"")+'</textarea></div></label>';
+
+  html+='<div style="height:1px;background:var(--border-soft);margin:18px 0"></div>';
+
+  html+='<label class="field"><span class="field-label">¿A qué puesto te postulás?</span><div class="input-row">'+ic('briefcase',15)+
+    '<input id="f_mtcv_pos" value="'+esc(f.position||"")+'" placeholder="Ej: Vendedor de salón, Analista de sistemas, Recepcionista"></div></label>';
+  html+='<label class="field" style="margin-top:12px"><span class="field-label">Empresa <span style="color:var(--faint);font-weight:400">(opcional)</span></span><div class="input-row">'+ic('building',15)+
+    '<input id="f_mtcv_comp" value="'+esc(f.company||"")+'" placeholder="Si la sabés, ajustamos el tono a ella"></div></label>';
+  html+='<div class="field" style="margin-top:14px"><span class="field-label">¿Cuánta experiencia tenés?</span><div style="display:flex;gap:8px;flex-wrap:wrap">'+
+    MENTOR_NIVEL_ORDER.map(function(k){
+      var on=((f.level||"semi")===k), N=MENTOR_NIVELES[k];
+      return '<button class="btn btn-sm" data-action="mentor-cv-level" data-l="'+k+'" style="flex-direction:column;align-items:flex-start;gap:1px;padding:9px 13px;'+
+        (on?'background:var(--brick-tint);color:var(--brick);border:1px solid var(--brick)':'background:transparent;color:var(--muted);border:1px solid var(--border)')+'">'+
+        '<span style="font-weight:700;font-size:12.5px">'+esc(N.short)+'</span><span style="font-size:11px">'+esc(N.label)+'</span></button>';
+    }).join('')+'</div></div>';
+  html+='<label class="field" style="margin-top:14px"><span class="field-label">Pegá el aviso del puesto <span style="color:var(--faint);font-weight:400">(opcional, pero es lo que más cambia el resultado)</span></span>'+
+    '<div class="input-row" style="align-items:flex-start"><textarea id="f_mtcv_jd" rows="4" placeholder="Copiá y pegá la búsqueda tal como la viste publicada: de ahí salen las palabras que el CV tiene que tener.">'+esc(f.jobDesc||"")+'</textarea></div></label>';
+
+  html+='<div class="note note-info" style="margin-top:16px">'+ic('shield',15)+'<span><b>Tu CV es tuyo.</b> Queda guardado en tu cuenta y sólo lo ves vos. No lo mandamos a ninguna empresa.</span></div>';
+  html+='<button class="btn btn-primary btn-block" data-action="mentor-cv-run" style="margin-top:16px">'+ic('sparkle',15)+' Analizar y adaptar mi CV</button>';
+  html+='</div>';
+  return html;
+};
+
+/* El resultado: primero la verdad, después el CV nuevo. */
+Screens["mentor-cv-report"] = function(){
+  var c=state.mentor.cv, r=c.report;
+  var html=mentorHeader(true);
+  if (c.loading) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Abriendo tu CV…</p></div>';
+  if (c.error && !r) return html+Note("err", esc(c.error))+'<button class="btn btn-ghost btn-sm" data-action="mentor-home">Volver al inicio</button>';
+  if (!r) return html+'<div class="center-block">'+ic('file',26)+'<p>No hay ningún CV abierto.</p><button class="btn btn-primary btn-sm" data-action="mentor-cv-new" style="margin-top:12px">'+ic('file',14)+' Analizar mi CV</button></div>';
+
+  var f=c.form||{};
+  var sc=Number(r.score)||0;
+  var cv=r.cv||{}, datos=r.datos||{};
+  html+='<button class="backlink" data-action="mentor-home">'+ic('back',13)+' Volver al inicio</button>';
+  if (c.msg) html+=Note("ok", esc(c.msg));
+  if (c.error) html+=Note("err", esc(c.error));
+
+  /* --- Cómo compite hoy --- */
+  html+='<div class="card" style="margin-bottom:14px">'+
+    '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">'+
+      '<div style="flex-shrink:0;width:88px;height:88px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--surface-2);border:3px solid '+mentorScoreColor(sc)+'">'+
+        '<span style="font-size:27px;font-weight:800;line-height:1;color:'+mentorScoreColor(sc)+'">'+sc.toFixed(1)+'</span>'+
+        '<span style="font-size:10px;color:var(--faint)">de 10</span></div>'+
+      '<div style="flex:1;min-width:220px">'+
+        '<p style="margin:0;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)">Tu CV de hoy, para '+esc(f.position||"este puesto")+'</p>'+
+        '<h2 style="margin:4px 0 0;font-size:19px;font-weight:700;letter-spacing:-.02em;line-height:1.3">'+esc(r.titular||"Esto ve un reclutador")+'</h2>'+
+        (r.primera_impresion?('<p style="margin:8px 0 0;font-size:13.5px;color:var(--muted);line-height:1.6">'+esc(r.primera_impresion)+'</p>'):'')+
+      '</div>'+
+    '</div>'+
+  '</div>';
+
+  /* --- Los seis frentes --- */
+  if (mentorCvLista(r.diagnostico).length){
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 10px;font-size:15px;color:var(--ink)">Frente por frente</h3>'+
+      '<div style="display:grid;gap:8px">'+
+      mentorCvLista(r.diagnostico).map(function(d){
+        d=d||{};
+        var e=MENTOR_CV_ESTADOS[d.estado]||MENTOR_CV_ESTADOS.regular;
+        var nombre=d.titulo||MENTOR_CV_FRENTES[d.key]||d.key||"";
+        return '<div style="display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border-soft)">'+
+          '<span style="flex-shrink:0;width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:'+e.tint+';color:'+e.color+'">'+ic(e.icon,14)+'</span>'+
+          '<div style="flex:1;min-width:0">'+
+            '<p style="margin:0;font-size:13.5px;font-weight:700;color:var(--ink)">'+esc(nombre)+' <span style="font-weight:600;font-size:11.5px;color:'+e.color+'">· '+esc(e.label)+'</span></p>'+
+            (d.detalle?('<p style="margin:3px 0 0;font-size:13px;color:var(--muted);line-height:1.55">'+esc(d.detalle)+'</p>'):'')+
+          '</div></div>';
+      }).join('')+
+    '</div></div>';
+  }
+
+  /* --- Palabras del aviso --- */
+  var pk=r.palabras_clave||{};
+  if (mentorCvLista(pk.presentes).length || mentorCvLista(pk.faltantes).length){
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">Las palabras que busca el aviso</h3>'+
+      '<p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">Muchas empresas filtran los CV con un buscador antes de que los lea una persona. Si la palabra no está, el CV no aparece.</p>'+
+      (mentorCvLista(pk.presentes).length?('<p style="margin:0 0 6px;font-size:12px;font-weight:700;color:var(--green)">Ya las tenés</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
+        mentorCvLista(pk.presentes).slice(0,20).map(function(p){ return mentorCvChip(p,"var(--green)","var(--green-tint)"); }).join('')+'</div>'):'')+
+      (mentorCvLista(pk.faltantes).length?('<p style="margin:0 0 6px;font-size:12px;font-weight:700;color:var(--brick)">Faltan, y si las tenés hay que ponerlas</p><div style="display:flex;gap:6px;flex-wrap:wrap">'+
+        mentorCvLista(pk.faltantes).slice(0,20).map(function(p){ return mentorCvChip(p,"var(--brick)","var(--brick-tint)"); }).join('')+'</div>'):'')+
+    '</div>';
+  }
+
+  /* --- Los tres arreglos --- */
+  if (mentorCvLista(r.arreglos).length){
+    html+='<div class="card" style="margin-bottom:14px">'+
+      '<h3 style="margin:0 0 10px;font-size:15px;color:var(--ink)">Lo que más te conviene arreglar</h3>'+
+      mentorCvLista(r.arreglos).map(function(a,i){
+        a=a||{};
+        return '<div style="display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--border-soft)">'+
+          '<span style="flex-shrink:0;width:24px;height:24px;border-radius:8px;background:var(--brick-tint);color:var(--brick);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">'+(i+1)+'</span>'+
+          '<div style="flex:1;min-width:0">'+
+            '<p style="margin:0;font-size:13.5px;font-weight:700;color:var(--ink)">'+esc(a.titulo||"")+'</p>'+
+            (a.detalle?('<p style="margin:3px 0 0;font-size:13px;color:var(--muted);line-height:1.55">'+esc(a.detalle)+'</p>'):'')+
+            (a.como?('<p style="margin:6px 0 0;font-size:12.5px;color:var(--ink);background:var(--surface-2);border-radius:8px;padding:8px 10px;line-height:1.55">'+ic('sparkle',12)+' '+esc(a.como)+'</p>'):'')+
+          '</div></div>';
+      }).join('')+
+    '</div>';
+  }
+
+  /* --- El CV nuevo --- */
+  html+='<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:22px 0 10px">'+
+    '<div><h2 style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em">Tu CV adaptado</h2>'+
+    '<p style="margin:3px 0 0;font-size:13px;color:var(--muted)">Con tu experiencia real, ordenada y escrita para este puesto.</p></div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="btn btn-primary btn-sm" data-action="mentor-cv-pdf">'+ic('download',14)+' Descargar en PDF</button>'+
+      '<button class="btn btn-ghost btn-sm" data-action="mentor-cv-copy">'+ic('copy',14)+' Copiar el texto</button>'+
+    '</div>'+
+  '</div>';
+
+  html+='<div class="card" style="padding:28px 30px">';
+  html+='<div style="border-bottom:2px solid var(--brick);padding-bottom:12px;margin-bottom:16px">'+
+    '<p style="margin:0;font-size:22px;font-weight:800;letter-spacing:-.02em;color:var(--ink)">'+esc(datos.nombre||"Tu nombre")+'</p>'+
+    (cv.titulo?('<p style="margin:3px 0 0;font-size:14px;font-weight:600;color:var(--brick)">'+esc(cv.titulo)+'</p>'):'')+
+    (datos.contacto?('<p style="margin:5px 0 0;font-size:12.5px;color:var(--muted)">'+esc(datos.contacto)+'</p>'):'')+
+  '</div>';
+  var seccionTitulo=function(t){
+    return '<p style="margin:20px 0 8px;font-size:11.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--brick)">'+esc(t)+'</p>';
+  };
+  if (cv.resumen) html+=seccionTitulo("Perfil")+'<p style="margin:0;font-size:13.5px;color:var(--ink);line-height:1.65">'+esc(cv.resumen)+'</p>';
+  if (mentorCvLista(cv.experiencia).length){
+    html+=seccionTitulo("Experiencia");
+    html+=mentorCvLista(cv.experiencia).map(function(x){
+      x=x||{};
+      return '<div style="margin-bottom:14px">'+
+        '<p style="margin:0;font-size:14px;font-weight:700;color:var(--ink)">'+esc(x.puesto||"")+(x.empresa?(' <span style="font-weight:500;color:var(--muted)">· '+esc(x.empresa)+'</span>'):'')+'</p>'+
+        (x.periodo?('<p style="margin:1px 0 5px;font-size:12px;color:var(--faint)">'+esc(x.periodo)+'</p>'):'<div style="height:5px"></div>')+
+        mentorCvLista(x.bullets).map(function(b){
+          return '<p style="margin:0 0 4px;padding-left:15px;position:relative;font-size:13.5px;color:var(--ink);line-height:1.6">'+
+            '<span style="position:absolute;left:0;color:var(--brick)">•</span>'+esc(b)+'</p>';
+        }).join('')+
+      '</div>';
+    }).join('');
+  }
+  if (mentorCvLista(cv.educacion).length){
+    html+=seccionTitulo("Formación");
+    html+=mentorCvLista(cv.educacion).map(function(x){
+      x=x||{};
+      return '<p style="margin:0 0 5px;font-size:13.5px;color:var(--ink);line-height:1.6"><b>'+esc(x.titulo||"")+'</b>'+
+        (x.institucion?(' · '+esc(x.institucion)):'')+
+        (x.periodo?('<span style="color:var(--faint)"> ('+esc(x.periodo)+')</span>'):'')+'</p>';
+    }).join('');
+  }
+  if (mentorCvLista(cv.habilidades).length){
+    html+=seccionTitulo("Habilidades")+'<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+      mentorCvLista(cv.habilidades).filter(Boolean).map(function(h){ return mentorCvChip(h,"var(--ink)","var(--surface-2)"); }).join('')+'</div>';
+  }
+  if (mentorCvLista(cv.extras).length){
+    html+=seccionTitulo("Otros");
+    html+=mentorCvLista(cv.extras).map(function(x){
+      x=x||{};
+      return '<p style="margin:0 0 5px;font-size:13.5px;color:var(--ink);line-height:1.6">'+(x.titulo?('<b>'+esc(x.titulo)+'</b>: '):'')+esc(x.detalle||"")+'</p>';
+    }).join('');
+  }
+  html+='</div>';
+
+  /* --- Los huecos que tiene que llenar --- */
+  if (mentorCvLista(r.completar).length){
+    html+='<div class="card" style="margin-top:14px;border-color:var(--amber)">'+
+      '<h3 style="margin:0 0 4px;font-size:15px;color:var(--ink)">'+ic('alert',15)+' Esto lo tenés que completar vos</h3>'+
+      '<p style="margin:0 0 10px;font-size:12.5px;color:var(--muted)">No lo inventamos: son datos tuyos que el CV no traía. Donde el texto dice <b>[completar: …]</b>, poné el número o el dato real antes de mandarlo.</p>'+
+      mentorCvLista(r.completar).map(function(x){
+        return '<p style="margin:0;padding:7px 0;border-top:1px solid var(--border-soft);font-size:13.5px;color:var(--ink)">'+ic('square',13)+' '+esc(x)+'</p>';
+      }).join('')+
+    '</div>';
+  }
+  /* --- Qué se cambió --- */
+  if (mentorCvLista(r.que_cambie).length){
+    html+='<div class="card" style="margin-top:14px">'+
+      '<h3 style="margin:0 0 8px;font-size:15px;color:var(--ink)">Qué le cambiamos y por qué</h3>'+
+      mentorCvLista(r.que_cambie).map(function(x){
+        return '<p style="margin:0;padding:7px 0;border-top:1px solid var(--border-soft);font-size:13px;color:var(--muted);line-height:1.55">'+ic('check',13)+' '+esc(x)+'</p>';
+      }).join('')+
+    '</div>';
+  }
+
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">'+
+    '<button class="btn btn-primary btn-sm" data-action="mentor-cv-practice">'+ic('mic',14)+' Ahora practicá la entrevista con este CV</button>'+
+    '<button class="btn btn-ghost btn-sm" data-action="mentor-cv-new">'+ic('rotate',14)+' Adaptarlo a otro puesto</button>'+
+    '<button class="btn btn-ghost btn-sm" data-action="mentor-home">'+ic('home',14)+' Volver al inicio</button>'+
+  '</div>';
+  html+='<p style="margin:16px 0 0;font-size:11.5px;color:var(--faint);max-width:62ch">Lo escribió una IA con el criterio de un reclutador. Leelo antes de mandarlo: sos vos quien firma ese CV.</p>';
   return html;
 };
 
@@ -7240,6 +7821,7 @@ function AdminMetrics(){
       admKpi("Terminación", mt.terminacion==null?"—":(mt.terminacion+"%"), mt.terminados+" llegaron al informe, "+mt.abandonados+" quedaron a medias", termColor)+
       admKpi("Repetición", mt.repeticion==null?"—":(mt.repeticion+"%"), mt.repitieron+" personas practicaron más de una vez", mt.repeticion>=25?"var(--green)":"var(--amber)")+
       admKpi("Puntaje promedio", mt.promedio==null?"—":mt.promedio, "sobre 10, de los simulacros terminados", "var(--ink)")+
+      admKpi("CV adaptados", mt.cvs==null?"—":mt.cvs, (mt.cvs_d30||0)+" en los últimos 30 días"+(mt.cvs_promedio==null?"":(" · entran con "+mt.cvs_promedio+" de 10")), "var(--brick)")+
     '</div>'+
     '<div class="grid2" style="gap:14px;margin-top:14px">'+
       '<div class="card">'+
@@ -10761,7 +11343,7 @@ function doSignup(email, password, captchaToken){
     render();
   }).catch(function(){ state.busy=false; state.error="No pude conectar. Revisá tu conexión."; render(); });
 }
-function doLogout(){ supaLogout(); setDoor(""); state.mentor={ loading:false, sessions:null, error:null, msg:"", form:null, current:null, report:null, proc:null, saved:null }; state.empresa=null; state.dash={loading:false,items:null,error:null,detail:null}; state.admin={loading:false,items:null,error:null}; state.myApproved=null; state.screen="home"; render(); }
+function doLogout(){ supaLogout(); setDoor(""); state.mentor={ loading:false, sessions:null, error:null, msg:"", form:null, current:null, report:null, proc:null, saved:null, cv:{ list:null, loading:false, form:null, report:null, saved:null, working:false, error:null, msg:"" } }; state.empresa=null; state.dash={loading:false,items:null,error:null,detail:null}; state.admin={loading:false,items:null,error:null}; state.myApproved=null; state.screen="home"; render(); }
 function loadDashboard(){
   if(!supaConfigured() || !isLoggedIn()) return;
   state.dash.loading=true; state.dash.error=null; render();
@@ -11472,7 +12054,7 @@ function bind(){
       /* ---- Mentor IA (la otra puerta) ---- */
       else if (act === "go-mentor") goMentor();
       else if (act === "mentor-login") mentorLogin();
-      else if (act === "mentor-home"){ setDoor("mentor"); state.mentor.error=null; state.mentor.report=null; state.screen="mentor-home"; render(); if(state.mentor.sessions===null) loadMentorSessions(); }
+      else if (act === "mentor-home"){ setDoor("mentor"); state.mentor.error=null; state.mentor.report=null; state.mentor.cv.error=null; state.mentor.cv.report=null; state.screen="mentor-home"; render(); if(state.mentor.sessions===null) loadMentorSessions(); if(state.mentor.cv.list===null) loadMentorCvs(); }
       else if (act === "mentor-new") mentorNewForm();
       else if (act === "mentor-level"){ if(state.mentor.form){ state.mentor.form.level=el.getAttribute("data-l")||"semi"; render(); } }
       else if (act === "mentor-start") mentorStart();
@@ -11480,6 +12062,15 @@ function bind(){
       else if (act === "mentor-del") mentorDeleteSession(el.getAttribute("data-id"));
       else if (act === "mentor-pdf") mentorPdf();
       else if (act === "mentor-again") mentorNewForm();
+      /* ---- Mentor IA · Mi CV ---- */
+      else if (act === "mentor-cv-new") mentorCvNew();
+      else if (act === "mentor-cv-level"){ if(state.mentor.cv.form){ state.mentor.cv.form.level=el.getAttribute("data-l")||"semi"; render(); } }
+      else if (act === "mentor-cv-run") mentorCvAnalyze();
+      else if (act === "mentor-cv-open") mentorCvOpen(el.getAttribute("data-id"));
+      else if (act === "mentor-cv-del") mentorCvDelete(el.getAttribute("data-id"));
+      else if (act === "mentor-cv-pdf") mentorCvPdf();
+      else if (act === "mentor-cv-copy") mentorCvCopy();
+      else if (act === "mentor-cv-practice") mentorCvPractice();
       else if (act === "go-candcode"){ state.error=null; state.screen="cand-code"; render(); }
       else if (act === "go-recruiterhome") goRecruiterHome();
       else if (act === "go-hub") goHub();
@@ -11954,6 +12545,12 @@ function bind(){
   if ((f=document.getElementById("f_mt_comp"))) f.addEventListener("input", function(e){ if(state.mentor.form) state.mentor.form.company=e.target.value; });
   if ((f=document.getElementById("f_mt_jd"))) f.addEventListener("input", function(e){ if(state.mentor.form) state.mentor.form.jobDesc=e.target.value; });
   if ((f=document.getElementById("f_mt_cv"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) mentorCvFile(file); });
+  /* ---- Mentor IA · Mi CV ---- */
+  if ((f=document.getElementById("f_mtcv_pos"))) f.addEventListener("input", function(e){ if(state.mentor.cv.form) state.mentor.cv.form.position=e.target.value; });
+  if ((f=document.getElementById("f_mtcv_comp"))) f.addEventListener("input", function(e){ if(state.mentor.cv.form) state.mentor.cv.form.company=e.target.value; });
+  if ((f=document.getElementById("f_mtcv_jd"))) f.addEventListener("input", function(e){ if(state.mentor.cv.form) state.mentor.cv.form.jobDesc=e.target.value; });
+  if ((f=document.getElementById("f_mtcv_text"))) f.addEventListener("input", function(e){ if(state.mentor.cv.form){ state.mentor.cv.form.cvText=e.target.value; } });
+  if ((f=document.getElementById("f_mtcv_file"))) f.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) mentorCvUpload(file); });
   /* ---- Módulo 3 · área 6: comunicación interna ---- */
   if ((f=document.getElementById("f_com_title"))) f.addEventListener("input", function(e){ if(state.com.form) state.com.form.title=e.target.value; });
   if ((f=document.getElementById("f_com_body"))) f.addEventListener("input", function(e){ if(state.com.form) state.com.form.body=e.target.value; });
