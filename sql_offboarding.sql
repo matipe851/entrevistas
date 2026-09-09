@@ -29,16 +29,16 @@ alter table public.offboarding enable row level security;
 -- Mismo criterio que el resto del módulo: sólo usuarios autenticados.
 drop policy if exists "offboarding_select" on public.offboarding;
 create policy "offboarding_select" on public.offboarding
-  for select to authenticated using (true);
+  for select to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "offboarding_insert" on public.offboarding;
 create policy "offboarding_insert" on public.offboarding
-  for insert to authenticated with check (true);
+  for insert to authenticated with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "offboarding_update" on public.offboarding;
 create policy "offboarding_update" on public.offboarding
-  for update to authenticated using (true) with check (true);
+  for update to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved)) with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "offboarding_delete" on public.offboarding;
 create policy "offboarding_delete" on public.offboarding
-  for delete to authenticated using (true);
+  for delete to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));

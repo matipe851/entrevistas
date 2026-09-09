@@ -110,16 +110,20 @@ alter table public.action_plans   enable row level security;
 alter table public.announcements  enable row level security;
 
 do $$
-declare t text;
+declare
+  t text;
+  -- Sólo el usuario de la consultora aprobado. El del mentor se registra
+  -- solo y NO puede ver nada de RR.HH.
+  REGLA_RRHH constant text := 'exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved)';
 begin
   foreach t in array array['culture_values','recognitions','action_plans','announcements'] loop
     execute format('drop policy if exists "%1$s_select" on public.%1$I', t);
-    execute format('create policy "%1$s_select" on public.%1$I for select to authenticated using (true)', t);
+    execute format('create policy "%1$s_select" on public.%1$I for select to authenticated using (%2$s)', t, REGLA_RRHH);
     execute format('drop policy if exists "%1$s_insert" on public.%1$I', t);
-    execute format('create policy "%1$s_insert" on public.%1$I for insert to authenticated with check (true)', t);
+    execute format('create policy "%1$s_insert" on public.%1$I for insert to authenticated with check (%2$s)', t, REGLA_RRHH);
     execute format('drop policy if exists "%1$s_update" on public.%1$I', t);
-    execute format('create policy "%1$s_update" on public.%1$I for update to authenticated using (true) with check (true)', t);
+    execute format('create policy "%1$s_update" on public.%1$I for update to authenticated using (%2$s) with check (%2$s)', t, REGLA_RRHH);
     execute format('drop policy if exists "%1$s_delete" on public.%1$I', t);
-    execute format('create policy "%1$s_delete" on public.%1$I for delete to authenticated using (true)', t);
+    execute format('create policy "%1$s_delete" on public.%1$I for delete to authenticated using (%2$s)', t, REGLA_RRHH);
   end loop;
 end $$;

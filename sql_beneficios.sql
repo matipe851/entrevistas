@@ -38,16 +38,16 @@ alter table public.benefits enable row level security;
 -- Mismo criterio que el resto del módulo: sólo usuarios autenticados.
 drop policy if exists "benefits_select" on public.benefits;
 create policy "benefits_select" on public.benefits
-  for select to authenticated using (true);
+  for select to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "benefits_insert" on public.benefits;
 create policy "benefits_insert" on public.benefits
-  for insert to authenticated with check (true);
+  for insert to authenticated with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "benefits_update" on public.benefits;
 create policy "benefits_update" on public.benefits
-  for update to authenticated using (true) with check (true);
+  for update to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved)) with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
 
 drop policy if exists "benefits_delete" on public.benefits;
 create policy "benefits_delete" on public.benefits
-  for delete to authenticated using (true);
+  for delete to authenticated using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.approved));
