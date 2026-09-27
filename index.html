@@ -1762,7 +1762,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v40.2-r110";
+var APP_VERSION = "v40.3-r111";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -6149,6 +6149,7 @@ Screens["emp-form"] = function(){
   html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:13.5px;font-weight:600;color:var(--ink);margin:0 0 12px">Notas (opcional)</h3>' +
     '<div class="input-row" style="align-items:flex-start"><span style="color:var(--muted);margin-top:2px">'+ic('list',15)+'</span><textarea id="f_emp_notes" rows="3" placeholder="Observaciones internas sobre el empleado.">'+esc(f.notes||"")+'</textarea></div>' +
   '</div>';
+  html += liqLegajoCard(f);
   html += '<div class="flex-actions">' +
     '<button class="btn btn-primary" id="saveEmpBtn" '+(f.saving?'disabled':'')+'>'+(f.saving?ic('loader',15,'spin')+' Guardando…':ic('check',15)+' '+(isEdit?'Guardar cambios':'Guardar legajo'))+'</button>' +
     (isEdit?'<button class="btn btn-ghost" data-action="emp-del" data-id="'+esc(f.id)+'" style="color:var(--brick)">'+ic('trash',14)+' Eliminar legajo</button>':'') +
@@ -10998,6 +10999,8 @@ function liqCompute(i, P){
 
     var inas=liqNum(i.inasist);
     if(inas>0) addRem({ code:"inasist", label:"Inasistencia injustificada", unid:-inas, rem:-vDia*inas, formula:"(básico + adicionales fijos) $ "+liqMoney(fija)+" ÷ 30 × "+liqNumTxt(inas)+" día(s)" });
+    var inJ=liqNum(i.inasistJust);
+    if(inJ>0) liqLine(lines,{ code:"inasist_j", label:"Inasistencias justificadas", unid:inJ, info:true, formula:"No se descuentan"+(i.inasistJustNota?(": "+i.inasistJustNota):" (justificadas en Asistencia)") });
     var enf=liqNum(i.enfDias);
     if(enf>0) liqLine(lines,{ code:"enf", label:"Enfermedad inculpable (art. 208 LCT)", unid:enf, info:true, formula:"Se pagan como días trabajados: ya están incluidos en el básico" });
     var sinGoce=liqNum(i.sinGoceDias);
@@ -11044,6 +11047,8 @@ function liqCompute(i, P){
     info={ valorHora:vh, regimen:reg.label };
     if(jor>0) addRem({ code:"jornadas", label:"Jornadas trabajadas", unid:liqNumTxt(jor), rem:jor*hj*vh, formula:liqNumTxt(jor)+" jornadas × "+hj+" h × $ "+liqMoney(vh)+(reg.nota?(" · "+reg.nota):"") });
     if(enfJ>0) addRem({ code:"enf", label:"Enfermedad inculpable (art. 208 LCT)", unid:liqNumTxt(enfJ), rem:enfJ*hj*vh, formula:liqNumTxt(enfJ)+" jornada(s) × "+hj+" h × $ "+liqMoney(vh)+" · se paga como día trabajado" });
+    var inJq=liqNum(i.inasistJust);
+    if(inJq>0) liqLine(lines,{ code:"inasist_j", label:"Inasistencias justificadas", unid:liqNumTxt(inJq), info:true, formula:"Quedan justificadas"+(i.inasistJustNota?(" ("+i.inasistJustNota+")"):"")+"; el jornalizado cobra sólo si es licencia paga: cargala como enfermedad o feriado" });
     if(inaJ>0) liqLine(lines,{ code:"inasist", label:"Inasistencia injustificada", unid:liqNumTxt(inaJ), info:true, formula:"El jornalizado cobra lo trabajado: la jornada ausente no se paga" });
     var q50=liqNum(i.he50), q100=liqNum(i.he100);
     if(q50>0) addRem({ code:"he50", label:"Horas extras 50 %", unid:liqNumTxt(q50), rem:vh*1.5*q50, formula:liqNumTxt(q50)+" h × $ "+liqMoney(vh)+" × 1,5" });
@@ -11195,7 +11200,7 @@ function liqEmpPayrolls(empId){ return (state.liq.items||[]).filter(function(p){
 
 /* Novedades tomadas de Asistencia y de Vacaciones y licencias para el rango del período. */
 function liqNovedades(emp, mk, kind){
-  var r=liqRange(mk, kind), out={ inasist:0, inasistDates:[], he50min:0, he100min:0, francos:0, jornadas:null, vac:0, enf:0, mat:0, licEsp:0, licEspTipo:"", licEspLbl:[], hasAsist:false, hasLic:false };
+  var r=liqRange(mk, kind), out={ inasist:0, inasistDates:[], inasistJust:0, ausencias:[], sinFichadas:false, he50min:0, he100min:0, francos:0, jornadas:null, vac:0, enf:0, mat:0, licEsp:0, licEspTipo:"", licEspLbl:[], hasAsist:false, hasLic:false };
   var fromISO=liqISO(r.from), toISO=liqISO(r.to);
   var leaves=(state.lic.items||[]).filter(function(l){ return l.employee_id===emp.id && l.status==="aprobada"; });
   function onLeave(dISO){ return leaves.some(function(l){ return String(l.start_date||"").slice(0,10)<=dISO && String(l.end_date||l.start_date||"").slice(0,10)>=dISO; }); }
@@ -11217,7 +11222,16 @@ function liqNovedades(emp, mk, kind){
       var ctl=asistMonthControl(mk).filter(function(x){ return x.emp && x.emp.id===emp.id; })[0];
       if(ctl){
         out.hasAsist=true;
-        ctl.absent.forEach(function(a){ if(a.date<fromISO || a.date>toISO) return; if(a.note) return; if(onLeave(a.date)) return; out.inasist++; out.inasistDates.push(a.date); });
+        var hireISO=emp.hire_date?String(emp.hire_date).slice(0,10):"", termISO=emp.termination_date?String(emp.termination_date).slice(0,10):"";
+        var fichoAlgo=(state.asist.items||[]).some(function(p){ var k=tsDayKey(p.punched_at); return p.employee_id===emp.id && k>=fromISO && k<=toISO; });
+        if(!fichoAlgo){ out.sinFichadas=true; }
+        else ctl.absent.forEach(function(a){
+          if(a.date<fromISO || a.date>toISO) return;
+          if(hireISO && a.date<hireISO) return; if(termISO && a.date>termISO) return;
+          if(onLeave(a.date)) return; // cubierta por una licencia aprobada: se liquida como licencia
+          if(a.note){ out.inasistJust++; out.ausencias.push({ date:a.date, just:true, note:a.note }); }
+          else { out.inasist++; out.inasistDates.push(a.date); out.ausencias.push({ date:a.date, just:false, note:"" }); }
+        });
         ctl.extra.forEach(function(x){ if(x.date<fromISO || x.date>toISO) return; var wd=dayWeekNum(x.date); if(wd===6 || wd===7) out.he100min+=x.min; else out.he50min+=x.min; });
         ctl.franco.forEach(function(x){ if(x.date>=fromISO && x.date<=toISO) out.francos++; });
       }
@@ -11298,9 +11312,11 @@ function liqBuildForm(emp, mk, kind){
   }
   var nv=liqNovedades(emp, mk, kind);
   if(nv.inasist) f.inasist=String(nv.inasist);
+  if(nv.inasistJust){ f.inasistJust=String(nv.inasistJust); f.inasistJustNota=nv.ausencias.filter(function(a){ return a.just; }).map(function(a){ return a.date.slice(8,10)+"/"+a.date.slice(5,7)+" ("+a.note+")"; }).join(", "); }
+  f.ausencias=nv.ausencias; f.asistSinFichadas=nv.sinFichadas; f.asistOk=nv.hasAsist;
   if(nv.enf) f.enfDias=String(Math.min(30,nv.enf));
   if(nv.hasAsist){
-    H.asist="Asistencia: "+nv.inasist+" ausencia"+(nv.inasist===1?"":"s")+" sin justificar"+(nv.inasistDates.length?(" ("+nv.inasistDates.map(function(d){ return d.slice(8,10)+"/"+d.slice(5,7); }).join(", ")+")"):"")+
+    H.asist=(nv.sinFichadas?"No tiene fichadas en este período: las ausencias no se pueden tomar de Asistencia, cargalas a mano":("Asistencia: "+nv.inasist+" ausencia"+(nv.inasist===1?"":"s")+" sin justificar y "+nv.inasistJust+" justificada"+(nv.inasistJust===1?"":"s")))+
       " · horas extra "+fmtMinDur(nv.he50min)+" en días hábiles y "+fmtMinDur(nv.he100min)+" sábado/domingo"+(nv.francos?(" · trabajó "+nv.francos+" franco"+(nv.francos===1?"":"s")+": revisá si corresponde pagarlo al 100 %"):"")+". Si hubo un feriado, pasá esas horas al 100 %.";
   } else {
     H.asist="No hay fichadas de este período en Asistencia: cargá las novedades a mano.";
@@ -11352,7 +11368,9 @@ function loadLiquidacion(){
     state.emp.items=r[0]||[]; s.items=r[1].items||[]; s.noTable=!r[1].ok;
     state.lic.items=r[2]||[]; state.asist.items=r[3]||[]; state.asist.absNotes=r[4]||[];
     s.scales=r[5].items||[]; s.noScaleTable=!r[5].ok; state.doc.items=r[6]||state.doc.items||[];
-    s.loading=false; render();
+    s.loading=false;
+    if(s.pendingOpen){ var po=s.pendingOpen; s.pendingOpen=null; if(liqEmpById(po)){ liqOpen(po); return; } }
+    render();
   }).catch(function(){ s.loading=false; s.items=s.items||[]; s.error="No pude cargar los datos para liquidar."; render(); });
 }
 function liqEmpById(id){ return (state.emp.items||[]).filter(function(x){ return x.id===id; })[0]||null; }
@@ -11366,8 +11384,35 @@ function liqOpen(empId, fresh){
     s.form.hints.saved="Liquidación guardada el "+fmtDateTimeShort(saved.updated_at||saved.created_at)+". Si cambiaste el legajo o las novedades, tocá «Recalcular desde el legajo».";
   } else {
     s.form=liqBuildForm(e, s.period, s.kind);
+    if(s.kind!=="sac" && !(s.asistMonths||{})[s.period]){
+      var mk=s.period, kd=s.kind;
+      s.asistLoading=true;
+      liqEnsureAttendance(mk).then(function(){
+        s.asistLoading=false;
+        if(s.emp===empId && s.period===mk && s.kind===kd && s.form && !s.form.hints.saved) s.form=liqBuildForm(e, mk, kd);
+        if(state.screen==="mod2-liquidacion") render();
+      });
+    }
   }
   render();
+}
+/* Trae de Supabase TODAS las fichadas y justificaciones del mes (no sólo las últimas 500)
+   para que las ausencias del período salgan completas en la liquidación. */
+function liqEnsureAttendance(mk){
+  var s=state.liq; s.asistMonths=s.asistMonths||{};
+  if(s.asistMonths[mk] || !(supaConfigured() && isLoggedIn())) return Promise.resolve();
+  var b=liqMonthBounds(mk);
+  var from=new Date(b.y, b.m-1, 1).toISOString(), to=new Date(b.y, b.m, 1).toISOString();
+  var q="/rest/v1/attendance?select=*&punched_at=gte."+encodeURIComponent(from)+"&punched_at=lt."+encodeURIComponent(to)+"&order=punched_at.asc&limit=10000";
+  return Promise.all([
+    supaFetch(q).then(function(r){ return r.json(); }).then(function(j){ return Array.isArray(j)?j:[]; }).catch(function(){ return []; }),
+    dbListAbsenceNotes().catch(function(){ return null; })
+  ]).then(function(r){
+    var have={}; (state.asist.items||[]).forEach(function(p){ have[p.id]=1; });
+    state.asist.items=(state.asist.items||[]).concat(r[0].filter(function(p){ return !have[p.id]; }));
+    if(r[1]) state.asist.absNotes=r[1];
+    s.asistMonths[mk]=true;
+  });
 }
 function liqCurrent(){
   var s=state.liq, e=s.emp?liqEmpById(s.emp):null;
@@ -11577,6 +11622,9 @@ function liqAction(act, el){
   else if(act==="liq-add-extra"){ if(f){ f.extras=f.extras||[]; f.extras.push({ label:"", tipo:el.getAttribute("data-t")||"rem", amount:"" }); render(); } }
   else if(act==="liq-del-extra"){ if(f){ f.extras.splice(parseInt(el.getAttribute("data-i"),10),1); render(); } }
   else if(act==="liq-archive"){ liqArchive(); }
+  else if(act==="liq-from-legajo"){ var id0=el.getAttribute("data-e"); s.kind="mensual"; s.tab="liquidar"; if(!s.period) s.period=liqMonthNow(); goLiquidacion(); if(s.items!==null && !s.loading && liqEmpById(id0)) liqOpen(id0); else s.pendingOpen=id0; }
+  else if(act==="liq-open-legajo"){ var id1=el.getAttribute("data-e"); if(liqEmpById(id1)) openEmployee(id1); }
+  else if(act==="liq-go-asist"){ goAsistencia(); }
   else if(act==="liq-resign"){ liqSendSign(el.getAttribute("data-id"), false); }
   else if(act==="liq-scale-new"){ liqScaleNew(el.getAttribute("data-a")||""); }
   else if(act==="liq-scale-edit"){ var sc=(s.scales||[]).filter(function(x){ return x.id===el.getAttribute("data-id"); })[0]; if(sc){ s.scaleForm={ id:sc.id, agreement:sc.agreement, category:sc.category, basic:String(sc.basic), no_rem:String(sc.no_rem||""), valid_from:String(sc.valid_from).slice(0,10), notes:sc.notes||"" }; s.raise=null; render(); } }
@@ -11619,6 +11667,24 @@ function liqBind(){
   document.querySelectorAll("[data-liqr]").forEach(function(el){ el.addEventListener(el.type==="checkbox"?"change":"input", function(e){ if(state.liq.raise) state.liq.raise[el.getAttribute("data-liqr")]=(el.type==="checkbox")?!!e.target.checked:e.target.value; }); });
   document.querySelectorAll("select[data-liqp]").forEach(function(el){ el.addEventListener("change", function(e){ liqSetParam(el.getAttribute("data-liqp"), e.target.value); liqRefresh(); }); });
   document.querySelectorAll("input[data-liqp]").forEach(function(el){ el.addEventListener("input", function(e){ liqSetParam(el.getAttribute("data-liqp"), e.target.value); liqRefresh(); }); });
+}
+
+/* Tarjeta «Liquidación de sueldos» dentro del legajo del empleado. */
+function liqLegajoCard(f){
+  if(!f || !f.id) return "";
+  var s=state.liq;
+  if(s.items===null && !s.legLoading && supaConfigured() && isLoggedIn()){
+    s.legLoading=true;
+    dbListPayrolls().then(function(r){ s.items=r.items||[]; s.noTable=!r.ok; s.legLoading=false; if(state.screen==="emp-form") render(); });
+  }
+  var hist=liqEmpPayrolls(f.id).slice(0,4);
+  var base=parseMoneyAR(f.salary);
+  return '<div class="card" style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px"><h3 style="font-size:13.5px;font-weight:600;color:var(--ink);margin:0">Liquidación de sueldos</h3>'+
+    '<button class="btn btn-primary btn-sm" data-action="liq-from-legajo" data-e="'+esc(f.id)+'">'+ic('briefcase',13)+' Liquidar sueldo</button></div>'+
+    '<p style="font-size:12.5px;color:var(--muted);margin:0 0 8px">La liquidación toma de este legajo el salario'+(base!=null?(' ($ '+liqMoney(base)+')'):'')+', la categoría, el convenio y la fecha de ingreso, y de Asistencia todas las ausencias del mes: las justificadas se pagan y las sin justificar se descuentan.</p>'+
+    (s.legLoading?('<p style="font-size:12px;color:var(--muted);margin:0">'+ic('loader',12,'spin')+' Cargando liquidaciones…</p>'):
+      (hist.length?('<div style="display:grid;gap:5px">'+hist.map(function(p){ return '<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 9px;background:var(--surface-2);border-radius:8px"><span>'+esc(liqPeriodLabel(p.period,p.kind))+'</span><span>Neto <b>$ '+liqMoney(p.net)+'</b></span></div>'; }).join('')+'</div>'):'<p style="font-size:12px;color:var(--faint);margin:0">Todavía no tiene liquidaciones guardadas.</p>'))+
+  '</div>';
 }
 /* ----- Liquidación · recibo y pantalla ----- */
 function liqReciboHtml(emp, f, res, copyLabel){
@@ -11691,6 +11757,22 @@ function liqCostHtml(res, f){
     '<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--border-soft)"><span style="color:var(--muted)">Remuneración bruta (rem. + no rem.)</span><span style="color:var(--ink);white-space:nowrap">$ '+liqMoney(res.totRem+res.totNoRem)+'</span></div>'+rows+
     '<p style="font-size:11.5px;color:var(--faint);margin:8px 0 0">No sale en el recibo: es lo que paga la empresa además del sueldo (F.931).'+(k.noArt?' Cargá la alícuota de tu ART en «Parámetros».':'')+(k.contrib&&(res.totRem+res.totNoRem)?(' Cargas sociales: '+liqPctTxt(Math.round(k.contrib/(res.totRem+res.totNoRem)*10000)/100)+' sobre el bruto.'):'')+'</p>';
 }
+/* Ausencias del período traídas de Asistencia: cada día con su estado. */
+function liqAusenciasHtml(f){
+  var s=state.liq;
+  if(s.asistLoading) return '<p style="font-size:12.5px;color:var(--muted);margin:0">'+ic('loader',12,'spin')+' Trayendo todas las fichadas y justificaciones del mes…</p>';
+  var a=f.ausencias||[];
+  if(f.asistSinFichadas || !f.asistOk) return '';
+  if(!a.length) return '<p style="font-size:12.5px;color:var(--green);margin:0">'+ic('check',12)+' Sin ausencias en el período según Asistencia.</p>';
+  var chip=function(x){ var d=x.date.slice(8,10)+"/"+x.date.slice(5,7)+" "+(DOW_NAMES[new Date(parseInt(x.date.slice(0,4),10), parseInt(x.date.slice(5,7),10)-1, parseInt(x.date.slice(8,10),10)).getDay()]||"");
+    return '<span title="'+esc(x.just?("Justificada: "+x.note):"Sin justificar")+'" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 9px;border-radius:999px;border:1px solid '+(x.just?'var(--green)':'var(--brick)')+';color:'+(x.just?'var(--green)':'var(--brick)')+'">'+esc(d)+' · '+(x.just?('justificada'+(x.note?(': '+esc(String(x.note).slice(0,40))):'')):'sin justificar')+'</span>'; };
+  var nj=a.filter(function(x){ return !x.just; }).length, j=a.length-nj;
+  return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px">'+
+    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span style="font-size:12.5px;font-weight:600;color:var(--ink)">Ausencias del período (Asistencia): '+nj+' sin justificar · '+j+' justificada'+(j===1?'':'s')+'</span>'+
+    '<button class="btn btn-ghost btn-sm" data-action="liq-go-asist">'+ic('clock',13)+' Justificar en Asistencia</button></div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+a.map(chip).join('')+'</div>'+
+    '<p style="font-size:11.5px;color:var(--faint);margin:8px 0 0">Si justificás una ausencia en Asistencia, volvé acá y tocá «Recalcular desde el legajo».</p></div>';
+}
 /* Campos del formulario */
 function liqIn(key, label, val, o){
   o=o||{};
@@ -11725,8 +11807,9 @@ function liqFormHtml(emp, f){
       '<div><button class="btn btn-ghost btn-sm" data-action="liq-add-fijo">'+ic('plus',13)+' Adicional fijo</button> <span style="font-size:11.5px;color:var(--faint)">Integra la remuneración fija (valor día ÷ 30 y valor hora ÷ '+esc(String(P.divisor))+').</span></div>',
       "Mes comercial de 30 días. Con esto se arma la remuneración fija de la que salen el valor día, el valor hora y el día de vacaciones.");
     html += liqCard("Novedades del mes",
-      hintBox(H.asist)+hintBox(H.lic)+
-      liqRow(3, liqIn("inasist","Inasistencias injustificadas",f.inasist,{ suf:"días", ph:"0" })+liqIn("enfDias","Enfermedad inculpable",f.enfDias,{ suf:"días", ph:"0", hint:"Se pagan como trabajados." })+liqIn("sinGoceDias","Días sin goce",f.sinGoceDias,{ suf:"días", ph:"0", hint:f.sinGoceNota?("Incluye "+f.sinGoceNota+"."):"Licencias sin goce o por maternidad (ANSES)." }))+
+      liqAusenciasHtml(f)+hintBox(H.asist)+hintBox(H.lic)+
+      liqRow(2, liqIn("inasist","Inasistencias sin justificar",f.inasist,{ suf:"días", ph:"0", hint:"Se descuentan ÷ 30 (y el no remunerativo)." })+liqIn("inasistJust","Inasistencias justificadas",f.inasistJust,{ suf:"días", ph:"0", hint:"Se pagan: no se descuentan." }))+
+      liqRow(2, liqIn("enfDias","Enfermedad inculpable",f.enfDias,{ suf:"días", ph:"0", hint:"Se pagan como trabajados." })+liqIn("sinGoceDias","Días sin goce",f.sinGoceDias,{ suf:"días", ph:"0", hint:f.sinGoceNota?("Incluye "+f.sinGoceNota+"."):"Licencias sin goce o por maternidad (ANSES)." }))+
       liqRow(3, liqIn("he50","Horas extras al 50 %",f.he50,{ suf:"h", ph:"0", hint:"Días hábiles." })+liqIn("he100","Horas extras al 100 %",f.he100,{ suf:"h", ph:"0", hint:"Sábado después de las 13 h, domingo o feriado." })+liqIn("feriados","Feriados trabajados",f.feriados,{ suf:"días", ph:"0", hint:"Se agrega sueldo ÷ 25 por día." }))+
       liqRow(2, liqIn("vacDias","Vacaciones gozadas en el mes",f.vacDias,{ suf:"días", ph:"0", hint:H.vac })+liqIn("vacPromVar","Promedio de variables para vacaciones",f.vacPromVar,{ pre:"$", ph:"0", hint:H.vacProm }))+
       liqRow(2, liqSel("licEspTipo","Licencia especial paga (art. 158 LCT)",f.licEspTipo,Object.keys(LIQ_LIC_ESP).map(function(k){ var t=LIQ_LIC_ESP[k]; return [k, t.label+(t.dias?(" · "+t.dias+" días"):"")]; }))+liqIn("licEspDias","Días de licencia",f.licEspDias,{ suf:"días", ph:"0", hint:"Se descuentan del básico y se pagan ÷ 25." }))+
@@ -11738,9 +11821,10 @@ function liqFormHtml(emp, f){
   }
   else if(isQ){
     html += liqCard("Jornal de la quincena",
-      hintBox(H.asist)+hintBox(H.lic)+
+      liqAusenciasHtml(f)+hintBox(H.asist)+hintBox(H.lic)+
       liqRow(2, liqIn("valorHora","Valor hora",f.valorHora,{ pre:"$", ph:"0", hint:H.valorHora })+liqSel("regimen","Jornada",f.regimen,Object.keys(LIQ_REGIMEN).map(function(k){ return [k, LIQ_REGIMEN[k].label]; })))+
-      liqRow(3, liqIn("jornadas","Jornadas trabajadas",f.jornadas,{ ph:"0", hint:H.jornadas })+liqIn("enfDias","Enfermedad inculpable",f.enfDias,{ suf:"jornadas", ph:"0" })+liqIn("inasist","Inasistencias injustificadas",f.inasist,{ suf:"jornadas", ph:"0", hint:"No se pagan." }))+
+      liqRow(3, liqIn("jornadas","Jornadas trabajadas",f.jornadas,{ ph:"0", hint:H.jornadas })+liqIn("enfDias","Enfermedad inculpable",f.enfDias,{ suf:"jornadas", ph:"0" })+liqIn("inasist","Inasistencias sin justificar",f.inasist,{ suf:"jornadas", ph:"0", hint:"No se pagan." }))+
+      liqIn("inasistJust","Inasistencias justificadas",f.inasistJust,{ suf:"jornadas", ph:"0", hint:"Quedan justificadas; si son licencia paga, cargalas como enfermedad o feriado." })+
       liqRow(3, liqIn("he50","Horas extras al 50 %",f.he50,{ suf:"h", ph:"0" })+liqIn("he100","Horas extras al 100 %",f.he100,{ suf:"h", ph:"0" })+liqIn("feriados","Feriados pagos",f.feriados,{ suf:"jornadas", ph:"0" })),
       "Cada jornada se paga como 8 horas: la nocturna de 7 h y la insalubre de 6 h equivalen a la jornada diurna de 8 h.");
   }
@@ -11939,6 +12023,7 @@ function liqScreenInner(){
   var res=liqCompute(s.form, P);
   var saved=liqSavedFor(e.id, s.period, s.kind);
   html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="liq-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span>'+
+    '<button class="btn btn-ghost btn-sm" data-action="liq-open-legajo" data-e="'+esc(e.id)+'">'+ic('file',13)+' Ver legajo</button>'+
     (saved?'<span class="badge" style="color:var(--green)">'+ic('check',12)+' Guardada</span>':'<span class="badge" style="color:var(--amber)">Borrador</span>')+'</div>';
   html += periodBar+'<button class="btn btn-ghost btn-sm" data-action="liq-rebuild" style="margin-bottom:3px">'+ic('rotate',13)+' Recalcular desde el legajo</button></div>';
   if(s.form.hints && s.form.hints.saved) html += '<p style="font-size:12px;color:var(--muted);margin:-4px 0 12px">'+ic('info',12)+' '+esc(s.form.hints.saved)+'</p>';
