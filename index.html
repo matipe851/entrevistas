@@ -1761,7 +1761,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v40.0-r108";
+var APP_VERSION = "v40.1-r109";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -10680,7 +10680,11 @@ function repAsistencia(year){
    del CCT sólo con obra social y sindicato, embargo según Dec. 484/87 y SAC = 50 % de la
    mayor remuneración del semestre, proporcional al tiempo trabajado. */
 var LIQ_DEFAULTS = { smvm:376600, divisor:200, jub:11, pami:3, os:3, sind:2, antigPct:1,
-  empleador:"", cuit:"", domicilio:"", lugarPago:"", depBanco:"" };
+  empleador:"", cuit:"", domicilio:"", lugarPago:"", depBanco:"",
+  contribPct:18, osContrib:6, detraccion:7003.68, artPct:0, artFijo:0, scvo:424.62 };
+/* Contribuciones a la seguridad social (Ley 27.541 y Dec. 1050/24): 20,40 % grandes empleadores
+   de comercio y servicios, 18 % el resto; RIFL (Ley 27.802) 5 % para las altas incentivadas. */
+var LIQ_CONTRIB = [["18","18 % · PyME y resto de empleadores"],["20.4","20,40 % · grandes de comercio y servicios"],["5","5 % · RIFL, alta incentivada (Ley 27.802)"]];
 var LIQ_KINDS = {
   mensual:{ label:"Mensual (mensualizado)", short:"Mensual" },
   quincena1:{ label:"1.ª quincena (jornalizado)", short:"1.ª quincena" },
@@ -10915,6 +10919,27 @@ function liqCompute(i, P){
   var neto=liqR2(totRem+totNoRem-totDesc);
   return { kind:kind, lines:lines, notes:notes, info:info, totRem:totRem, totNoRem:totNoRem, totDesc:totDesc, neto:neto, letras:liqEnLetras(neto) };
 }
+
+/* Costo laboral del empleador: remuneración + contribuciones patronales + ART + seguro de vida. */
+function liqCosto(res, i, P){
+  i=i||{}; P=P||LIQ_DEFAULTS;
+  var kind=res.kind, rem=res.totRem, nr=res.totNoRem;
+  var fac = kind==="mensual" ? ((liqNum(i.diasMes)>0 && liqNum(i.diasMes)<=30) ? liqNum(i.diasMes)/30 : 1) : 0.5;
+  var pct = (i.contribPct!=null && i.contribPct!=="") ? liqNum(i.contribPct) : liqNum(P.contribPct);
+  var osC=liqNum(P.osContrib), artPct=liqNum(P.artPct), artFijo=liqNum(P.artFijo), scvo=liqNum(P.scvo);
+  var detr=liqR2(liqNum(P.detraccion)*fac);
+  var items=[];
+  function it(label, amount, formula){ amount=liqR2(amount); if(amount) items.push({ label:label, amount:amount, formula:formula }); return amount; }
+  var baseSS=Math.max(0, rem-detr);
+  var ss=it("Contribuciones seguridad social ("+liqPctTxt(pct)+")", baseSS*pct/100, liqPctTxt(pct)+" × ($ "+liqMoney(rem)+(detr?(" − detracción $ "+liqMoney(detr)):"")+") · SIPA, PAMI, asignaciones familiares y Fondo Nacional de Empleo");
+  var os=it("Contribución obra social ("+liqPctTxt(osC)+")", rem*osC/100, liqPctTxt(osC)+" × $ "+liqMoney(rem));
+  var osNr=(i.noRemOS && nr>0) ? it("Contribución obra social s/ no rem.", nr*osC/100, liqPctTxt(osC)+" × $ "+liqMoney(nr)+" (lo pacta el CCT)") : 0;
+  var fijoArt=(kind==="mensual"||kind==="quincena2")?artFijo:0;
+  var art=it("ART", rem*artPct/100+fijoArt, (artPct?(liqPctTxt(artPct)+" × $ "+liqMoney(rem)):"")+(artPct&&fijoArt?" + ":"")+(fijoArt?("$ "+liqMoney(fijoArt)+" fijo"):"")+((!artPct&&!fijoArt)?"":" · según el contrato con la ART"));
+  var sv=(kind==="mensual"||kind==="quincena2")?it("Seguro de vida obligatorio (Dec. 1567/74)", scvo, "Prima fija mensual por trabajador"):0;
+  var contrib=liqR2(ss+os+osNr+art+sv);
+  return { items:items, contrib:contrib, costo:liqR2(rem+nr+contrib), pct:pct, detr:detr, noArt:!(artPct||artFijo) };
+}
 /* ----- Liquidación · base de datos (tabla payrolls, ver sql_liquidacion.sql) ----- */
 function dbListPayrolls(){
   return supaFetch("/rest/v1/payrolls?select=*&order=period.desc,created_at.desc")
@@ -10931,6 +10956,45 @@ function dbUpdatePayroll(id, patch){
 }
 function dbDeletePayroll(id){
   return supaFetch("/rest/v1/payrolls?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+
+/* ----- Escalas salariales por convenio y categoría (tabla salary_scales) ----- */
+function dbListScales(){
+  return supaFetch("/rest/v1/salary_scales?select=*&order=agreement.asc,category.asc,valid_from.desc")
+    .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, items:(r.ok && Array.isArray(j))?j:[] }; }); })
+    .catch(function(){ return { ok:false, items:[] }; });
+}
+function dbCreateScale(row){
+  return supaFetch("/rest/v1/salary_scales", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error((j&&j.message)||"insert_failed"); }); });
+}
+function dbUpdateScale(id, patch){
+  return supaFetch("/rest/v1/salary_scales?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify(patch) })
+    .then(function(r){ if(!r.ok) throw new Error("update_failed"); return true; });
+}
+function dbDeleteScale(id){
+  return supaFetch("/rest/v1/salary_scales?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+function liqNorm(x){ return String(x||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim(); }
+/* Escala vigente para el convenio y la categoría del empleado al último día del período. */
+function liqScaleFor(agreement, category, mk){
+  var a=liqNorm(agreement), c=liqNorm(category); if(!a || !c) return null;
+  var end=liqISO(liqMonthBounds(mk).end);
+  var list=(state.liq.scales||[]).filter(function(x){ return liqNorm(x.agreement)===a && liqNorm(x.category)===c && String(x.valid_from||"").slice(0,10)<=end; });
+  list.sort(function(x,y){ return String(y.valid_from).localeCompare(String(x.valid_from)); });
+  return list[0]||null;
+}
+/* Convenios conocidos: los de los legajos y los de las escalas cargadas. */
+function liqConvenios(){
+  var seen={}, out=[];
+  (state.emp.items||[]).map(function(e){ return e.collective_agreement; }).concat((state.liq.scales||[]).map(function(x){ return x.agreement; })).forEach(function(v){ v=String(v||"").trim(); if(v && !seen[liqNorm(v)]){ seen[liqNorm(v)]=1; out.push(v); } });
+  return out.sort(function(a,b){ return a.localeCompare(b,"es"); });
+}
+/* Última versión de cada categoría de un convenio (la vigente más nueva). */
+function liqScaleLatest(agreement){
+  var a=liqNorm(agreement), by={};
+  (state.liq.scales||[]).forEach(function(x){ if(liqNorm(x.agreement)!==a) return; var k=liqNorm(x.category); if(!by[k] || String(x.valid_from)>String(by[k].valid_from)) by[k]=x; });
+  return Object.keys(by).map(function(k){ return by[k]; }).sort(function(x,y){ return String(x.category).localeCompare(String(y.category),"es"); });
 }
 
 /* ----- Parámetros (se guardan en este navegador) ----- */
@@ -11028,6 +11092,18 @@ function liqBuildForm(emp, mk, kind){
     extras:[], valorHora:"", regimen:"diurno", jornadas:"", fechaPago:"", lugarPago:(P.lugarPago||""), depPeriodo:monthLabel(liqAddMonths(mk,-1)), depFecha:"", depBanco:(P.depBanco||""), hints:{} };
   var H=f.hints;
   H.basico = base!=null ? "Del legajo: salario actual $ "+liqMoney(base)+"." : "El legajo no tiene salario cargado: completalo acá o en «Legajo del empleado».";
+  var esc0=liqScaleFor(emp.collective_agreement, emp.category, mk);
+  if(esc0 && kind!=="sac"){
+    var eb=Number(esc0.basic)||0, enr=Number(esc0.no_rem)||0;
+    if(kind==="mensual"){
+      f.basico=String(eb);
+      H.basico="Escala "+esc0.agreement+" · "+esc0.category+" vigente desde "+fDMY(String(esc0.valid_from).slice(0,10))+": básico $ "+liqMoney(eb)+".";
+      if(base!=null && base>eb+0.5){ f.fijos.push({ label:"Adicional sobre convenio", amount:String(liqR2(base-eb)) }); H.basico+=" El legajo paga $ "+liqMoney(base)+": la diferencia va como adicional sobre convenio."; }
+      else if(base!=null && base<eb-0.5){ H.basico+=" ⚠ El salario del legajo ($ "+liqMoney(base)+") está por debajo de la escala: actualizalo."; }
+      if(enr>0){ f.noRem=String(enr); f.noRemLabel="Suma no remunerativa "+esc0.agreement; }
+    }
+    f.escalaId=esc0.id;
+  }
   H.antig = anios!=null ? ("Ingreso "+fDMY(String(emp.hire_date).slice(0,10))+" → "+anios+" año"+(anios===1?"":"s")+" completos al "+fmtDMY(liqMonthBounds(mk).end)+".") : "Sin fecha de ingreso en el legajo: cargá los años a mano.";
   H.sind = conv ? ("Convenio del legajo: "+emp.collective_agreement+".") : "Sin convenio en el legajo: sin cuota sindical por defecto.";
   var hire=repHireDate(emp), b=liqMonthBounds(mk);
@@ -11046,7 +11122,7 @@ function liqBuildForm(emp, mk, kind){
       var rem="", src="";
       if(saved){ rem=String(saved.gross_rem||0); src="liquidación guardada"; }
       else if(!employed){ rem="0"; src="no trabajaba"; }
-      else if(base!=null){ rem=String(base); src="estimado: salario del legajo"; }
+      else { var sc=liqScaleFor(emp.collective_agreement, emp.category, mkk); var bb=sc?Math.max(Number(sc.basic)||0, base||0):base; if(bb!=null){ rem=String(bb); src=sc?"estimado: escala del CCT":"estimado: salario del legajo"; } }
       f.sacMeses.push({ label:MONTH_NAMES[first+k-1], mk:mkk, rem:rem, src:src });
     }
     var from=(hire && hire>semStart)?hire:semStart, to=(term && term<semEnd)?term:semEnd;
@@ -11108,10 +11184,13 @@ function loadLiquidacion(){
     dbListPayrolls(),
     (state.lic.items!==null?Promise.resolve(state.lic.items):dbListLeaves().catch(nada)),
     (state.asist.items!==null?Promise.resolve(state.asist.items):dbListAttendance().catch(nada)),
-    ((state.asist.absNotes&&state.asist.absNotes.length)?Promise.resolve(state.asist.absNotes):dbListAbsenceNotes().catch(nada))
+    ((state.asist.absNotes&&state.asist.absNotes.length)?Promise.resolve(state.asist.absNotes):dbListAbsenceNotes().catch(nada)),
+    dbListScales(),
+    dbListDocs().catch(nada)
   ]).then(function(r){
     state.emp.items=r[0]||[]; s.items=r[1].items||[]; s.noTable=!r[1].ok;
     state.lic.items=r[2]||[]; state.asist.items=r[3]||[]; state.asist.absNotes=r[4]||[];
+    s.scales=r[5].items||[]; s.noScaleTable=!r[5].ok; state.doc.items=r[6]||state.doc.items||[];
     s.loading=false; render();
   }).catch(function(){ s.loading=false; s.items=s.items||[]; s.error="No pude cargar los datos para liquidar."; render(); });
 }
@@ -11135,21 +11214,23 @@ function liqCurrent(){
   return { emp:e, form:s.form, res:liqCompute(s.form, liqParams()) };
 }
 function liqSave(){
-  var s=state.liq, c=liqCurrent(); if(!c || s.saving) return;
-  if(s.form.kind==="mensual" && !liqNum(s.form.basico)){ s.msg=""; s.error="Cargá el sueldo básico antes de guardar."; render(); return; }
+  var s=state.liq, c=liqCurrent(); if(!c || s.saving) return Promise.resolve(null);
+  if(s.form.kind==="mensual" && !liqNum(s.form.basico)){ s.msg=""; s.error="Cargá el sueldo básico antes de guardar."; render(); return Promise.resolve(null); }
   var inputs=JSON.parse(JSON.stringify(s.form)); delete inputs.hints;
   var row={ employee_id:c.emp.id, period:s.period, kind:s.kind, inputs:inputs, lines:c.res.lines,
-    gross_rem:c.res.totRem, gross_norem:c.res.totNoRem, deductions:c.res.totDesc, net:c.res.neto, status:"liquidada", updated_at:new Date().toISOString() };
+    gross_rem:c.res.totRem, gross_norem:c.res.totNoRem, deductions:c.res.totDesc, net:c.res.neto, employer_cost:liqCosto(c.res, s.form, liqParams()).costo, status:"liquidada", updated_at:new Date().toISOString() };
   var prev=liqSavedFor(c.emp.id, s.period, s.kind);
   s.saving=true; s.error=null; render();
-  (prev?dbUpdatePayroll(prev.id, row):dbCreatePayroll(row)).then(function(){
+  return (prev?dbUpdatePayroll(prev.id, row):dbCreatePayroll(row)).then(function(){
     return dbListPayrolls();
   }).then(function(r){
     s.items=r.items||[]; s.noTable=!r.ok; s.saving=false;
     s.msg="Liquidación de "+empFullName(c.emp)+" · "+liqPeriodLabel(s.period, s.kind)+" guardada. Neto $ "+liqMoney(c.res.neto)+".";
     render();
+    return liqSavedFor(c.emp.id, s.period, s.kind);
   }).catch(function(){
     s.saving=false; s.error="No pude guardar la liquidación. Si es la primera vez, corré sql_liquidacion.sql en el SQL Editor de Supabase. El recibo en PDF se puede descargar igual."; render();
+    return null;
   });
 }
 function liqDelete(id){
@@ -11171,37 +11252,152 @@ function liqNominaRows(mk){
 }
 function liqNominaCSV(){
   var mk=state.liq.nPeriod||state.liq.period, rows=liqNominaRows(mk);
-  var out=[["Período", monthLabel(mk)],[],["Empleado","Legajo","CUIL","Tipo","Remunerativo","No remunerativo","Descuentos","Neto"]];
-  var t={ r:0, n:0, d:0, x:0 };
+  var out=[["Período", monthLabel(mk)],[],["Empleado","Legajo","CUIL","Tipo","Remunerativo","No remunerativo","Descuentos","Neto","Costo laboral"]];
+  var t={ r:0, n:0, d:0, x:0, c:0 };
   rows.forEach(function(x){ var p=x.p; t.r+=Number(p.gross_rem)||0; t.n+=Number(p.gross_norem)||0; t.d+=Number(p.deductions)||0; t.x+=Number(p.net)||0;
-    out.push([x.e?empFullName(x.e):"(empleado eliminado)", x.e?(x.e.legajo_number||""):"", x.e?(x.e.cuil||""):"", (LIQ_KINDS[p.kind]||{}).short||p.kind, liqMoney(p.gross_rem), liqMoney(p.gross_norem), liqMoney(p.deductions), liqMoney(p.net)]); });
-  out.push(["Totales","","","",liqMoney(t.r),liqMoney(t.n),liqMoney(t.d),liqMoney(t.x)]);
+    t.c+=Number(p.employer_cost)||0;
+    out.push([x.e?empFullName(x.e):"(empleado eliminado)", x.e?(x.e.legajo_number||""):"", x.e?(x.e.cuil||""):"", (LIQ_KINDS[p.kind]||{}).short||p.kind, liqMoney(p.gross_rem), liqMoney(p.gross_norem), liqMoney(p.deductions), liqMoney(p.net), liqMoney(p.employer_cost)]); });
+  out.push(["Totales","","","",liqMoney(t.r),liqMoney(t.n),liqMoney(t.d),liqMoney(t.x),liqMoney(t.c)]);
   liqDownload("nomina_"+mk+".csv", out.map(function(r){ return r.map(liqCsvCell).join(","); }).join("\r\n"));
 }
-/* Recibo en PDF: mismo recibo de la pantalla, sobre papel blanco. */
+/* Recibo en PDF (original y duplicado) sobre papel blanco. Devuelve un Blob. */
+function liqPdfBlob(c){
+  return new Promise(function(resolve, reject){
+    if(!(window.html2canvas && window.jspdf && window.jspdf.jsPDF)){ reject(new Error("sin_pdf")); return; }
+    var wrap=document.createElement("div");
+    wrap.style.cssText="position:fixed;left:-10000px;top:0;width:820px;background:#ffffff;padding:28px;box-sizing:border-box";
+    wrap.innerHTML=liqReciboHtml(c.emp, c.form, c.res, "ORIGINAL · para el empleador")+'<div style="height:26px;border-bottom:1px dashed #b9c2cf;margin-bottom:26px"></div>'+liqReciboHtml(c.emp, c.form, c.res, "DUPLICADO · para el trabajador");
+    document.body.appendChild(wrap);
+    html2canvas(wrap, { scale:2, backgroundColor:"#ffffff" }).then(function(canvas){
+      try{
+        var pdf=new window.jspdf.jsPDF({ unit:"pt", format:"a4" });
+        var pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+        var iw=pw-40, ih=canvas.height*(iw/canvas.width);
+        var img=canvas.toDataURL("image/jpeg", 0.92);
+        var y=20, resto=ih;
+        pdf.addImage(img, "JPEG", 20, y, iw, ih);
+        while(resto > ph-40){ resto-=(ph-40); pdf.addPage(); y=20-(ih-resto); pdf.addImage(img, "JPEG", 20, y, iw, ih); }
+        try{ document.body.removeChild(wrap); }catch(e){}
+        resolve(pdf.output("blob"));
+      }catch(e){ try{ document.body.removeChild(wrap); }catch(x){} reject(e); }
+    }).catch(function(e){ try{ document.body.removeChild(wrap); }catch(x){} reject(e); });
+  });
+}
+function liqPdfName(c){
+  var nom=((c.emp.last_name||"")+"_"+(c.emp.first_name||"")).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+  return "recibo_"+(nom||"empleado")+"_"+c.form.period+(c.form.kind!=="mensual"?("_"+c.form.kind):"")+".pdf";
+}
 function liqPdf(){
   var c=liqCurrent(); if(!c) return;
-  if(!(window.html2canvas && window.jspdf && window.jspdf.jsPDF)){ state.liq.error="No pude generar el PDF en este navegador. Probá desde una computadora."; render(); return; }
-  var wrap=document.createElement("div");
-  wrap.style.cssText="position:fixed;left:-10000px;top:0;width:820px;background:#ffffff;padding:28px;box-sizing:border-box";
-  wrap.innerHTML=liqReciboHtml(c.emp, c.form, c.res, "ORIGINAL · para el empleador")+'<div style="height:26px;border-bottom:1px dashed #b9c2cf;margin-bottom:26px"></div>'+liqReciboHtml(c.emp, c.form, c.res, "DUPLICADO · para el trabajador");
-  document.body.appendChild(wrap);
   state.liq.pdfBusy=true; render();
-  html2canvas(wrap, { scale:2, backgroundColor:"#ffffff" }).then(function(canvas){
-    try{
-      var pdf=new window.jspdf.jsPDF({ unit:"pt", format:"a4" });
-      var pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
-      var iw=pw-40, ih=canvas.height*(iw/canvas.width);
-      var img=canvas.toDataURL("image/jpeg", 0.92);
-      var y=20, resto=ih;
-      pdf.addImage(img, "JPEG", 20, y, iw, ih);
-      while(resto > ph-40){ resto-=(ph-40); pdf.addPage(); y=20-(ih-resto); pdf.addImage(img, "JPEG", 20, y, iw, ih); }
-      var nom=((c.emp.last_name||"")+"_"+(c.emp.first_name||"")).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
-      pdf.save("recibo_"+(nom||"empleado")+"_"+c.form.period+(c.form.kind!=="mensual"?("_"+c.form.kind):"")+".pdf");
-    }catch(e){}
-    try{ document.body.removeChild(wrap); }catch(e){}
+  liqPdfBlob(c).then(function(blob){
+    var url=URL.createObjectURL(blob); plainBrowserDownload(url, liqPdfName(c)); setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
     state.liq.pdfBusy=false; render();
-  }).catch(function(){ try{ document.body.removeChild(wrap); }catch(e){} state.liq.pdfBusy=false; state.liq.error="No pude generar el PDF."; render(); });
+  }).catch(function(){ state.liq.pdfBusy=false; state.liq.error="No pude generar el PDF en este navegador. Probá desde una computadora."; render(); });
+}
+/* Documento del área Documentación vinculado a una liquidación guardada. */
+function liqDocFor(p){ if(!p || !p.doc_id) return null; return (state.doc.items||[]).filter(function(d){ return d.id===p.doc_id; })[0]||null; }
+/* Guarda la liquidación, sube el recibo en PDF, lo archiva en Documentación (Recibos) y lo manda a firmar. */
+function liqArchive(){
+  var s=state.liq; if(s.archiving) return;
+  if(!audioUploadConfigured()){ s.error="Para archivar el recibo hay que tener Cloudinary configurado."; render(); return; }
+  s.archiving=true; s.error=null; render();
+  var c=null, pr=null;
+  liqSave().then(function(saved){
+    if(!saved) throw new Error("no_saved");
+    pr=saved; c=liqCurrent(); s.archiving=true; render();
+    return liqPdfBlob(c);
+  }).then(function(blob){
+    var fname=liqPdfName(c);
+    var file=new File([blob], fname, { type:"application/pdf" });
+    return uploadAudioToCloudinary(file, "recibos/"+fname.replace(/\.pdf$/,"")+"_"+Date.now()).then(function(url){ return { url:url, name:fname }; });
+  }).then(function(up){
+    var b=liqMonthBounds(s.period);
+    var row={ employee_id:c.emp.id, type:"recibo", title:"Recibo de haberes · "+liqPeriodLabel(s.period, s.kind),
+      detail:"Remunerativo $ "+liqMoney(c.res.totRem)+" · no remunerativo $ "+liqMoney(c.res.totNoRem)+" · descuentos $ "+liqMoney(c.res.totDesc)+" · neto $ "+liqMoney(c.res.neto)+".",
+      doc_date:(c.form.fechaPago||liqISO(b.end)), file_url:up.url, file_name:up.name, signed:false };
+    var old=liqDocFor(pr);
+    var p = old ? dbUpdateDoc(old.id, { title:row.title, detail:row.detail, doc_date:row.doc_date, file_url:row.file_url, file_name:row.file_name, signed:false, signed_at:null }).then(function(){ return old; })
+                : dbCreateDoc(row);
+    return p;
+  }).then(function(doc){
+    return dbUpdatePayroll(pr.id, { doc_id:doc.id }).then(function(){ return Promise.all([dbListPayrolls(), dbListDocs()]); }).then(function(r){
+      s.items=r[0].items||s.items; state.doc.items=r[1]||[];
+      return liqSendSign(doc.id, true);
+    });
+  }).then(function(){ s.archiving=false; render(); })
+  .catch(function(e){
+    s.archiving=false;
+    if(!(e && e.message==="no_saved")) s.error="No pude archivar el recibo en Documentación ("+((e&&e.message)||"error")+"). Revisá la conexión y que Documentación funcione (SQL de documentación).";
+    render();
+  });
+}
+/* Envía el recibo archivado a firmar por mail (mismo circuito que Documentación). */
+function liqSendSign(docId, afterArchive){
+  var s=state.liq; var t=(state.doc.items||[]).filter(function(x){ return x.id===docId; })[0]; if(!t) return Promise.resolve();
+  var e=liqEmpById(t.employee_id);
+  var email=((e&&e.email)||"").trim(), hasEmail=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+  var token=t.sign_token||randToken();
+  s.signing=true; s.signLink=""; render();
+  return dbUpdateDoc(docId, { sign_token:token, signed_at:null, signed:false }).then(function(){
+    t.sign_token=token; t.signed=false; t.signed_at=null;
+    var link=buildDocLink(token);
+    if(!hasEmail){ s.signing=false; s.signLink=link; s.msg=(afterArchive?"Recibo archivado en Documentación. ":"")+"El empleado no tiene email en el legajo: pasale este link para que lo firme."; render(); return; }
+    return notifyDocEmail(email, empFullName(e), link, t.title||"Recibo de haberes").then(function(j){
+      s.signing=false;
+      if(j && j.ok){ s.msg=(afterArchive?"Recibo archivado en Documentación y ":"Recibo ")+"enviado a firmar a "+email+"."; }
+      else { s.signLink=link; s.msg=(afterArchive?"Recibo archivado en Documentación. ":"")+signEmailError(j)+" Pasale este link para que lo firme."; }
+      render();
+    });
+  }).catch(function(){ s.signing=false; s.error="No pude preparar la firma del recibo."; render(); });
+}
+/* ----- Escalas del CCT: alta, edición y aumentos (paritarias) ----- */
+function liqScaleNew(agreement){ state.liq.scaleForm={ id:null, agreement:agreement||"", category:"", basic:"", no_rem:"", valid_from:(liqMonthNow()+"-01"), notes:"" }; state.liq.raise=null; render(); }
+function liqScaleSave(){
+  var s=state.liq, f=s.scaleForm; if(!f || s.scaleSaving) return;
+  if(!String(f.agreement).trim() || !String(f.category).trim() || !liqNum(f.basic) || !f.valid_from){ s.error="Completá convenio, categoría, básico y vigencia."; render(); return; }
+  var row={ agreement:String(f.agreement).trim(), category:String(f.category).trim(), basic:liqR2(liqNum(f.basic)), no_rem:liqR2(liqNum(f.no_rem)), valid_from:f.valid_from, notes:String(f.notes||"").trim() };
+  s.scaleSaving=true; s.error=null; render();
+  (f.id?dbUpdateScale(f.id, row):dbCreateScale(row)).then(function(){ return dbListScales(); }).then(function(r){
+    s.scales=r.items||[]; s.noScaleTable=!r.ok; s.scaleSaving=false; s.scaleForm=null; s.msg="Escala guardada: "+row.agreement+" · "+row.category+"."; render();
+  }).catch(function(){ s.scaleSaving=false; s.error="No pude guardar la escala (¿ya existe esa categoría con la misma vigencia?)."; render(); });
+}
+function liqScaleDelete(id){
+  if(!confirm("¿Eliminar esta escala? Las liquidaciones ya guardadas no cambian.")) return;
+  dbDeleteScale(id).then(function(){ return dbListScales(); }).then(function(r){ state.liq.scales=r.items||[]; state.liq.msg="Escala eliminada."; render(); });
+}
+/* Aumento por paritaria: crea la nueva versión de cada categoría del convenio (queda el historial)
+   y, si se pide, actualiza el salario del legajo de los empleados de ese convenio y registra el movimiento. */
+function liqRaiseApply(){
+  var s=state.liq, f=s.raise; if(!f || s.raising) return;
+  var pb=liqNum(f.pctBasic), pn=liqNum(f.pctNoRem);
+  var cats=liqScaleLatest(f.agreement);
+  if(!cats.length){ s.error="Ese convenio no tiene categorías cargadas."; render(); return; }
+  if(!(pb || pn) || !f.valid_from){ s.error="Cargá el porcentaje de aumento y la vigencia."; render(); return; }
+  if(cats.some(function(x){ return String(x.valid_from).slice(0,10)===f.valid_from; })){ s.error="Ya hay categorías con vigencia "+fDMY(f.valid_from)+" en ese convenio: elegí otra fecha o editalas a mano."; render(); return; }
+  if(!confirm("Aplicar "+liqPctTxt(pb)+" al básico"+(pn?(" y "+liqPctTxt(pn)+" al no remunerativo"):"")+" de "+cats.length+" categoría(s) de "+f.agreement+" desde el "+fDMY(f.valid_from)+"?")) return;
+  s.raising=true; s.error=null; render();
+  var rows=cats.map(function(x){ return { agreement:x.agreement, category:x.category, basic:liqR2((Number(x.basic)||0)*(1+pb/100)), no_rem:liqR2((Number(x.no_rem)||0)*(1+pn/100)), valid_from:f.valid_from, notes:(f.notes||("Aumento "+liqPctTxt(pb))).trim() }; });
+  var chain=Promise.resolve(), updated=0;
+  rows.forEach(function(r){ chain=chain.then(function(){ return dbCreateScale(r); }); });
+  chain.then(function(){
+    if(!f.updateLegajos) return;
+    var emps=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo" && liqNorm(e.collective_agreement)===liqNorm(f.agreement); });
+    var c2=Promise.resolve();
+    emps.forEach(function(e){
+      var cur=parseMoneyAR(e.salary); if(cur==null) return;
+      var nuevo=liqR2(cur*(1+pb/100));
+      c2=c2.then(function(){ return dbUpdateEmployee(e.id, { salary:String(nuevo) }).then(function(){
+        e.salary=String(nuevo); updated++;
+        return dbCreateMovement({ employee_id:e.id, type:"cambio_salarial", effective_date:f.valid_from, description:"Aumento paritaria "+f.agreement+" "+liqPctTxt(pb), from_value:"$ "+liqMoney(cur), to_value:"$ "+liqMoney(nuevo) });
+      }); });
+    });
+    return c2;
+  }).then(function(){ return dbListScales(); }).then(function(r){
+    s.scales=r.items||[]; s.raising=false; s.raise=null;
+    s.msg="Aumento aplicado a "+rows.length+" categoría(s) de "+f.agreement+" desde el "+fDMY(f.valid_from)+(f.updateLegajos?(" · salario actualizado en "+updated+" legajo(s) con su movimiento en ABM"):"")+".";
+    render();
+  }).catch(function(){ s.raising=false; s.error="No pude aplicar el aumento completo. Revisá la pestaña: puede haber quedado aplicado en parte."; return dbListScales().then(function(r){ s.scales=r.items||[]; render(); }); });
 }
 /* Acciones de la pantalla (data-action="liq-…"). */
 function liqAction(act, el){
@@ -11219,6 +11415,15 @@ function liqAction(act, el){
   else if(act==="liq-del-fijo"){ if(f){ f.fijos.splice(parseInt(el.getAttribute("data-i"),10),1); render(); } }
   else if(act==="liq-add-extra"){ if(f){ f.extras=f.extras||[]; f.extras.push({ label:"", tipo:el.getAttribute("data-t")||"rem", amount:"" }); render(); } }
   else if(act==="liq-del-extra"){ if(f){ f.extras.splice(parseInt(el.getAttribute("data-i"),10),1); render(); } }
+  else if(act==="liq-archive"){ liqArchive(); }
+  else if(act==="liq-resign"){ liqSendSign(el.getAttribute("data-id"), false); }
+  else if(act==="liq-scale-new"){ liqScaleNew(el.getAttribute("data-a")||""); }
+  else if(act==="liq-scale-edit"){ var sc=(s.scales||[]).filter(function(x){ return x.id===el.getAttribute("data-id"); })[0]; if(sc){ s.scaleForm={ id:sc.id, agreement:sc.agreement, category:sc.category, basic:String(sc.basic), no_rem:String(sc.no_rem||""), valid_from:String(sc.valid_from).slice(0,10), notes:sc.notes||"" }; s.raise=null; render(); } }
+  else if(act==="liq-scale-cancel"){ s.scaleForm=null; s.raise=null; render(); }
+  else if(act==="liq-scale-save"){ liqScaleSave(); }
+  else if(act==="liq-scale-del"){ liqScaleDelete(el.getAttribute("data-id")); }
+  else if(act==="liq-raise-open"){ s.raise={ agreement:el.getAttribute("data-a")||"", pctBasic:"", pctNoRem:"", valid_from:(liqAddMonths(liqMonthNow(),1)+"-01"), notes:"", updateLegajos:true }; s.scaleForm=null; render(); }
+  else if(act==="liq-raise-apply"){ liqRaiseApply(); }
   else if(act==="liq-reset-params"){ if(confirm("¿Volver a los parámetros de la cátedra (SMVM $ 376.600, divisor 200, aportes 11 % + 3 % + 3 %)?")){ lset("voz_liq_params", {}); render(); } }
 }
 /* Recalcula sólo el recibo (sin re-render) para no perder el foco mientras se escribe. */
@@ -11227,6 +11432,7 @@ function liqRefresh(){
   var box=document.getElementById("liq-preview"); if(box) box.innerHTML=liqReciboHtml(c.emp, c.form, c.res);
   var how=document.getElementById("liq-how"); if(how) how.innerHTML=liqHowHtml(c.res);
   var tot=document.getElementById("liq-tot"); if(tot) tot.innerHTML=liqTotHtml(c.res);
+  var cst=document.getElementById("liq-cost"); if(cst) cst.innerHTML=liqCostHtml(c.res, c.form);
 }
 function liqBind(){
   var f;
@@ -11248,7 +11454,10 @@ function liqBind(){
   document.querySelectorAll("[data-liqfx]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=state.liq.form; if(!fo) return; var i=parseInt(el.getAttribute("data-liqfx"),10); if(fo.fijos[i]) fo.fijos[i][el.getAttribute("data-k")]=e.target.value; liqRefresh(); }); });
   document.querySelectorAll("[data-liqx]").forEach(function(el){ el.addEventListener(el.tagName==="SELECT"?"change":"input", function(e){ var fo=state.liq.form; if(!fo) return; var i=parseInt(el.getAttribute("data-liqx"),10); if(fo.extras[i]) fo.extras[i][el.getAttribute("data-k")]=e.target.value; liqRefresh(); }); });
   document.querySelectorAll("[data-liqsac]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=state.liq.form; if(!fo||!fo.sacMeses) return; var i=parseInt(el.getAttribute("data-liqsac"),10); if(fo.sacMeses[i]){ fo.sacMeses[i].rem=e.target.value; fo.sacMeses[i].src="cargado a mano"; } liqRefresh(); }); });
-  document.querySelectorAll("[data-liqp]").forEach(function(el){ el.addEventListener("input", function(e){ liqSetParam(el.getAttribute("data-liqp"), e.target.value); liqRefresh(); }); });
+  document.querySelectorAll("[data-liqs]").forEach(function(el){ el.addEventListener("input", function(e){ if(state.liq.scaleForm) state.liq.scaleForm[el.getAttribute("data-liqs")]=e.target.value; }); });
+  document.querySelectorAll("[data-liqr]").forEach(function(el){ el.addEventListener(el.type==="checkbox"?"change":"input", function(e){ if(state.liq.raise) state.liq.raise[el.getAttribute("data-liqr")]=(el.type==="checkbox")?!!e.target.checked:e.target.value; }); });
+  document.querySelectorAll("select[data-liqp]").forEach(function(el){ el.addEventListener("change", function(e){ liqSetParam(el.getAttribute("data-liqp"), e.target.value); liqRefresh(); }); });
+  document.querySelectorAll("input[data-liqp]").forEach(function(el){ el.addEventListener("input", function(e){ liqSetParam(el.getAttribute("data-liqp"), e.target.value); liqRefresh(); }); });
 }
 /* ----- Liquidación · recibo y pantalla ----- */
 function liqReciboHtml(emp, f, res, copyLabel){
@@ -11313,6 +11522,13 @@ function liqTotHtml(res){
   else if(i.valorHora!=null) ref='Valor hora $ '+liqMoney(i.valorHora)+' · jornada '+esc(i.regimen||"");
   return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px">'+box("Remunerativo", res.totRem)+box("No remunerativo", res.totNoRem)+box("Descuentos", res.totDesc)+box("Neto", res.neto, true)+'</div>'+
     (ref?('<p style="margin:9px 0 0;font-size:11.5px;color:var(--muted)">'+ref+'</p>'):'');
+}
+function liqCostHtml(res, f){
+  var k=liqCosto(res, f, liqParams());
+  var rows=k.items.map(function(x){ return '<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--border-soft)"><span style="color:var(--muted)" title="'+esc(x.formula)+'">'+esc(x.label)+'</span><span style="color:var(--ink);white-space:nowrap">$ '+liqMoney(x.amount)+'</span></div>'; }).join('');
+  return '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px"><h3 style="font-size:13.5px;font-weight:600;color:var(--ink);margin:0">Costo laboral del empleador</h3><span style="font-size:17px;font-weight:700;color:var(--ink);white-space:nowrap">$ '+liqMoney(k.costo)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--border-soft)"><span style="color:var(--muted)">Remuneración bruta (rem. + no rem.)</span><span style="color:var(--ink);white-space:nowrap">$ '+liqMoney(res.totRem+res.totNoRem)+'</span></div>'+rows+
+    '<p style="font-size:11.5px;color:var(--faint);margin:8px 0 0">No sale en el recibo: es lo que paga la empresa además del sueldo (F.931).'+(k.noArt?' Cargá la alícuota de tu ART en «Parámetros».':'')+(k.contrib&&(res.totRem+res.totNoRem)?(' Cargas sociales: '+liqPctTxt(Math.round(k.contrib/(res.totRem+res.totNoRem)*10000)/100)+' sobre el bruto.'):'')+'</p>';
 }
 /* Campos del formulario */
 function liqIn(key, label, val, o){
@@ -11390,6 +11606,7 @@ function liqFormHtml(emp, f){
   html += liqCard("Aportes, embargos y otros conceptos",
     liqRow(2, liqIn("sindPct","Cuota sindical",f.sindPct,{ suf:"%", ph:"0", hint:H.sind })+
       '<div style="font-size:12px;color:var(--muted);align-self:end;padding-bottom:6px">Además: jubilación '+liqPctTxt(P.jub)+' · Ley 19.032 '+liqPctTxt(P.pami)+' · obra social '+liqPctTxt(P.os)+' sobre el total remunerativo.</div>')+
+    liqSel("contribPct","Contribuciones patronales (costo laboral, no sale en el recibo)",(f.contribPct==null?"":f.contribPct),[["","Según Parámetros ("+liqPctTxt(P.contribPct)+")"]].concat(LIQ_CONTRIB))+
     liqChk("embargo","Hay un embargo judicial sobre el sueldo (Dec. 484/87)", f.embargo)+
     (f.embargo?liqIn("embargoSaldo","Saldo pendiente del oficio",f.embargoSaldo,{ pre:"$", ph:"0", hint:"Hasta 2 SMVM se retiene el 10 % del excedente sobre 1 SMVM; por encima, el 20 %. SMVM: $ "+liqMoney(liqNum(P.smvm))+" (cambialo en Parámetros)." }):'')+
     (extras?('<div style="display:grid;gap:8px">'+extras+'</div>'):'')+
@@ -11399,6 +11616,24 @@ function liqFormHtml(emp, f){
     liqRow(3, liqIn("depPeriodo","Último depósito de aportes · período",f.depPeriodo,{ type:"text", ph:"Ej: Agosto 2026" })+liqIn("depFecha","Fecha del depósito",f.depFecha,{ type:"date" })+liqIn("depBanco","Banco",f.depBanco,{ type:"text", ph:"Ej: Banco Nación" })),
     "El recibo lleva los datos del empleador (se cargan en Parámetros), el neto en números y letras y la constancia del último depósito de aportes.");
   return html;
+}
+/* Estado del recibo en Documentación (archivo + firma del empleado). */
+function liqArchiveHtml(e, saved){
+  var s=state.liq, d=liqDocFor(saved);
+  var st='';
+  if(d){
+    st = d.signed ? ('<span style="color:var(--green);font-weight:600">'+ic('check',12)+' Firmado por el empleado'+(d.signed_at?(' el '+esc(fDMY(String(d.signed_at).slice(0,10)))):'')+'</span>')
+       : (d.sign_token ? ('<span style="color:var(--amber);font-weight:600">'+ic('clock',12)+' Pendiente de firma</span>') : '<span style="color:var(--muted)">Archivado, sin enviar a firmar</span>');
+  }
+  return '<div style="border-top:1px solid var(--border-soft);margin-top:12px;padding-top:12px">'+
+    '<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">'+ic('copy',12)+' <b style="color:var(--ink)">Documentación del empleado:</b> '+(d?('Recibos · '+st):'todavía no está archivado.')+(d&&d.file_url?(' · <a href="'+esc(d.file_url)+'" target="_blank" rel="noopener" style="color:var(--teal)">ver PDF</a>'):'')+'</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="btn btn-teal btn-sm" data-action="liq-archive"'+((s.archiving||s.saving)?' disabled':'')+'>'+(s.archiving?(ic('loader',13,'spin')+' Archivando…'):(ic('send',13)+' '+(d?'Actualizar recibo y reenviar a firmar':'Guardar, archivar y enviar a firmar')))+'</button>'+
+      ((d && !d.signed)?('<button class="btn btn-ghost btn-sm" data-action="liq-resign" data-id="'+esc(d.id)+'"'+(s.signing?' disabled':'')+'>'+(s.signing?(ic('loader',13,'spin')+' Enviando…'):'Reenviar a firmar')+'</button>'):'')+
+    '</div>'+
+    (s.signLink?('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><input readonly value="'+esc(s.signLink)+'" onclick="this.select()" style="flex:1;min-width:180px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;color:var(--ink);font-size:12px;font-family:inherit"><button type="button" class="btn btn-ghost btn-sm" data-action="emp-copy-signlink" data-link="'+esc(s.signLink)+'">'+ic('copy',13)+' Copiar link</button></div>'):'')+
+    '<p style="font-size:11.5px;color:var(--faint);margin:8px 0 0">Guarda la liquidación, sube el recibo (original y duplicado) a Documentación → Recibos y le manda al empleado el link para firmarlo, igual que los demás documentos.</p>'+
+  '</div>';
 }
 var LIQ_CSS='<style>.liq-wrap{container-type:inline-size}.liq-col{container-type:inline-size;min-width:0}'+
   '.liq-g2,.liq-g3{display:grid;gap:12px}@container (min-width:420px){.liq-g2{grid-template-columns:1fr 1fr}}@container (min-width:560px){.liq-g3{grid-template-columns:1fr 1fr 1fr}}'+
@@ -11416,7 +11651,7 @@ function liqScreenInner(){
   if(s.msg) html += Note("ok", esc(s.msg));
   if(s.error) html += Note("err", esc(s.error));
   if(s.noTable && tab!=="criterios") html += Note("warn", "Para guardar las liquidaciones falta crear la tabla: corré <b>sql_liquidacion.sql</b> en el SQL Editor de Supabase. Mientras tanto podés calcular y descargar el recibo en PDF.");
-  var tabs=[["liquidar","Liquidar"],["nomina","Nómina del mes"],["params","Parámetros"],["criterios","Criterios de cálculo"]];
+  var tabs=[["liquidar","Liquidar"],["nomina","Nómina del mes"],["escalas","Escalas del CCT"],["params","Parámetros"],["criterios","Criterios de cálculo"]];
   html += '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'+tabs.map(function(t){ var on=tab===t[0]; return '<button class="pill-time" data-action="liq-tab" data-v="'+t[0]+'" style="cursor:pointer;border:none;background:'+(on?'var(--teal)':'var(--surface-2)')+';color:'+(on?'#fff':'var(--ink)')+'">'+t[1]+'</button>'; }).join('')+'</div>';
 
   if(tab==="criterios"){
@@ -11437,6 +11672,8 @@ function liqScreenInner(){
       ["Licencias especiales (art. 158 LCT)","Nacimiento 2 · matrimonio 10 · fallecimiento de cónyuge, hijo o padres 3 · hermano 1 · examen 2 (máx. 10 por año)."],
       ["Embargo (Dec. 484/87)","Bruto hasta 2 SMVM: 10 % del excedente sobre 1 SMVM · más de 2 SMVM: 20 % del excedente."],
       ["SAC (art. 121 LCT)","50 % de la mayor remuneración mensual remunerativa del semestre, proporcional al tiempo trabajado."],
+      ["Escalas del convenio","El básico sale de la escala vigente del CCT para la categoría del legajo; lo que el legajo pague de más va como adicional sobre convenio. Cada paritaria crea una versión nueva con su fecha de vigencia."],
+      ["Costo laboral (empleador)","Contribuciones 18 % (PyME) o 20,40 % (grandes de comercio y servicios) sobre el remunerativo menos la detracción, obra social 6 %, ART y seguro de vida obligatorio. No se descuentan del recibo."],
       ["Recibo (art. 140 LCT)","Datos del empleador y del trabajador, conceptos con su determinación, total bruto, deducciones, neto en números y letras, último depósito de aportes, lugar y fecha de pago y firma."]
     ];
     html += '<div class="card" style="padding:0;overflow:hidden"><table class="liq-tbl"><thead><tr><th style="width:34%">Tema</th><th>Criterio que aplica TalentIA</th></tr></thead><tbody>'+
@@ -11450,6 +11687,11 @@ function liqScreenInner(){
       liqRow(2, pin("smvm","Salario mínimo, vital y móvil (SMVM)",{ pre:"$", hint:"Se usa para el embargo. Actualizalo cuando cambie." })+pin("divisor","Divisor del valor hora",{ suf:"horas" }))+
       liqRow(3, pin("jub","Jubilación",{ suf:"%" })+pin("pami","Ley 19.032",{ suf:"%" })+pin("os","Obra social",{ suf:"%" }))+
       liqRow(2, pin("sind","Cuota sindical por defecto",{ suf:"%", hint:"Se propone a quienes tienen convenio en el legajo." })+pin("antigPct","Antigüedad por año",{ suf:"%" })));
+    html += liqCard("Costo laboral (contribuciones del empleador)",
+      liqRow(2, '<label class="field"><span class="field-label">Contribuciones a la seguridad social</span><select class="bare" data-liqp="contribPct">'+LIQ_CONTRIB.map(function(o){ return '<option value="'+o[0]+'"'+(String(P.contribPct)===o[0]?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select><span class="field-hint">Ley 27.541: 20,40 % si la empresa es grande de comercio o servicios; si no, 18 %.</span></label>'+pin("osContrib","Contribución obra social",{ suf:"%" }))+
+      liqRow(2, pin("detraccion","Detracción por trabajador",{ pre:"$", hint:"Se resta de la base de las contribuciones (no de la obra social)." })+pin("scvo","Seguro de vida obligatorio",{ pre:"$", hint:"Prima mensual por trabajador." }))+
+      liqRow(2, pin("artPct","ART · alícuota variable",{ suf:"% s/ rem.", hint:"Figura en tu contrato con la ART." })+pin("artFijo","ART · suma fija por trabajador",{ pre:"$" })),
+      "No se descuenta al empleado: es lo que la empresa paga encima del sueldo. Revisá los valores con tu contador o con el F.931.");
     html += liqCard("Empleador (encabezado del recibo)",
       liqRow(2, pin("empleador","Razón social",{ text:true, ph:brandName()||"Empresa S.A." })+pin("cuit","CUIT",{ text:true, ph:"30-00000000-0" }))+
       pin("domicilio","Domicilio",{ text:true, ph:"Calle 123, CABA" })+
@@ -11459,6 +11701,48 @@ function liqScreenInner(){
   }
   if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
 
+  if(tab==="escalas"){
+    html += '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">Cargá el básico (y el no remunerativo, si lo hay) de cada categoría del convenio. Al liquidar, el básico sale de la escala vigente según el convenio y la categoría del legajo; si el legajo paga más, la diferencia va como «adicional sobre convenio». Cada paritaria crea una versión nueva con su vigencia y queda el historial.</p>';
+    if(s.noScaleTable) html += Note("warn","Falta crear la tabla de escalas: corré la parte de <b>salary_scales</b> de sql_liquidacion.sql en Supabase.");
+    var convs=liqConvenios();
+    html += '<datalist id="liq-conv-list">'+convs.map(function(c){ return '<option value="'+esc(c)+'">'; }).join('')+'</datalist>';
+    if(s.scaleForm){
+      var sf=s.scaleForm;
+      var sin=function(k, label, v, o){ o=o||{}; return '<label class="field"><span class="field-label">'+label+'</span><div class="input-row">'+(o.pre?('<span style="color:var(--faint);font-size:13px">'+o.pre+'</span>'):'')+'<input data-liqs="'+k+'" '+(o.type?('type="'+o.type+'"'):'type="text"')+(o.list?(' list="'+o.list+'"'):'')+' placeholder="'+esc(o.ph||'')+'" value="'+esc(v==null?'':String(v))+'"></div></label>'; };
+      html += liqCard(sf.id?"Editar categoría":"Nueva categoría",
+        liqRow(2, sin("agreement","Convenio",sf.agreement,{ list:"liq-conv-list", ph:"Ej: Comercio (CCT 130/75)" })+sin("category","Categoría",sf.category,{ ph:"Ej: Administrativo B" }))+
+        liqRow(3, sin("basic","Básico mensual",sf.basic,{ pre:"$", ph:"0" })+sin("no_rem","No remunerativo",sf.no_rem,{ pre:"$", ph:"0" })+sin("valid_from","Vigente desde",sf.valid_from,{ type:"date" }))+
+        sin("notes","Nota",sf.notes,{ ph:"Ej: Acuerdo paritario septiembre 2026" })+
+        '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="liq-scale-save"'+(s.scaleSaving?' disabled':'')+'>'+(s.scaleSaving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="liq-scale-cancel">Cancelar</button></div>');
+    }
+    if(s.raise){
+      var rf=s.raise, nCats=liqScaleLatest(rf.agreement).length;
+      var nEmp=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo" && liqNorm(e.collective_agreement)===liqNorm(rf.agreement); }).length;
+      var rin=function(k, label, v, o){ o=o||{}; return '<label class="field"><span class="field-label">'+label+'</span><div class="input-row"><input data-liqr="'+k+'" '+(o.type?('type="'+o.type+'"'):'type="text" inputmode="decimal"')+' placeholder="'+esc(o.ph||'')+'" value="'+esc(v==null?'':String(v))+'">'+(o.suf?('<span style="color:var(--faint);font-size:12.5px">'+o.suf+'</span>'):'')+'</div>'+(o.hint?('<span class="field-hint">'+esc(o.hint)+'</span>'):'')+'</label>'; };
+      html += liqCard("Aplicar aumento · "+esc(rf.agreement),
+        liqRow(3, rin("pctBasic","Aumento del básico",rf.pctBasic,{ suf:"%", ph:"0" })+rin("pctNoRem","Aumento del no remunerativo",rf.pctNoRem,{ suf:"%", ph:"0" })+rin("valid_from","Vigente desde",rf.valid_from,{ type:"date" }))+
+        rin("notes","Nota",rf.notes,{ ph:"Ej: Paritaria octubre 2026" })+
+        '<label style="display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);cursor:pointer"><input type="checkbox" data-liqr="updateLegajos"'+(rf.updateLegajos?' checked':'')+'> Actualizar también el salario del legajo de '+nEmp+' empleado'+(nEmp===1?'':'s')+' de este convenio (queda como «cambio salarial» en Altas, bajas y modificaciones)</label>'+
+        '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="liq-raise-apply"'+(s.raising?' disabled':'')+'>'+(s.raising?(ic('loader',13,'spin')+' Aplicando…'):('Aplicar a '+nCats+' categoría'+(nCats===1?'':'s')))+'</button><button class="btn btn-ghost btn-sm" data-action="liq-scale-cancel">Cancelar</button></div>',
+        "Crea una versión nueva de cada categoría con el aumento y la fecha de vigencia. Las liquidaciones de períodos anteriores siguen usando la escala vieja.");
+    }
+    if(!s.scaleForm && !s.raise) html += '<button class="btn btn-primary btn-sm" data-action="liq-scale-new" style="margin-bottom:14px">'+ic('plus',14)+' Nueva categoría</button>';
+    var byConv={};
+    (s.scales||[]).forEach(function(x){ var k=liqNorm(x.agreement); (byConv[k]=byConv[k]||{ name:x.agreement, rows:[] }).rows.push(x); });
+    var keys=Object.keys(byConv).sort();
+    if(!keys.length){ html += Note("info","Todavía no cargaste escalas. Empezá por el convenio de tus empleados"+(convs.length?(" ("+esc(convs.join(", "))+")"):"")+"."); return html; }
+    keys.forEach(function(k){
+      var g=byConv[k], latest=liqScaleLatest(g.name);
+      var old=g.rows.filter(function(x){ return latest.indexOf(x)<0; }).sort(function(a,b){ return String(b.valid_from).localeCompare(String(a.valid_from)) || String(a.category).localeCompare(String(b.category),"es"); });
+      var nEmp=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo" && liqNorm(e.collective_agreement)===k; }).length;
+      var row=function(x, cur){ return '<tr'+(cur?'':' style="opacity:.62"')+'><td><b>'+esc(x.category)+'</b>'+(x.notes?('<div style="font-size:11.5px;color:var(--faint)">'+esc(x.notes)+'</div>'):'')+'</td><td class="n">$ '+liqMoney(x.basic)+'</td><td class="n">'+(Number(x.no_rem)?('$ '+liqMoney(x.no_rem)):'—')+'</td><td>'+esc(fDMY(String(x.valid_from).slice(0,10)))+'</td><td class="n" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" data-action="liq-scale-edit" data-id="'+esc(x.id)+'">Editar</button> <button class="btn btn-ghost btn-sm" data-action="liq-scale-del" data-id="'+esc(x.id)+'" style="color:var(--brick)">'+ic('trash',13)+'</button></td></tr>'; };
+      html += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px 4px"><div><b style="font-size:14px;color:var(--ink)">'+esc(g.name)+'</b> <span style="font-size:12px;color:var(--faint)">· '+latest.length+' categoría'+(latest.length===1?'':'s')+' · '+nEmp+' empleado'+(nEmp===1?'':'s')+' activo'+(nEmp===1?'':'s')+'</span></div>'+
+        '<div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" data-action="liq-scale-new" data-a="'+esc(g.name)+'">'+ic('plus',13)+' Categoría</button><button class="btn btn-teal btn-sm" data-action="liq-raise-open" data-a="'+esc(g.name)+'">'+ic('sparkle',13)+' Aplicar aumento</button></div></div>'+
+        '<table class="liq-tbl"><thead><tr><th>Categoría</th><th class="n">Básico</th><th class="n">No rem.</th><th>Vigente desde</th><th></th></tr></thead><tbody>'+latest.map(function(x){ return row(x,true); }).join('')+
+        (old.length?('<tr><td colspan="5" style="font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);padding-top:12px">Historial</td></tr>'+old.map(function(x){ return row(x,false); }).join('')):'')+'</tbody></table></div>';
+    });
+    return html;
+  }
   if(tab==="nomina"){
     var mk=s.nPeriod||s.period||liqMonthNow(), rows=liqNominaRows(mk);
     html += '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px"><label class="field"><span class="field-label">Período</span><div class="input-row"><input id="f_liq_nperiod" type="month" value="'+esc(mk)+'"></div></label>'+
@@ -11466,11 +11750,11 @@ function liqScreenInner(){
     if(!rows.length){ html += Note("info", "No hay liquidaciones guardadas de "+esc(monthLabel(mk))+". Liquidá a cada empleado desde la pestaña «Liquidar»."); }
     else {
       var t={ r:0, n:0, d:0, x:0 };
-      html += '<div class="card" style="padding:0;overflow-x:auto"><table class="liq-tbl"><thead><tr><th>Empleado</th><th>Tipo</th><th class="n">Remunerativo</th><th class="n">No rem.</th><th class="n">Descuentos</th><th class="n">Neto</th><th></th></tr></thead><tbody>'+
-        rows.map(function(x){ var p=x.p; t.r+=Number(p.gross_rem)||0; t.n+=Number(p.gross_norem)||0; t.d+=Number(p.deductions)||0; t.x+=Number(p.net)||0;
-          return '<tr><td><b>'+esc(x.e?empFullName(x.e):"(empleado eliminado)")+'</b>'+(x.e&&x.e.legajo_number?(' <span style="color:var(--faint);font-size:11.5px">· leg. '+esc(x.e.legajo_number)+'</span>'):'')+'</td><td>'+esc((LIQ_KINDS[p.kind]||{}).short||p.kind)+'</td><td class="n">$ '+liqMoney(p.gross_rem)+'</td><td class="n">$ '+liqMoney(p.gross_norem)+'</td><td class="n">$ '+liqMoney(p.deductions)+'</td><td class="n"><b>$ '+liqMoney(p.net)+'</b></td>'+
+      html += '<div class="card" style="padding:0;overflow-x:auto"><table class="liq-tbl"><thead><tr><th>Empleado</th><th>Tipo</th><th class="n">Remunerativo</th><th class="n">No rem.</th><th class="n">Descuentos</th><th class="n">Neto</th><th class="n">Costo laboral</th><th></th></tr></thead><tbody>'+
+        rows.map(function(x){ var p=x.p; t.r+=Number(p.gross_rem)||0; t.n+=Number(p.gross_norem)||0; t.d+=Number(p.deductions)||0; t.x+=Number(p.net)||0; t.c=(t.c||0)+(Number(p.employer_cost)||0);
+          return '<tr><td><b>'+esc(x.e?empFullName(x.e):"(empleado eliminado)")+'</b>'+(x.e&&x.e.legajo_number?(' <span style="color:var(--faint);font-size:11.5px">· leg. '+esc(x.e.legajo_number)+'</span>'):'')+'</td><td>'+esc((LIQ_KINDS[p.kind]||{}).short||p.kind)+'</td><td class="n">$ '+liqMoney(p.gross_rem)+'</td><td class="n">$ '+liqMoney(p.gross_norem)+'</td><td class="n">$ '+liqMoney(p.deductions)+'</td><td class="n"><b>$ '+liqMoney(p.net)+'</b></td><td class="n">'+(p.employer_cost!=null?('$ '+liqMoney(p.employer_cost)):'—')+'</td>'+
             '<td class="n">'+(x.e?('<button class="btn btn-ghost btn-sm" data-action="liq-open-saved" data-id="'+esc(p.id)+'">Abrir</button>'):'')+'</td></tr>'; }).join('')+
-        '<tr><td colspan="2"><b>Totales</b></td><td class="n"><b>$ '+liqMoney(t.r)+'</b></td><td class="n"><b>$ '+liqMoney(t.n)+'</b></td><td class="n"><b>$ '+liqMoney(t.d)+'</b></td><td class="n"><b>$ '+liqMoney(t.x)+'</b></td><td></td></tr></tbody></table></div>';
+        '<tr><td colspan="2"><b>Totales</b></td><td class="n"><b>$ '+liqMoney(t.r)+'</b></td><td class="n"><b>$ '+liqMoney(t.n)+'</b></td><td class="n"><b>$ '+liqMoney(t.d)+'</b></td><td class="n"><b>$ '+liqMoney(t.x)+'</b></td><td class="n"><b>$ '+liqMoney(t.c||0)+'</b></td><td></td></tr></tbody></table></div>';
       var act=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
       var faltan=act.filter(function(e){ return !rows.some(function(x){ return x.p.employee_id===e.id && (x.p.kind==="mensual"||x.p.kind==="quincena2"); }); });
       if(faltan.length) html += '<p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">'+ic('info',12)+' Sin liquidar en '+esc(monthLabel(mk))+': '+faltan.map(function(e){ return esc(empFullName(e)); }).join(", ")+'.</p>';
@@ -11503,9 +11787,10 @@ function liqScreenInner(){
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
           '<button class="btn btn-primary btn-sm" data-action="liq-save"'+(s.saving?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):(ic('check',13)+' '+(saved?'Actualizar liquidación':'Guardar liquidación')))+'</button>'+
           '<button class="btn btn-ghost btn-sm" data-action="liq-pdf"'+(s.pdfBusy?' disabled':'')+'>'+(s.pdfBusy?(ic('loader',13,'spin')+' Generando…'):(ic('download',13)+' Recibo en PDF'))+'</button>'+
-        '</div></div>'+
+        '</div>'+liqArchiveHtml(e, saved)+'</div>'+
       ((!P.cuit || !(P.empleador||brandName()))?('<p style="font-size:12px;color:var(--amber);margin:0 0 8px">'+ic('info',12)+' Cargá la razón social y el CUIT del empleador en «Parámetros» para que salgan en el recibo.</p>'):'')+
       '<div id="liq-preview" style="margin-bottom:12px">'+liqReciboHtml(e, s.form, res)+'</div>'+
+      '<div class="card" id="liq-cost" style="margin-bottom:12px">'+liqCostHtml(res, s.form)+'</div>'+
       '<div class="card" id="liq-how">'+liqHowHtml(res)+'</div>'+
     '</div></div>';
   var hist=liqEmpPayrolls(e.id);
@@ -11513,7 +11798,7 @@ function liqScreenInner(){
     html += '<h3 style="font-size:14px;color:var(--ink);margin:18px 0 8px">Liquidaciones guardadas de '+esc(e.first_name||empFullName(e))+'</h3>'+
       '<div class="card" style="padding:0;overflow-x:auto"><table class="liq-tbl"><thead><tr><th>Período</th><th class="n">Remunerativo</th><th class="n">Descuentos</th><th class="n">Neto</th><th></th></tr></thead><tbody>'+
       hist.map(function(p){ var on=(p.period===s.period && p.kind===s.kind);
-        return '<tr'+(on?' style="background:var(--teal-tint)"':'')+'><td>'+esc(liqPeriodLabel(p.period, p.kind))+'</td><td class="n">$ '+liqMoney(p.gross_rem)+'</td><td class="n">$ '+liqMoney(p.deductions)+'</td><td class="n"><b>$ '+liqMoney(p.net)+'</b></td>'+
+        return '<tr'+(on?' style="background:var(--teal-tint)"':'')+'><td>'+esc(liqPeriodLabel(p.period, p.kind))+'</td><td class="n">$ '+liqMoney(p.gross_rem)+'</td><td class="n">$ '+liqMoney(p.deductions)+'</td><td class="n"><b>$ '+liqMoney(p.net)+'</b>'+(function(){ var d=liqDocFor(p); return d?('<div style="font-size:11px;color:'+(d.signed?'var(--green)':'var(--amber)')+'">'+(d.signed?'firmado':'en Documentación')+'</div>'):''; })()+'</td>'+
           '<td class="n" style="white-space:nowrap">'+(on?'':('<button class="btn btn-ghost btn-sm" data-action="liq-open-saved" data-id="'+esc(p.id)+'">Abrir</button> '))+'<button class="btn btn-ghost btn-sm" data-action="liq-del" data-id="'+esc(p.id)+'" title="Eliminar" style="color:var(--brick)">'+ic('trash',13)+'</button></td></tr>'; }).join('')+
       '</tbody></table></div>';
   }
