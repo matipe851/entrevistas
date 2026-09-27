@@ -1700,6 +1700,7 @@ var state = {
   abm: null,
   asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null, ctlMonth:null, ctlEmp:null, absNotes:[], absKey:null, absText:"" },
   lic: { loading:false, items:null, notes:null, error:null, msg:"", emp:null, form:null },
+  m2a: { loading:false, loaded:false, showAll:false, at:null, noPayrolls:false },
   liq: { loading:false, items:null, error:null, msg:"", emp:null, form:null, saving:false, pdfBusy:false, noTable:false, tab:"liquidar", period:"", kind:"mensual", nPeriod:"" },
   perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null, view:"emp", ai:null, rankAI:null, aiQ:"" },
   cap: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ai:null },
@@ -1761,7 +1762,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v40.1-r109";
+var APP_VERSION = "v40.2-r110";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2094,6 +2095,7 @@ Screens["mod2-home"] = function(){
       '<div style="display:flex;align-items:center;gap:8px;color:var(--teal)">'+ic('users',20)+'<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">Administración de personal</h2></div>' +
     '</div>' +
     '<p style="font-size:13px;color:var(--muted);margin:6px 0 18px">Todas las herramientas para gestionar al personal ya dado de alta. Vamos a ir activando cada área.</p>' +
+    mod2AlertsHtml() +
     '<div class="grid2">' + areaCards(areas) + '</div>';
 };
 
@@ -9332,7 +9334,7 @@ function resetInterview(){ state.questions=[]; state.answers={}; state.idx=0; st
 function goHome(){ resetInterview(); state.error=null; enterRecruiter(); }
 function goRecruiterHome(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="rec-home"; render(); if (supaConfigured() && isLoggedIn()) loadDashboard(); }
 function goHub(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="hub"; render(); }
-function goMod2(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod2-home"; render(); }
+function goMod2(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod2-home"; render(); loadMod2Alerts(); }
 function goMod3(){ resetInterview(); state.error=null; state.dash.detail=null; state.screen="mod3-home"; render(); loadMod3Panel(); }
 /* ---- Módulo 2 · Legajo del empleado ---- */
 function emptyEmpForm(){
@@ -10669,6 +10671,165 @@ function repAsistencia(year){
     });
   });
   return out.meses?out:null;
+}
+
+/* ===================== MÓDULO 2 · PANEL DE ALERTAS ===================== */
+/* Junta en el panel del módulo lo que necesita atención: vencimientos (documentación,
+   capacitación, salud y seguridad, beneficios), licencias por aprobar, firmas pendientes,
+   períodos de prueba y contratos que terminan, liquidaciones del mes anterior sin hacer,
+   ausencias sin justificar de la última semana y cumpleaños. Cada alerta lleva al área. */
+function loadMod2Alerts(){
+  var a=state.m2a;
+  if(!(supaConfigured() && isLoggedIn())){ a.loaded=true; render(); return; }
+  a.loading=true; render();
+  var nada=function(){ return []; };
+  Promise.all([
+    dbListEmployees().catch(nada), dbListLeaves().catch(nada), dbListDocs().catch(nada), dbListTraining().catch(nada),
+    dbListHealth().catch(nada), dbListBenefits().catch(nada), dbListPayrolls().catch(function(){ return { ok:false, items:[] }; }),
+    dbListAttendance().catch(nada), dbListAbsenceNotes().catch(nada)
+  ]).then(function(r){
+    state.emp.items=r[0]||[]; state.lic.items=r[1]||[]; state.doc.items=r[2]||[]; state.cap.items=r[3]||[];
+    state.hs.items=r[4]||[]; state.ben.items=r[5]||[]; state.liq.items=r[6].items||[]; a.noPayrolls=!r[6].ok;
+    state.asist.items=r[7]||[]; state.asist.absNotes=r[8]||[];
+    a.loading=false; a.loaded=true; a.at=new Date().toISOString();
+    if(state.screen==="mod2-home") render();
+  }).catch(function(){ a.loading=false; a.loaded=true; if(state.screen==="mod2-home") render(); });
+}
+function m2aAddMonths(d, n){ var x=new Date(d.getFullYear(), d.getMonth()+n, d.getDate()); if(x.getDate()!==d.getDate()) x=new Date(d.getFullYear(), d.getMonth()+n+1, 0); return x; }
+function m2aISO(d){ return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+function mod2Alerts(){
+  var out=[], emps=state.emp.items||[], byId={};
+  emps.forEach(function(e){ byId[e.id]=e; });
+  var activo=function(e){ return e && (e.status||"activo")==="activo"; };
+  var nom=function(id){ var e=byId[id]; return e?empFullName(e):"(sin empleado)"; };
+  var push=function(o){ out.push(o); };
+  var diasTxt=function(du){ return du<0?("venció hace "+(-du)+" día"+(du===-1?"":"s")):(du===0?"vence hoy":("vence en "+du+" día"+(du===1?"":"s"))); };
+  /* 1) Vencimientos de las carpetas del empleado (vencidos o dentro de 30 días) */
+  var fuentes=[
+    { items:state.doc.items, area:"documentacion", label:function(t){ return t.title||((DOC_TYPES[t.type]||{}).label)||"Documento"; }, tag:"Documentación" },
+    { items:state.cap.items, area:"capacitacion", label:function(t){ return t.title||"Certificado"; }, tag:"Capacitación" },
+    { items:state.hs.items, area:"salud", label:function(t){ return t.title||((HS_TYPES[t.type]||{}).label)||"Salud y seguridad"; }, tag:"Salud y seguridad" },
+    { items:state.ben.items, area:"beneficios", label:function(t){ return t.title||t.provider||((BEN_FOLDERS[t.type]||{}).label)||"Beneficio"; }, tag:"Beneficios" }
+  ];
+  fuentes.forEach(function(f){
+    (f.items||[]).forEach(function(t){
+      if(!t.expiry_date || !activo(byId[t.employee_id])) return;
+      if(t.status==="completado" && f.area!=="capacitacion") return;
+      var du=daysUntil(t.expiry_date); if(du==null || du>30) return;
+      push({ sev:du<0?"err":"warn", kind:du<0?"vencido":"porvencer", sort:du, emp:t.employee_id, area:f.area, tag:f.tag,
+        text:f.label(t)+" de "+nom(t.employee_id), when:diasTxt(du)+" ("+fDMY(String(t.expiry_date).slice(0,10))+")" });
+    });
+  });
+  /* 2) Licencias y vacaciones pendientes de aprobar */
+  (state.lic.items||[]).forEach(function(l){
+    if(l.status!=="pendiente" || !activo(byId[l.employee_id])) return;
+    push({ sev:"info", kind:"aprobar", sort:5, emp:l.employee_id, area:"licencias", tag:"Licencias",
+      text:((LEAVE_TYPES[l.type]||{}).label||l.type)+" de "+nom(l.employee_id)+" por aprobar", when:leaveRangeLabel(l)+" · "+(l.days||leaveDays(l.start_date,l.end_date))+" día(s)" });
+  });
+  /* 3) Firmas pendientes: legajo y documentos (incluye recibos de sueldo) */
+  emps.forEach(function(e){
+    if(!activo(e) || !e.sign_token || e.signed_at) return;
+    push({ sev:"info", kind:"firma", sort:20, emp:e.id, area:"legajo", tag:"Legajo", text:"Legajo de "+empFullName(e)+" pendiente de firma", when:"el empleado todavía no lo firmó" });
+  });
+  (state.doc.items||[]).forEach(function(t){
+    if(t.signed || !t.sign_token || !activo(byId[t.employee_id])) return;
+    push({ sev:"info", kind:"firma", sort:21, emp:t.employee_id, area:"documentacion", tag:"Documentación", text:(t.title||"Documento")+" de "+nom(t.employee_id)+" pendiente de firma", when:"enviado, sin firmar" });
+  });
+  /* 4) Período de prueba (art. 92 bis LCT: 6 meses) y contratos que terminan */
+  var hoy=new Date(); hoy.setHours(0,0,0,0);
+  emps.forEach(function(e){
+    if(!activo(e)) return;
+    var ct=String(e.contract_type||"");
+    var hire=repHireDate(e);
+    if(/prueba/i.test(ct) && hire){
+      var fin=m2aAddMonths(hire, 6); var du=daysUntil(m2aISO(fin));
+      if(du!=null && du<=30) push({ sev:du<0?"err":"warn", kind:"contrato", sort:du, emp:e.id, area:"legajo", tag:"Contrato",
+        text:"Período de prueba de "+empFullName(e)+(du<0?" terminado: pasa a tiempo indeterminado":" termina"), when:diasTxt(du).replace("venció","terminó").replace("vence","termina")+" ("+fmtDMY(fin)+")"+(du<0?" · actualizá el tipo de contrato en el legajo":" · decidí si sigue antes de esa fecha") });
+    }
+    var term=repTermDate(e);
+    if(term && /plazo|eventual|temporada|pasant/i.test(ct)){
+      var dt=daysUntil(m2aISO(term));
+      if(dt!=null && dt>=0 && dt<=30) push({ sev:"warn", kind:"contrato", sort:dt, emp:e.id, area:"legajo", tag:"Contrato", text:"Contrato ("+ct+") de "+empFullName(e)+" termina", when:diasTxt(dt).replace("vence","termina")+" ("+fmtDMY(term)+")" });
+    }
+  });
+  /* 5) Liquidación del mes anterior sin hacer (sueldos: hasta el 4.º día hábil) */
+  if(!state.m2a.noPayrolls){
+    var prev=new Date(hoy.getFullYear(), hoy.getMonth()-1, 1);
+    var mk=prev.getFullYear()+"-"+("0"+(prev.getMonth()+1)).slice(-2);
+    var finPrev=new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+    var falta=emps.filter(function(e){
+      if(!activo(e)) return false;
+      var h=repHireDate(e); if(h && h>finPrev) return false;
+      return !(state.liq.items||[]).some(function(p){ return p.employee_id===e.id && p.period===mk && (p.kind==="mensual" || p.kind==="quincena2"); });
+    });
+    if(falta.length) push({ sev:(hoy.getDate()>6?"err":"warn"), kind:"liquidar", sort:1, emp:null, area:"liquidacion", period:mk, tag:"Liquidación",
+      text:falta.length+" empleado"+(falta.length===1?"":"s")+" sin liquidar "+monthLabel(mk), when:falta.slice(0,4).map(empFullName).join(", ")+(falta.length>4?(" y "+(falta.length-4)+" más"):"")+" · el sueldo se paga hasta el 4.º día hábil" });
+  }
+  /* 6) Ausencias sin justificar de los últimos 7 días (según Asistencia) */
+  if((state.asist.items||[]).length){
+    try{
+      var desde=m2aISO(new Date(hoy.getTime()-6*864e5)), hasta=m2aISO(hoy);
+      var meses=[desde.slice(0,7)]; if(hasta.slice(0,7)!==meses[0]) meses.push(hasta.slice(0,7));
+      var cnt={};
+      meses.forEach(function(mk2){ asistMonthControl(mk2).forEach(function(x){ if(!x.emp || !activo(x.emp)) return; x.absent.forEach(function(ab){ if(ab.date>=desde && ab.date<=hasta && !ab.note){ var onL=(state.lic.items||[]).some(function(l){ return l.employee_id===x.emp.id && l.status==="aprobada" && String(l.start_date).slice(0,10)<=ab.date && String(l.end_date||l.start_date).slice(0,10)>=ab.date; }); if(!onL){ (cnt[x.emp.id]=cnt[x.emp.id]||[]).push(ab.date); } } }); }); });
+      Object.keys(cnt).forEach(function(id){ var ds=cnt[id]; push({ sev:"warn", kind:"ausencia", sort:3, emp:id, area:"asistencia", tag:"Asistencia", text:nom(id)+": "+ds.length+" ausencia"+(ds.length===1?"":"s")+" sin justificar", when:ds.map(function(d){ return d.slice(8,10)+"/"+d.slice(5,7); }).join(", ")+" · justificala o se descuenta al liquidar" }); });
+    }catch(e){}
+  }
+  /* 7) Cumpleaños de los próximos 7 días */
+  emps.forEach(function(e){
+    if(!activo(e) || !e.birth_date) return;
+    var b=parseYMD(String(e.birth_date).slice(0,10)); if(!b || isNaN(b.getTime())) return;
+    var next=new Date(hoy.getFullYear(), b.getMonth(), b.getDate()); if(next<hoy) next=new Date(hoy.getFullYear()+1, b.getMonth(), b.getDate());
+    var du=Math.round((next-hoy)/864e5);
+    if(du<=7) push({ sev:"ok", kind:"cumple", sort:100+du, emp:e.id, area:"legajo", tag:"Cumpleaños", text:"Cumpleaños de "+empFullName(e)+(du===0?" · ¡hoy!":""), when:(du===0?"hoy":(du===1?"mañana":("en "+du+" días")))+" ("+fmtDMY(next).slice(0,5)+")" });
+  });
+  var rank={ err:0, warn:1, info:2, ok:3 };
+  out.sort(function(x,y){ return (rank[x.sev]-rank[y.sev]) || (x.sort-y.sort) || String(x.text).localeCompare(String(y.text),"es"); });
+  return out;
+}
+function mod2AlertsHtml(){
+  var a=state.m2a;
+  if(!(supaConfigured() && isLoggedIn())) return "";
+  var head='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><h3 style="font-size:14px;font-weight:600;color:var(--ink);margin:0;display:flex;align-items:center;gap:7px">'+ic('alert',15)+' Alertas del personal</h3>'+
+    '<button class="btn btn-ghost btn-sm" data-action="m2a-reload"'+(a.loading?' disabled':'')+'>'+(a.loading?(ic('loader',13,'spin')+' Actualizando…'):(ic('rotate',13)+' Actualizar'))+'</button></div>';
+  if(!a.loaded){ return '<div class="card" style="margin-bottom:18px">'+head+'<p style="font-size:13px;color:var(--muted);margin:0">'+ic('loader',13,'spin')+' Revisando vencimientos, licencias, firmas y liquidaciones…</p></div>'; }
+  var list=mod2Alerts();
+  var count=function(k){ return list.filter(function(x){ return k(x); }).length; };
+  var kpis=[
+    ["Vencidos", count(function(x){ return x.kind==="vencido"; }), "var(--brick)"],
+    ["Vencen en 30 días", count(function(x){ return x.kind==="porvencer"; }), "var(--amber)"],
+    ["Por aprobar", count(function(x){ return x.kind==="aprobar"; }), "var(--blue)"],
+    ["Firmas pendientes", count(function(x){ return x.kind==="firma"; }), "var(--purple)"],
+    ["Sin liquidar", list.filter(function(x){ return x.kind==="liquidar"; }).reduce(function(s,x){ return s+(parseInt(x.text,10)||0); },0), "var(--brick)"]
+  ];
+  var html='<div class="card" style="margin-bottom:18px">'+head+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:12px">'+kpis.map(function(k){ return '<div style="padding:9px 11px;border:1px solid var(--border);border-radius:10px;background:var(--surface)"><div style="font-size:21px;font-weight:700;line-height:1.1;color:'+(k[1]?k[2]:'var(--faint)')+'">'+k[1]+'</div><div style="font-size:11.5px;color:var(--muted)">'+k[0]+'</div></div>'; }).join('')+'</div>';
+  if(!list.length){ return html+'<p style="font-size:13px;color:var(--green);margin:0">'+ic('check',13)+' Todo al día: no hay vencimientos, aprobaciones ni firmas pendientes.</p></div>'; }
+  var col={ err:"var(--brick)", warn:"var(--amber)", info:"var(--blue)", ok:"var(--green)" };
+  var shown=a.showAll?list:list.slice(0,8);
+  html+='<div style="display:grid;gap:6px">'+shown.map(function(x, i){
+    return '<div style="display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:9px;background:var(--surface-2);border-left:3px solid '+col[x.sev]+'">'+
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--ink);font-weight:600">'+esc(x.text)+'</div><div style="font-size:11.5px;color:var(--muted)">'+esc(x.tag)+' · '+esc(x.when)+'</div></div>'+
+      '<button class="btn btn-ghost btn-sm" data-action="m2a-open" data-i="'+(list.indexOf(x))+'" style="flex:0 0 auto">Ver</button></div>';
+  }).join('')+'</div>';
+  if(list.length>8) html+='<button class="btn btn-ghost btn-sm" data-action="m2a-more" style="margin-top:8px">'+(a.showAll?'Ver menos':('Ver las '+list.length+' alertas'))+'</button>';
+  return html+'</div>';
+}
+function mod2AlertAction(act, el){
+  var a=state.m2a;
+  if(act==="m2a-reload"){ loadMod2Alerts(); return; }
+  if(act==="m2a-more"){ a.showAll=!a.showAll; render(); return; }
+  if(act!=="m2a-open") return;
+  var x=mod2Alerts()[parseInt(el.getAttribute("data-i"),10)]; if(!x) return;
+  var id=x.emp;
+  if(x.area==="documentacion"){ goDocumentacion(); state.doc.emp=id; render(); }
+  else if(x.area==="capacitacion"){ goCapacitacion(); state.cap.emp=id; render(); }
+  else if(x.area==="salud"){ goSalud(); state.hs.emp=id; render(); }
+  else if(x.area==="beneficios"){ goBeneficios(); state.ben.emp=id; render(); }
+  else if(x.area==="licencias"){ goLicencias(); state.lic.emp=id; render(); }
+  else if(x.area==="asistencia"){ goAsistencia(); }
+  else if(x.area==="liquidacion"){ state.liq.period=x.period; state.liq.kind="mensual"; state.liq.tab="liquidar"; goLiquidacion(); }
+  else if(x.area==="legajo"){ goLegajo(); if(id){ var t=setInterval(function(){ if(state.emp.items && !state.emp.loading){ clearInterval(t); if(state.screen==="mod2-legajo") openEmployee(id); } }, 150); setTimeout(function(){ clearInterval(t); }, 8000); } }
 }
 
 /* ===================== MÓDULO 2 · 5 · LIQUIDACIÓN DE SUELDOS ===================== */
@@ -13363,6 +13524,7 @@ function bind(){
       else if (act === "rep-csv"){ repDownloadCSV(); }
       else if (act === "go-offboarding") goOffboarding();
       else if (act === "go-liquidacion") goLiquidacion();
+      else if (act.indexOf("m2a-") === 0) mod2AlertAction(act, el);
       else if (act.indexOf("liq-") === 0) liqAction(act, el);
       else if (act === "offb-emp"){ offbOpen(el.getAttribute("data-e")); }
       else if (act === "offb-emp-back"){ state.offb.emp=null; state.offb.form=null; state.offb.msg=""; state.offb.error=null; render(); }
