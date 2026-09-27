@@ -1700,6 +1700,7 @@ var state = {
   abm: null,
   asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null, ctlMonth:null, ctlEmp:null, absNotes:[], absKey:null, absText:"" },
   lic: { loading:false, items:null, notes:null, error:null, msg:"", emp:null, form:null },
+  liq: { loading:false, items:null, error:null, msg:"", emp:null, form:null, saving:false, pdfBusy:false, noTable:false, tab:"liquidar", period:"", kind:"mensual", nPeriod:"" },
   perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null, view:"emp", ai:null, rankAI:null, aiQ:"" },
   cap: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ai:null },
   hs: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ui:{} },
@@ -1748,7 +1749,7 @@ var app = document.getElementById("app");
 var REC_SHELL_SCREENS = { "rec-home":"dash", "cv-home":"cvs", "jobs-home":"jobs", "config":"config" };
 var MOD3_SHELL_SCREENS = { "mod3-home":"home", "mod3-encuestas":"encuestas", "mod3-encuesta-new":"encuestas", "mod3-encuesta":"encuestas",
   "mod3-enps":"enps", "mod3-feedback":"feedback", "mod3-valores":"valores", "mod3-planes":"planes", "mod3-comunicacion":"comunicacion" };
-var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion", "mod2-beneficios":"beneficios", "mod2-reportes":"reportes", "mod2-offboarding":"offboarding" };
+var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-liquidacion":"liquidacion", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion", "mod2-beneficios":"beneficios", "mod2-reportes":"reportes", "mod2-offboarding":"offboarding" };
 function render(){
   var out = Screens[state.screen]();
   if (supaConfigured() && isLoggedIn()){
@@ -1760,7 +1761,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v39.0-r107";
+var APP_VERSION = "v40.0-r108";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2078,7 +2079,7 @@ Screens["mod2-home"] = function(){
     { active:true, action:"go-abm", icon:"plus", tag:"Activo", title:"2 · Altas, bajas y modificaciones", desc:"Alta, cambios de puesto, ascensos, cambios salariales y baja con su motivo." },
     { active:true, action:"go-asistencia", icon:"clock", tag:"Activo", title:"3 · Asistencia y horarios", desc:"Fichador con cámara y ubicación, control horario, tardanzas, ausencias y horas extra." },
     { active:true, action:"go-licencias", icon:"home", tag:"Activo", title:"4 · Vacaciones y licencias", desc:"Por empleado: días disponibles, solicitudes y aprobaciones, vacaciones, enfermedad, maternidad/paternidad, estudio y otras licencias." },
-    { icon:"briefcase",tag:"Próximamente", title:"5 · Liquidación de sueldos",      desc:"Cálculo de haberes, conceptos, recibos y net a pagar." },
+    { active:true, action:"go-liquidacion", icon:"briefcase", tag:"Activo", title:"5 · Liquidación de sueldos", desc:"Recibo de haberes por empleado: básico, adicionales, horas extras, vacaciones, licencias, SAC, aportes, embargos y neto, con las novedades de Asistencia y Licencias." },
     { active:true, action:"go-desempeno", icon:"eye", tag:"Activo", title:"6 · Evaluación de desempeño", desc:"Por empleado: objetivos, competencias, evaluaciones, feedback y planes de mejora." },
     { active:true, action:"go-capacitacion", icon:"users", tag:"Activo", title:"7 · Capacitación", desc:"Por empleado: cursos, certificados, vencimientos, capacitaciones obligatorias e historial, con sugerencias de la IA según su desempeño." },
     { active:true, action:"go-salud", icon:"shield", tag:"Activo", title:"8 · Salud y seguridad", desc:"Por empleado: exámenes preocupacionales, periódicos, ART, accidentes, entrega de EPP y aptos médicos, con adjuntos y vencimientos." },
@@ -7983,6 +7984,7 @@ function mod2SideNav(active){
     { key:'abm',           action:'go-abm',             icon:'plus',   label:'Altas, bajas y modif.' },
     { key:'asistencia',    action:'go-asistencia',      icon:'clock',  label:'Asistencia y horarios' },
     { key:'licencias',     action:'go-licencias',       icon:'home',   label:'Vacaciones y licencias' },
+    { key:'liquidacion',   action:'go-liquidacion',    icon:'briefcase', label:'Liquidación de sueldos' },
     { key:'desempeno',     action:'go-desempeno',       icon:'eye',    label:'Evaluación de desempeño' },
     { key:'capacitacion',  action:'go-capacitacion',    icon:'users',  label:'Capacitación' },
     { key:'salud',         action:'go-salud',           icon:'shield', label:'Salud y seguridad' },
@@ -10669,6 +10671,855 @@ function repAsistencia(year){
   return out.meses?out:null;
 }
 
+/* ===================== MÓDULO 2 · 5 · LIQUIDACIÓN DE SUELDOS ===================== */
+/* Criterios de la cátedra (Liquidación de Sueldos, UCES · Unidades 1 a 4):
+   mes comercial de 30 días (valor día = remuneración fija ÷ 30), valor hora = remuneración
+   fija ÷ 200, horas extras al 50 % (días hábiles) y al 100 % (sábado después de las 13 h,
+   domingos y feriados), feriado trabajado y vacaciones/licencias especiales ÷ 25, jornada
+   nocturna 7 = 8 e insalubre 6 = 8, aportes 11 % + 3 % + 3 % + sindicato, no remunerativo
+   del CCT sólo con obra social y sindicato, embargo según Dec. 484/87 y SAC = 50 % de la
+   mayor remuneración del semestre, proporcional al tiempo trabajado. */
+var LIQ_DEFAULTS = { smvm:376600, divisor:200, jub:11, pami:3, os:3, sind:2, antigPct:1,
+  empleador:"", cuit:"", domicilio:"", lugarPago:"", depBanco:"" };
+var LIQ_KINDS = {
+  mensual:{ label:"Mensual (mensualizado)", short:"Mensual" },
+  quincena1:{ label:"1.ª quincena (jornalizado)", short:"1.ª quincena" },
+  quincena2:{ label:"2.ª quincena (jornalizado)", short:"2.ª quincena" },
+  sac:{ label:"SAC · aguinaldo", short:"SAC" }
+};
+/* Licencias especiales pagas (art. 158 LCT): días corridos que otorga la ley. */
+var LIQ_LIC_ESP = {
+  nacimiento:{ label:"Nacimiento de hijo", dias:2, recibo:"Licencia por nacimiento" },
+  matrimonio:{ label:"Matrimonio", dias:10, recibo:"Licencia por matrimonio" },
+  fallecimiento:{ label:"Fallecimiento de cónyuge, hijo o padres", dias:3, recibo:"Licencia por fallecimiento" },
+  hermano:{ label:"Fallecimiento de hermano", dias:1, recibo:"Licencia por fallecimiento de hermano" },
+  examen:{ label:"Examen (máx. 10 días por año)", dias:2, recibo:"Licencia por examen" },
+  otra:{ label:"Otra licencia paga", dias:0, recibo:"Licencia paga" }
+};
+var LIQ_REGIMEN = {
+  diurno:{ label:"Diurna (8 h)", real:8, nota:"" },
+  nocturno:{ label:"Nocturna (7 h = 8 h)", real:7, nota:"7 h nocturnas equivalen a 8 h diurnas (21 a 6 h)" },
+  insalubre:{ label:"Insalubre (6 h = 8 h)", real:6, nota:"6 h insalubres equivalen a la jornada de 8 h" }
+};
+function liqR2(n){ n=Number(n)||0; return Math.round((n+(n>=0?1e-9:-1e-9))*100)/100; }
+function liqNum(v){
+  if(v==null || v==="") return 0;
+  if(typeof v==="number") return isFinite(v)?v:0;
+  var n=parseMoneyAR(v);
+  return (n==null || !isFinite(n)) ? 0 : n;
+}
+function liqPct(v){ return liqNum(v)/100; }
+/* $ 1.234.567,89 */
+function liqMoney(v){
+  var n=liqR2(v), neg=n<0; n=Math.abs(n);
+  var ent=Math.floor(n+1e-9), dec=Math.round((n-ent)*100);
+  if(dec===100){ ent+=1; dec=0; }
+  return (neg?"-":"")+ent.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".")+","+("0"+dec).slice(-2);
+}
+function liqPctTxt(v){ var n=liqNum(v); return (Math.round(n*100)/100).toString().replace(".", ",")+" %"; }
+function liqNumTxt(v){ var n=Math.round(liqNum(v)*100)/100; return n.toString().replace(".", ","); }
+/* Embargo sobre remuneraciones (Dec. 484/87): hasta 2 SMVM se retiene el 10 % del excedente
+   sobre 1 SMVM; por encima de 2 SMVM, el 20 % del excedente. smvm ya viene proporcionado al período. */
+function liqEmbargoCuota(bruto, smvm){
+  bruto=Number(bruto)||0; smvm=Number(smvm)||0;
+  if(smvm<=0 || bruto<=smvm) return { cuota:0, pct:0, formula:"El bruto no supera 1 SMVM ($ "+liqMoney(smvm)+"): no se retiene." };
+  var pct=(bruto<=2*smvm)?0.10:0.20;
+  return { cuota:liqR2(pct*(bruto-smvm)), pct:pct*100,
+    formula:(pct*100)+" % × (bruto $ "+liqMoney(bruto)+" − SMVM $ "+liqMoney(smvm)+")"+(pct===0.10?" · el bruto no supera 2 SMVM":" · el bruto supera 2 SMVM ($ "+liqMoney(2*smvm)+")") };
+}
+/* Importe neto en letras (art. 140 inc. g LCT). */
+function liqEnLetras(n){
+  n=liqR2(Math.abs(Number(n)||0));
+  var ent=Math.floor(n+1e-9), cent=Math.round((n-ent)*100); if(cent===100){ ent+=1; cent=0; }
+  var U=["","UNO","DOS","TRES","CUATRO","CINCO","SEIS","SIETE","OCHO","NUEVE","DIEZ","ONCE","DOCE","TRECE","CATORCE","QUINCE","DIECISÉIS","DIECISIETE","DIECIOCHO","DIECINUEVE","VEINTE","VEINTIUNO","VEINTIDÓS","VEINTITRÉS","VEINTICUATRO","VEINTICINCO","VEINTISÉIS","VEINTISIETE","VEINTIOCHO","VEINTINUEVE"];
+  var D=["","","","TREINTA","CUARENTA","CINCUENTA","SESENTA","SETENTA","OCHENTA","NOVENTA"];
+  var C=["","CIENTO","DOSCIENTOS","TRESCIENTOS","CUATROCIENTOS","QUINIENTOS","SEISCIENTOS","SETECIENTOS","OCHOCIENTOS","NOVECIENTOS"];
+  function cien(x){ // 0..999
+    if(x===0) return "";
+    if(x===100) return "CIEN";
+    var c=Math.floor(x/100), r=x%100, t="";
+    if(c) t=C[c];
+    if(r){
+      var s = r<30 ? U[r] : (D[Math.floor(r/10)]+(r%10?(" Y "+U[r%10]):""));
+      t = t ? (t+" "+s) : s;
+    }
+    return t;
+  }
+  function apoc(s){ return s.replace(/VEINTIUNO$/,"VEINTIÚN").replace(/UNO$/,"UN"); }
+  function miles(x){ // 0..999999
+    var m=Math.floor(x/1000), r=x%1000, t="";
+    if(m) t = (m===1) ? "MIL" : (apoc(cien(m))+" MIL");
+    if(r) t = t ? (t+" "+cien(r)) : cien(r);
+    return t;
+  }
+  var txt;
+  if(ent===0) txt="CERO";
+  else {
+    var mill=Math.floor(ent/1000000), rest=ent%1000000;
+    txt="";
+    if(mill) txt = (mill===1) ? "UN MILLÓN" : (apoc(miles(mill))+" MILLONES");
+    if(rest) txt = txt ? (txt+" "+miles(rest)) : miles(rest);
+  }
+  return "PESOS "+txt+" CON "+("0"+cent).slice(-2)+"/100";
+}
+function liqLine(lines, o){
+  var l={ code:o.code||"", label:o.label, unid:(o.unid==null?"":String(o.unid)), rem:(o.rem!=null?liqR2(o.rem):null), norem:(o.norem!=null?liqR2(o.norem):null), desc:(o.desc!=null?liqR2(o.desc):null), formula:o.formula||"", info:!!o.info };
+  lines.push(l); return l;
+}
+/* Aportes del trabajador + embargo + otros descuentos. Devuelve el total de descuentos. */
+function liqAportes(lines, totRem, totNoRem, i, P, notes, smvmPeriodo){
+  var sindPct=liqNum(i.sindPct);
+  var t=0;
+  function ap(code, label, pct, base, formula){ if(!(pct>0) || !(base>0)) return; var v=liqR2(base*pct/100); t+=v; liqLine(lines,{ code:code, label:label, unid:liqPctTxt(pct), desc:v, formula:formula||(liqPctTxt(pct)+" × $ "+liqMoney(base)) }); }
+  ap("jub", "Jubilación (SIPA)", liqNum(P.jub), totRem);
+  ap("pami", "Ley 19.032 (PAMI)", liqNum(P.pami), totRem);
+  ap("os", "Obra social", liqNum(P.os), totRem);
+  ap("sind", "Cuota sindical", sindPct, totRem);
+  if(totNoRem>0){
+    if(i.noRemOS) ap("os_nr", "Obra social s/ no rem.", liqNum(P.os), totNoRem, liqPctTxt(P.os)+" × $ "+liqMoney(totNoRem)+" (lo pacta el CCT: no lleva jubilación ni Ley 19.032)");
+    if(i.noRemSind) ap("sind_nr", "Sindicato s/ no rem.", sindPct, totNoRem);
+  }
+  (i.extras||[]).forEach(function(x){
+    if(x && x.tipo==="desc" && liqNum(x.amount)){ var v=liqR2(liqNum(x.amount)); t+=v; liqLine(lines,{ code:"x_desc", label:(x.label||"Otro descuento"), desc:v, formula:"Descuento cargado a mano" }); }
+  });
+  if(i.embargo){
+    var eb=liqEmbargoCuota(totRem, smvmPeriodo);
+    var cuota=eb.cuota, saldo=liqNum(i.embargoSaldo);
+    var f=eb.formula;
+    if(saldo>0 && cuota>saldo){ cuota=liqR2(saldo); f+=" · tope: saldo pendiente del oficio $ "+liqMoney(saldo); }
+    if(cuota>0){ t+=cuota; liqLine(lines,{ code:"emb", label:"Embargo judicial (Dec. 484/87)", unid:(eb.pct?(eb.pct+" %"):""), desc:cuota, formula:f }); }
+    else notes.push("Embargo: "+eb.formula);
+    if(saldo>0) notes.push("Saldo del embargo después de este recibo: $ "+liqMoney(Math.max(0,saldo-cuota))+".");
+  }
+  return liqR2(t);
+}
+/* Motor puro: recibe los datos de la liquidación y los parámetros, devuelve renglones y totales. */
+function liqCompute(i, P){
+  i=i||{}; P=P||LIQ_DEFAULTS;
+  var kind=i.kind||"mensual";
+  var lines=[], notes=[], totRem=0, totNoRem=0, info={};
+  var smvm=liqNum(P.smvm), smvmPer=smvm;
+  function addRem(o){ var l=liqLine(lines,o); totRem+=l.rem||0; return l; }
+  function addNoRem(o){ var l=liqLine(lines,o); totNoRem+=l.norem||0; return l; }
+  function extrasRemNoRem(){
+    (i.extras||[]).forEach(function(x){
+      if(!x || !liqNum(x.amount)) return;
+      if(x.tipo==="rem") addRem({ code:"x_rem", label:(x.label||"Otro concepto remunerativo"), rem:liqNum(x.amount), formula:"Concepto remunerativo cargado a mano" });
+      else if(x.tipo==="norem") addNoRem({ code:"x_norem", label:(x.label||"Otro concepto no remunerativo"), norem:liqNum(x.amount), formula:"Concepto no remunerativo cargado a mano" });
+    });
+  }
+
+  if(kind==="mensual"){
+    var basico=liqNum(i.basico);
+    var tituloPct=liqNum(i.tituloPct);
+    var titulo=liqR2(basico*tituloPct/100);
+    var anios=Math.max(0, Math.floor(liqNum(i.antigAnios)));
+    var antPct=liqNum(i.antigPct);
+    var antBase=basico+(i.antigBase==="basico_titulo"?titulo:0);
+    var antig=liqR2(antBase*anios*antPct/100);
+    var fijos=(i.fijos||[]).filter(function(x){ return x && liqNum(x.amount); });
+    var fijosSum=fijos.reduce(function(a,x){ return a+liqNum(x.amount); },0);
+    var fija=liqR2(basico+titulo+antig+fijosSum);
+    var div=liqNum(P.divisor)||200;
+    var vDia=fija/30, vDia25=fija/25, vHora=fija/div;
+    info={ fija:fija, valorDia:liqR2(vDia), valorDia25:liqR2(vDia25), valorHora:liqR2(vHora), anios:anios };
+    var dias=liqNum(i.diasMes); if(!(dias>0) || dias>30) dias=30;
+
+    addRem({ code:"basico", label:"Sueldo básico", unid:30, rem:basico, formula:(i.categoria?("Categoría "+i.categoria+" · "):"")+"mes comercial de 30 días" });
+    if(titulo) addRem({ code:"titulo", label:"Adicional por título", unid:liqPctTxt(tituloPct), rem:titulo, formula:liqPctTxt(tituloPct)+" × básico $ "+liqMoney(basico) });
+    if(antig) addRem({ code:"antig", label:"Antigüedad", unid:liqPctTxt(anios*antPct), rem:antig, formula:anios+" año"+(anios===1?"":"s")+" × "+liqPctTxt(antPct)+" sobre "+(i.antigBase==="basico_titulo"?"(básico + título)":"el básico")+" $ "+liqMoney(antBase) });
+    fijos.forEach(function(x){ addRem({ code:"fijo", label:(x.label||"Adicional fijo"), rem:liqNum(x.amount), formula:"Adicional fijo mensual (integra la remuneración fija)" }); });
+    if(dias<30) addRem({ code:"dias_nc", label:"Días no computables (ingreso/egreso en el mes)", unid:-(30-dias), rem:-vDia*(30-dias), formula:"Se liquidan "+liqNumTxt(dias)+" días: $ "+liqMoney(fija)+" ÷ 30 × "+liqNumTxt(30-dias) });
+
+    var inas=liqNum(i.inasist);
+    if(inas>0) addRem({ code:"inasist", label:"Inasistencia injustificada", unid:-inas, rem:-vDia*inas, formula:"(básico + adicionales fijos) $ "+liqMoney(fija)+" ÷ 30 × "+liqNumTxt(inas)+" día(s)" });
+    var enf=liqNum(i.enfDias);
+    if(enf>0) liqLine(lines,{ code:"enf", label:"Enfermedad inculpable (art. 208 LCT)", unid:enf, info:true, formula:"Se pagan como días trabajados: ya están incluidos en el básico" });
+    var sinGoce=liqNum(i.sinGoceDias);
+    if(sinGoce>0) addRem({ code:"singoce", label:"Días sin goce de sueldo", unid:-sinGoce, rem:-vDia*sinGoce, formula:"$ "+liqMoney(fija)+" ÷ 30 × "+liqNumTxt(sinGoce)+(i.sinGoceNota?(" · "+i.sinGoceNota):"") });
+
+    var vac=liqNum(i.vacDias);
+    if(vac>0){
+      var prom=liqNum(i.vacPromVar);
+      var vBase=fija+prom;
+      addRem({ code:"vac_desc", label:"Descuento días de vacaciones", unid:-vac, rem:-vDia*vac, formula:"Se reemplazan por vacaciones: $ "+liqMoney(fija)+" ÷ 30 × "+liqNumTxt(vac) });
+      var vl=addRem({ code:"vac", label:"Vacaciones (art. 155 LCT)", unid:vac, rem:(vBase/25)*vac, formula:"("+(prom?("fija $ "+liqMoney(fija)+" + promedio variables $ "+liqMoney(prom)):("$ "+liqMoney(fija)))+") ÷ 25 × "+liqNumTxt(vac)+" día(s)" });
+      info.plusVac=liqR2(vl.rem-liqR2(vDia*vac));
+      notes.push("Plus vacacional: $ "+liqMoney(vl.rem)+" − $ "+liqMoney(vDia*vac)+" (lo que hubiera cobrado trabajando) = $ "+liqMoney(info.plusVac)+".");
+    }
+    var le=liqNum(i.licEspDias);
+    if(le>0){
+      var lt=LIQ_LIC_ESP[i.licEspTipo]||LIQ_LIC_ESP.otra;
+      addRem({ code:"lic_desc", label:"Descuento días de licencia", unid:-le, rem:-vDia*le, formula:"$ "+liqMoney(fija)+" ÷ 30 × "+liqNumTxt(le) });
+      addRem({ code:"lic", label:lt.recibo+" (art. 158 LCT)", unid:le, rem:vDia25*le, formula:"$ "+liqMoney(fija)+" ÷ 25 × "+liqNumTxt(le)+" día(s)" });
+    }
+    var h50=liqNum(i.he50), h100=liqNum(i.he100);
+    if(h50>0) addRem({ code:"he50", label:"Horas extras 50 %", unid:liqNumTxt(h50), rem:vHora*1.5*h50, formula:"Valor hora $ "+liqMoney(vHora)+" (fija ÷ "+div+") × 1,5 × "+liqNumTxt(h50)+" h" });
+    if(h100>0) addRem({ code:"he100", label:"Horas extras 100 %", unid:liqNumTxt(h100), rem:vHora*2*h100, formula:"Valor hora $ "+liqMoney(vHora)+" × 2 × "+liqNumTxt(h100)+" h (sábado después de las 13 h, domingo o feriado)" });
+    var fer=liqNum(i.feriados);
+    if(fer>0) addRem({ code:"feriado", label:"Feriado trabajado", unid:fer, rem:vDia25*fer, formula:"Se agrega $ "+liqMoney(fija)+" ÷ 25 × "+liqNumTxt(fer)+" día(s)" });
+    var ventas=liqNum(i.comVentas), comPct=liqNum(i.comPct), comMonto=liqNum(i.comMonto);
+    var com=(ventas>0 && comPct>0) ? ventas*comPct/100 : comMonto;
+    if(com>0) addRem({ code:"com", label:"Comisiones", unid:(ventas>0&&comPct>0)?liqPctTxt(comPct):"", rem:com, formula:(ventas>0&&comPct>0)?(liqPctTxt(comPct)+" sobre ventas por $ "+liqMoney(ventas)):"Comisiones del período" });
+    extrasRemNoRem();
+
+    var nr=liqNum(i.noRem);
+    if(nr>0){
+      addNoRem({ code:"norem", label:(i.noRemLabel||"Suma no remunerativa CCT"), unid:30, norem:nr, formula:"Acordada por el convenio: no integra la base de jubilación ni del SAC" });
+      var nrDias=inas+sinGoce+(30-dias);
+      if(nrDias>0) addNoRem({ code:"norem_desc", label:"Inasistencia/días s/ no rem.", unid:-nrDias, norem:-(nr/30)*nrDias, formula:"$ "+liqMoney(nr)+" ÷ 30 × "+liqNumTxt(nrDias) });
+    }
+    smvmPer=smvm*(dias/30);
+  }
+  else if(kind==="quincena1" || kind==="quincena2"){
+    var vh=liqNum(i.valorHora);
+    var reg=LIQ_REGIMEN[i.regimen]||LIQ_REGIMEN.diurno;
+    var hj=8;
+    var jor=liqNum(i.jornadas), enfJ=liqNum(i.enfDias), inaJ=liqNum(i.inasist);
+    info={ valorHora:vh, regimen:reg.label };
+    if(jor>0) addRem({ code:"jornadas", label:"Jornadas trabajadas", unid:liqNumTxt(jor), rem:jor*hj*vh, formula:liqNumTxt(jor)+" jornadas × "+hj+" h × $ "+liqMoney(vh)+(reg.nota?(" · "+reg.nota):"") });
+    if(enfJ>0) addRem({ code:"enf", label:"Enfermedad inculpable (art. 208 LCT)", unid:liqNumTxt(enfJ), rem:enfJ*hj*vh, formula:liqNumTxt(enfJ)+" jornada(s) × "+hj+" h × $ "+liqMoney(vh)+" · se paga como día trabajado" });
+    if(inaJ>0) liqLine(lines,{ code:"inasist", label:"Inasistencia injustificada", unid:liqNumTxt(inaJ), info:true, formula:"El jornalizado cobra lo trabajado: la jornada ausente no se paga" });
+    var q50=liqNum(i.he50), q100=liqNum(i.he100);
+    if(q50>0) addRem({ code:"he50", label:"Horas extras 50 %", unid:liqNumTxt(q50), rem:vh*1.5*q50, formula:liqNumTxt(q50)+" h × $ "+liqMoney(vh)+" × 1,5" });
+    if(q100>0) addRem({ code:"he100", label:"Horas extras 100 %", unid:liqNumTxt(q100), rem:vh*2*q100, formula:liqNumTxt(q100)+" h × $ "+liqMoney(vh)+" × 2" });
+    var qf=liqNum(i.feriados);
+    if(qf>0) addRem({ code:"feriado", label:"Feriado", unid:liqNumTxt(qf), rem:qf*hj*vh, formula:liqNumTxt(qf)+" jornada(s) × "+hj+" h × $ "+liqMoney(vh)+" (feriado pago)" });
+    extrasRemNoRem();
+    smvmPer=smvm/2;
+    notes.push("Embargo en quincena: se toma medio SMVM ($ "+liqMoney(smvmPer)+") como mínimo inembargable del período.");
+  }
+  else if(kind==="sac"){
+    var meses=(i.sacMeses||[]).map(function(m){ return { label:m.label, rem:liqNum(m.rem) }; });
+    var mayor=0, mayorLbl="";
+    meses.forEach(function(m){ if(m.rem>mayor){ mayor=m.rem; mayorLbl=m.label; } });
+    var metodo=i.sacMetodo==="dias"?"dias":"meses";
+    var frac, fracTxt;
+    if(metodo==="dias"){
+      var dt=liqNum(i.sacDiasTrab), ds=liqNum(i.sacDiasSem)||182;
+      if(!(dt>=0)) dt=ds; if(dt>ds) dt=ds;
+      frac=dt/ds; fracTxt=liqNumTxt(dt)+"/"+liqNumTxt(ds)+" días";
+    } else {
+      var mt=liqNum(i.sacMesesTrab); if(!(mt>=0) || mt>6) mt=6;
+      frac=mt/6; fracTxt=liqNumTxt(mt)+"/6 meses";
+    }
+    var sac=(mayor/2)*frac;
+    info={ mayor:mayor, mayorLbl:mayorLbl, frac:frac };
+    addRem({ code:"sac", label:"SAC "+(i.sacSemestre===1?"1.º":"2.º")+" semestre "+(i.sacAnio||"")+" (art. 121 LCT)", unid:(frac<1?fracTxt:"50 %"), rem:sac, formula:"Mayor remuneración del semestre $ "+liqMoney(mayor)+(mayorLbl?(" ("+mayorLbl+")"):"")+" ÷ 2"+(frac<1?(" × "+fracTxt):"") });
+    extrasRemNoRem();
+    notes.push("El SAC se calcula sólo sobre conceptos remunerativos: el no remunerativo del CCT no integra la base.");
+  }
+
+  totRem=liqR2(totRem); totNoRem=liqR2(totNoRem);
+  var totDesc=liqAportes(lines, totRem, totNoRem, i, P, notes, smvmPer);
+  var neto=liqR2(totRem+totNoRem-totDesc);
+  return { kind:kind, lines:lines, notes:notes, info:info, totRem:totRem, totNoRem:totNoRem, totDesc:totDesc, neto:neto, letras:liqEnLetras(neto) };
+}
+/* ----- Liquidación · base de datos (tabla payrolls, ver sql_liquidacion.sql) ----- */
+function dbListPayrolls(){
+  return supaFetch("/rest/v1/payrolls?select=*&order=period.desc,created_at.desc")
+    .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, items:(r.ok && Array.isArray(j))?j:[] }; }); })
+    .catch(function(){ return { ok:false, items:[] }; });
+}
+function dbCreatePayroll(row){
+  return supaFetch("/rest/v1/payrolls", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdatePayroll(id, patch){
+  return supaFetch("/rest/v1/payrolls?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=representation" }, body:JSON.stringify(patch) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; if(r.ok) return Object.assign({id:id}, patch); throw new Error("update_failed"); }); });
+}
+function dbDeletePayroll(id){
+  return supaFetch("/rest/v1/payrolls?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+
+/* ----- Parámetros (se guardan en este navegador) ----- */
+function liqParams(){ var p=lget("voz_liq_params")||{}; var o={}; for(var k in LIQ_DEFAULTS) o[k]=(p[k]!=null && p[k]!=="")?p[k]:LIQ_DEFAULTS[k]; if(!o.empleador) o.empleador=brandName()||""; return o; }
+function liqSetParam(k, v){ var p=lget("voz_liq_params")||{}; p[k]=v; lset("voz_liq_params", p); }
+
+/* ----- Fechas del período ----- */
+function liqMonthNow(){ var d=new Date(); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2); }
+function liqMonthBounds(mk){ var y=parseInt(mk.slice(0,4),10), m=parseInt(mk.slice(5,7),10); return { y:y, m:m, start:new Date(y,m-1,1), end:new Date(y,m,0), dim:new Date(y,m,0).getDate() }; }
+function liqISO(d){ return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+function liqAddMonths(mk, n){ var b=liqMonthBounds(mk); var d=new Date(b.y, b.m-1+n, 1); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2); }
+function liqPeriodLabel(mk, kind){ var t=monthLabel(mk); if(kind==="quincena1") return "1.ª quincena de "+t; if(kind==="quincena2") return "2.ª quincena de "+t; if(kind==="sac"){ var b=liqMonthBounds(mk); return "SAC "+(b.m<=6?"1.º":"2.º")+" semestre "+b.y; } return t; }
+/* Rango de días que cubre la liquidación. */
+function liqRange(mk, kind){
+  var b=liqMonthBounds(mk);
+  if(kind==="quincena1") return { from:new Date(b.y,b.m-1,1), to:new Date(b.y,b.m-1,15) };
+  if(kind==="quincena2") return { from:new Date(b.y,b.m-1,16), to:b.end };
+  return { from:b.start, to:b.end };
+}
+function liqOverlapDays(s, e, from, to){
+  var a=parseYMD(String(s||"").slice(0,10)), z=parseYMD(String(e||s||"").slice(0,10));
+  if(!a || !z || isNaN(a.getTime()) || isNaN(z.getTime())) return 0;
+  var x=a>from?a:from, y=z<to?z:to;
+  if(y<x) return 0;
+  return Math.floor((y.getTime()-x.getTime())/(24*3600*1000))+1;
+}
+/* Años completos de antigüedad al último día del período. */
+function liqAntigYears(emp, mk){
+  var hire=repHireDate(emp); if(!hire) return null;
+  var ref=liqMonthBounds(mk).end;
+  var meses=(ref.getFullYear()-hire.getFullYear())*12+(ref.getMonth()-hire.getMonth());
+  if(ref.getDate()<hire.getDate()) meses--;
+  return Math.max(0, Math.floor(meses/12));
+}
+function liqSavedFor(empId, mk, kind){ return (state.liq.items||[]).filter(function(p){ return p.employee_id===empId && p.period===mk && p.kind===kind; })[0]||null; }
+function liqEmpPayrolls(empId){ return (state.liq.items||[]).filter(function(p){ return p.employee_id===empId; }).sort(function(a,b){ return String(b.period).localeCompare(String(a.period)) || String(b.kind).localeCompare(String(a.kind)); }); }
+
+/* Novedades tomadas de Asistencia y de Vacaciones y licencias para el rango del período. */
+function liqNovedades(emp, mk, kind){
+  var r=liqRange(mk, kind), out={ inasist:0, inasistDates:[], he50min:0, he100min:0, francos:0, jornadas:null, vac:0, enf:0, mat:0, licEsp:0, licEspTipo:"", licEspLbl:[], hasAsist:false, hasLic:false };
+  var fromISO=liqISO(r.from), toISO=liqISO(r.to);
+  var leaves=(state.lic.items||[]).filter(function(l){ return l.employee_id===emp.id && l.status==="aprobada"; });
+  function onLeave(dISO){ return leaves.some(function(l){ return String(l.start_date||"").slice(0,10)<=dISO && String(l.end_date||l.start_date||"").slice(0,10)>=dISO; }); }
+  leaves.forEach(function(l){
+    var d=liqOverlapDays(l.start_date, l.end_date, r.from, r.to); if(!d) return;
+    out.hasLic=true;
+    if(l.type==="vacaciones") out.vac+=d;
+    else if(l.type==="enfermedad") out.enf+=d;
+    else if(l.type==="maternidad") out.mat+=d;
+    else {
+      out.licEsp+=d;
+      var t=(l.type==="paternidad")?"nacimiento":(l.type==="estudio"?"examen":"otra");
+      if(!out.licEspTipo) out.licEspTipo=t;
+      out.licEspLbl.push(((LEAVE_TYPES[l.type]||{}).label||l.type)+" "+d+" d");
+    }
+  });
+  if(kind!=="sac" && state.asist.items && state.asist.items.length && typeof asistMonthControl==="function"){
+    try{
+      var ctl=asistMonthControl(mk).filter(function(x){ return x.emp && x.emp.id===emp.id; })[0];
+      if(ctl){
+        out.hasAsist=true;
+        ctl.absent.forEach(function(a){ if(a.date<fromISO || a.date>toISO) return; if(a.note) return; if(onLeave(a.date)) return; out.inasist++; out.inasistDates.push(a.date); });
+        ctl.extra.forEach(function(x){ if(x.date<fromISO || x.date>toISO) return; var wd=dayWeekNum(x.date); if(wd===6 || wd===7) out.he100min+=x.min; else out.he50min+=x.min; });
+        ctl.franco.forEach(function(x){ if(x.date>=fromISO && x.date<=toISO) out.francos++; });
+      }
+      if(kind!=="mensual"){
+        var n=0, d=new Date(r.from.getTime());
+        while(d<=r.to){ var iso=liqISO(d); if(iso<=(todayISO()||iso)){ var sm=asistDaySummary(iso); if(sm.rows.some(function(x){ return x.empId===emp.id && x.entrada; })) n++; } d.setDate(d.getDate()+1); }
+        out.jornadas=n;
+      }
+    }catch(e){}
+  }
+  return out;
+}
+/* Promedio mensual de variables (comisiones y horas extras) de las liquidaciones guardadas de los 12 meses anteriores. */
+function liqPromVariables(empId, mk){
+  var desde=liqAddMonths(mk,-12), sum=0, n=0;
+  (state.liq.items||[]).forEach(function(p){
+    if(p.employee_id!==empId || p.kind!=="mensual" || !(p.period>=desde && p.period<mk)) return;
+    n++;
+    (p.lines||[]).forEach(function(l){ if(l.code==="com" || l.code==="he50" || l.code==="he100") sum+=Number(l.rem)||0; });
+  });
+  return { n:n, prom:n?liqR2(sum/n):0 };
+}
+function liqH(min){ return Math.round((min/60)*100)/100; }
+/* Arma el borrador de la liquidación con el legajo + novedades. */
+function liqBuildForm(emp, mk, kind){
+  var P=liqParams();
+  var base=parseMoneyAR(emp.salary);
+  var anios=liqAntigYears(emp, mk);
+  var conv=!!String(emp.collective_agreement||"").trim();
+  var f={ kind:kind, period:mk, basico:(base!=null?String(base):""), categoria:(emp.category||""), tituloPct:"", antigAnios:(anios!=null?String(anios):"0"), antigPct:String(P.antigPct), antigBase:"basico",
+    fijos:[], diasMes:"30", inasist:"", enfDias:"", sinGoceDias:"", sinGoceNota:"", vacDias:"", vacPromVar:"", licEspTipo:"matrimonio", licEspDias:"", he50:"", he100:"", feriados:"",
+    comVentas:"", comPct:"", comMonto:"", noRem:"", noRemLabel:"Suma no remunerativa CCT", noRemOS:true, noRemSind:conv, sindPct:(conv?String(P.sind):"0"), embargo:false, embargoSaldo:"",
+    extras:[], valorHora:"", regimen:"diurno", jornadas:"", fechaPago:"", lugarPago:(P.lugarPago||""), depPeriodo:monthLabel(liqAddMonths(mk,-1)), depFecha:"", depBanco:(P.depBanco||""), hints:{} };
+  var H=f.hints;
+  H.basico = base!=null ? "Del legajo: salario actual $ "+liqMoney(base)+"." : "El legajo no tiene salario cargado: completalo acá o en «Legajo del empleado».";
+  H.antig = anios!=null ? ("Ingreso "+fDMY(String(emp.hire_date).slice(0,10))+" → "+anios+" año"+(anios===1?"":"s")+" completos al "+fmtDMY(liqMonthBounds(mk).end)+".") : "Sin fecha de ingreso en el legajo: cargá los años a mano.";
+  H.sind = conv ? ("Convenio del legajo: "+emp.collective_agreement+".") : "Sin convenio en el legajo: sin cuota sindical por defecto.";
+  var hire=repHireDate(emp), b=liqMonthBounds(mk);
+  if(kind==="mensual" && hire && hire>b.start && hire<=b.end){ f.diasMes=String(Math.min(30, b.dim-hire.getDate()+1)); H.diasMes="Ingresó el "+fmtDMY(hire)+": se liquidan los días desde el ingreso."; }
+  var term=repTermDate(emp);
+  if(kind==="mensual" && term && term>=b.start && term<b.end){ f.diasMes=String(Math.min(30, term.getDate())); H.diasMes="Egreso el "+fmtDMY(term)+": se liquidan los días hasta el egreso (la liquidación final está en Off boarding)."; }
+
+  if(kind==="sac"){
+    var s1=b.m<=6, y=b.y, first=s1?1:7;
+    f.sacSemestre=s1?1:2; f.sacAnio=y; f.sacMetodo="meses"; f.sacMeses=[];
+    var semStart=new Date(y, first-1, 1), semEnd=new Date(y, first+5, 0);
+    for(var k=0;k<6;k++){
+      var mkk=y+"-"+("0"+(first+k)).slice(-2), mb=liqMonthBounds(mkk);
+      var saved=liqSavedFor(emp.id, mkk, "mensual");
+      var employed=(!hire || hire<=mb.end) && (!term || term>=mb.start);
+      var rem="", src="";
+      if(saved){ rem=String(saved.gross_rem||0); src="liquidación guardada"; }
+      else if(!employed){ rem="0"; src="no trabajaba"; }
+      else if(base!=null){ rem=String(base); src="estimado: salario del legajo"; }
+      f.sacMeses.push({ label:MONTH_NAMES[first+k-1], mk:mkk, rem:rem, src:src });
+    }
+    var from=(hire && hire>semStart)?hire:semStart, to=(term && term<semEnd)?term:semEnd;
+    var diasSem=Math.floor((semEnd-semStart)/(24*3600*1000))+1;
+    var diasTrab=to<from?0:Math.floor((to-from)/(24*3600*1000))+1;
+    var mesesTrab=6;
+    if(hire && hire>semStart){ var dimH=new Date(hire.getFullYear(), hire.getMonth()+1, 0).getDate(); mesesTrab=(semEnd.getMonth()-hire.getMonth())+(dimH-hire.getDate()+1)/dimH; }
+    if(term && term<semEnd){ var dimT=new Date(term.getFullYear(), term.getMonth()+1, 0).getDate(); mesesTrab-=(semEnd.getMonth()-term.getMonth())+(dimT-term.getDate())/dimT; }
+    f.sacMesesTrab=String(Math.max(0, Math.round(mesesTrab*100)/100)); f.sacDiasTrab=String(diasTrab); f.sacDiasSem=String(diasSem);
+    H.sac=(hire && hire>semStart) ? ("Ingresó el "+fmtDMY(hire)+": el SAC es proporcional al tiempo trabajado en el semestre.") : "Trabajó todo el semestre: SAC completo.";
+    return f;
+  }
+  var nv=liqNovedades(emp, mk, kind);
+  if(nv.inasist) f.inasist=String(nv.inasist);
+  if(nv.enf) f.enfDias=String(Math.min(30,nv.enf));
+  if(nv.hasAsist){
+    H.asist="Asistencia: "+nv.inasist+" ausencia"+(nv.inasist===1?"":"s")+" sin justificar"+(nv.inasistDates.length?(" ("+nv.inasistDates.map(function(d){ return d.slice(8,10)+"/"+d.slice(5,7); }).join(", ")+")"):"")+
+      " · horas extra "+fmtMinDur(nv.he50min)+" en días hábiles y "+fmtMinDur(nv.he100min)+" sábado/domingo"+(nv.francos?(" · trabajó "+nv.francos+" franco"+(nv.francos===1?"":"s")+": revisá si corresponde pagarlo al 100 %"):"")+". Si hubo un feriado, pasá esas horas al 100 %.";
+  } else {
+    H.asist="No hay fichadas de este período en Asistencia: cargá las novedades a mano.";
+  }
+  if(nv.hasLic) H.lic="Licencias aprobadas en el período: "+[nv.vac?("vacaciones "+nv.vac+" d"):"", nv.enf?("enfermedad "+nv.enf+" d"):"", nv.mat?("maternidad "+nv.mat+" d"):"", nv.licEspLbl.join(", ")].filter(Boolean).join(" · ")+".";
+  if(kind==="mensual"){
+    if(nv.he50min) f.he50=String(liqH(nv.he50min));
+    if(nv.he100min) f.he100=String(liqH(nv.he100min));
+    if(nv.vac) f.vacDias=String(Math.min(30,nv.vac));
+    if(nv.mat){ f.sinGoceDias=String(Math.min(30,nv.mat)); f.sinGoceNota="licencia por maternidad: la asignación la paga ANSES"; }
+    if(nv.licEsp){ f.licEspDias=String(nv.licEsp); f.licEspTipo=nv.licEspTipo||"otra"; }
+    var pv=liqPromVariables(emp.id, mk);
+    if(pv.n){ f.vacPromVar=String(pv.prom); H.vacProm="Promedio de comisiones y horas extras de "+pv.n+" liquidación"+(pv.n===1?"":"es")+" guardada"+(pv.n===1?"":"s")+" de los últimos 12 meses."; }
+    else H.vacProm="Si cobra variables (comisiones, horas extras), cargá el promedio del año o de los últimos 6 meses.";
+    try{ var vb=vacationEntitlement(emp, (b.m<=4?b.y-1:b.y)); H.vac="Le corresponden "+vb.auto+" días de vacaciones (art. 150 LCT). "+vb.note; }catch(e){}
+  } else {
+    if(base!=null) H.valorHora="Salario del legajo: $ "+liqMoney(base)+". Si es mensual, el valor hora sería $ "+liqMoney(base/(liqNum(P.divisor)||200))+" (÷ "+(liqNum(P.divisor)||200)+").";
+    if(nv.jornadas!=null){ f.jornadas=String(nv.jornadas); H.jornadas="Días con fichada de entrada en la quincena: "+nv.jornadas+"."; }
+    if(nv.he50min) f.he50=String(liqH(nv.he50min));
+    if(nv.he100min) f.he100=String(liqH(nv.he100min));
+  }
+  return f;
+}
+
+/* ----- Navegación y carga ----- */
+function goLiquidacion(){
+  var s=state.liq;
+  state.error=null; state.empPick=""; state.empPickInactive=false;
+  s.msg=""; s.error=null; s.emp=null; s.form=null; s.saving=false;
+  if(!s.period) s.period=liqMonthNow();
+  if(!s.kind) s.kind="mensual";
+  if(!s.nPeriod) s.nPeriod=s.period;
+  state.screen="mod2-liquidacion"; render(); loadLiquidacion();
+}
+function loadLiquidacion(){
+  var s=state.liq;
+  if(!(supaConfigured() && isLoggedIn())){ s.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
+  s.loading=true; s.error=null; render();
+  var nada=function(){ return []; };
+  Promise.all([
+    (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()),
+    dbListPayrolls(),
+    (state.lic.items!==null?Promise.resolve(state.lic.items):dbListLeaves().catch(nada)),
+    (state.asist.items!==null?Promise.resolve(state.asist.items):dbListAttendance().catch(nada)),
+    ((state.asist.absNotes&&state.asist.absNotes.length)?Promise.resolve(state.asist.absNotes):dbListAbsenceNotes().catch(nada))
+  ]).then(function(r){
+    state.emp.items=r[0]||[]; s.items=r[1].items||[]; s.noTable=!r[1].ok;
+    state.lic.items=r[2]||[]; state.asist.items=r[3]||[]; state.asist.absNotes=r[4]||[];
+    s.loading=false; render();
+  }).catch(function(){ s.loading=false; s.items=s.items||[]; s.error="No pude cargar los datos para liquidar."; render(); });
+}
+function liqEmpById(id){ return (state.emp.items||[]).filter(function(x){ return x.id===id; })[0]||null; }
+/* Abre (o recarga) la liquidación del empleado para el período y tipo elegidos. */
+function liqOpen(empId, fresh){
+  var s=state.liq, e=liqEmpById(empId); if(!e) return;
+  s.emp=empId; s.msg=""; s.error=null;
+  var saved=fresh?null:liqSavedFor(empId, s.period, s.kind);
+  if(saved && saved.inputs && typeof saved.inputs==="object"){
+    s.form=JSON.parse(JSON.stringify(saved.inputs)); s.form.kind=s.kind; s.form.period=s.period; s.form.hints=s.form.hints||{};
+    s.form.hints.saved="Liquidación guardada el "+fmtDateTimeShort(saved.updated_at||saved.created_at)+". Si cambiaste el legajo o las novedades, tocá «Recalcular desde el legajo».";
+  } else {
+    s.form=liqBuildForm(e, s.period, s.kind);
+  }
+  render();
+}
+function liqCurrent(){
+  var s=state.liq, e=s.emp?liqEmpById(s.emp):null;
+  if(!e || !s.form) return null;
+  return { emp:e, form:s.form, res:liqCompute(s.form, liqParams()) };
+}
+function liqSave(){
+  var s=state.liq, c=liqCurrent(); if(!c || s.saving) return;
+  if(s.form.kind==="mensual" && !liqNum(s.form.basico)){ s.msg=""; s.error="Cargá el sueldo básico antes de guardar."; render(); return; }
+  var inputs=JSON.parse(JSON.stringify(s.form)); delete inputs.hints;
+  var row={ employee_id:c.emp.id, period:s.period, kind:s.kind, inputs:inputs, lines:c.res.lines,
+    gross_rem:c.res.totRem, gross_norem:c.res.totNoRem, deductions:c.res.totDesc, net:c.res.neto, status:"liquidada", updated_at:new Date().toISOString() };
+  var prev=liqSavedFor(c.emp.id, s.period, s.kind);
+  s.saving=true; s.error=null; render();
+  (prev?dbUpdatePayroll(prev.id, row):dbCreatePayroll(row)).then(function(){
+    return dbListPayrolls();
+  }).then(function(r){
+    s.items=r.items||[]; s.noTable=!r.ok; s.saving=false;
+    s.msg="Liquidación de "+empFullName(c.emp)+" · "+liqPeriodLabel(s.period, s.kind)+" guardada. Neto $ "+liqMoney(c.res.neto)+".";
+    render();
+  }).catch(function(){
+    s.saving=false; s.error="No pude guardar la liquidación. Si es la primera vez, corré sql_liquidacion.sql en el SQL Editor de Supabase. El recibo en PDF se puede descargar igual."; render();
+  });
+}
+function liqDelete(id){
+  if(!confirm("¿Eliminar esta liquidación guardada? No se puede deshacer.")) return;
+  dbDeletePayroll(id).then(function(){ return dbListPayrolls(); }).then(function(r){ state.liq.items=r.items||[]; state.liq.msg="Liquidación eliminada."; render(); });
+}
+function liqDownload(filename, text, mime){
+  try{
+    var blob=new Blob(["﻿"+text], { type:(mime||"text/csv")+";charset=utf-8" });
+    var url=URL.createObjectURL(blob);
+    plainBrowserDownload(url, filename);
+    setTimeout(function(){ try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  }catch(e){}
+}
+function liqCsvCell(c){ var v=String(c==null?"":c); return /[",\n;]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+function liqNominaRows(mk){
+  return (state.liq.items||[]).filter(function(p){ return p.period===mk; }).map(function(p){ return { p:p, e:liqEmpById(p.employee_id) }; })
+    .sort(function(a,b){ return (a.e?empFullName(a.e):"").localeCompare(b.e?empFullName(b.e):"", "es") || String(a.p.kind).localeCompare(String(b.p.kind)); });
+}
+function liqNominaCSV(){
+  var mk=state.liq.nPeriod||state.liq.period, rows=liqNominaRows(mk);
+  var out=[["Período", monthLabel(mk)],[],["Empleado","Legajo","CUIL","Tipo","Remunerativo","No remunerativo","Descuentos","Neto"]];
+  var t={ r:0, n:0, d:0, x:0 };
+  rows.forEach(function(x){ var p=x.p; t.r+=Number(p.gross_rem)||0; t.n+=Number(p.gross_norem)||0; t.d+=Number(p.deductions)||0; t.x+=Number(p.net)||0;
+    out.push([x.e?empFullName(x.e):"(empleado eliminado)", x.e?(x.e.legajo_number||""):"", x.e?(x.e.cuil||""):"", (LIQ_KINDS[p.kind]||{}).short||p.kind, liqMoney(p.gross_rem), liqMoney(p.gross_norem), liqMoney(p.deductions), liqMoney(p.net)]); });
+  out.push(["Totales","","","",liqMoney(t.r),liqMoney(t.n),liqMoney(t.d),liqMoney(t.x)]);
+  liqDownload("nomina_"+mk+".csv", out.map(function(r){ return r.map(liqCsvCell).join(","); }).join("\r\n"));
+}
+/* Recibo en PDF: mismo recibo de la pantalla, sobre papel blanco. */
+function liqPdf(){
+  var c=liqCurrent(); if(!c) return;
+  if(!(window.html2canvas && window.jspdf && window.jspdf.jsPDF)){ state.liq.error="No pude generar el PDF en este navegador. Probá desde una computadora."; render(); return; }
+  var wrap=document.createElement("div");
+  wrap.style.cssText="position:fixed;left:-10000px;top:0;width:820px;background:#ffffff;padding:28px;box-sizing:border-box";
+  wrap.innerHTML=liqReciboHtml(c.emp, c.form, c.res, "ORIGINAL · para el empleador")+'<div style="height:26px;border-bottom:1px dashed #b9c2cf;margin-bottom:26px"></div>'+liqReciboHtml(c.emp, c.form, c.res, "DUPLICADO · para el trabajador");
+  document.body.appendChild(wrap);
+  state.liq.pdfBusy=true; render();
+  html2canvas(wrap, { scale:2, backgroundColor:"#ffffff" }).then(function(canvas){
+    try{
+      var pdf=new window.jspdf.jsPDF({ unit:"pt", format:"a4" });
+      var pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+      var iw=pw-40, ih=canvas.height*(iw/canvas.width);
+      var img=canvas.toDataURL("image/jpeg", 0.92);
+      var y=20, resto=ih;
+      pdf.addImage(img, "JPEG", 20, y, iw, ih);
+      while(resto > ph-40){ resto-=(ph-40); pdf.addPage(); y=20-(ih-resto); pdf.addImage(img, "JPEG", 20, y, iw, ih); }
+      var nom=((c.emp.last_name||"")+"_"+(c.emp.first_name||"")).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+      pdf.save("recibo_"+(nom||"empleado")+"_"+c.form.period+(c.form.kind!=="mensual"?("_"+c.form.kind):"")+".pdf");
+    }catch(e){}
+    try{ document.body.removeChild(wrap); }catch(e){}
+    state.liq.pdfBusy=false; render();
+  }).catch(function(){ try{ document.body.removeChild(wrap); }catch(e){} state.liq.pdfBusy=false; state.liq.error="No pude generar el PDF."; render(); });
+}
+/* Acciones de la pantalla (data-action="liq-…"). */
+function liqAction(act, el){
+  var s=state.liq, f=s.form;
+  if(act==="liq-tab"){ s.tab=el.getAttribute("data-v")||"liquidar"; s.msg=""; s.error=null; render(); }
+  else if(act==="liq-emp"){ liqOpen(el.getAttribute("data-e")); }
+  else if(act==="liq-emp-back"){ s.emp=null; s.form=null; s.msg=""; s.error=null; render(); }
+  else if(act==="liq-rebuild"){ if(s.emp) liqOpen(s.emp, true); }
+  else if(act==="liq-save"){ liqSave(); }
+  else if(act==="liq-pdf"){ liqPdf(); }
+  else if(act==="liq-del"){ liqDelete(el.getAttribute("data-id")); }
+  else if(act==="liq-open-saved"){ var p=(s.items||[]).filter(function(x){ return x.id===el.getAttribute("data-id"); })[0]; if(p){ s.period=p.period; s.kind=p.kind; s.tab="liquidar"; liqOpen(p.employee_id); } }
+  else if(act==="liq-csv"){ liqNominaCSV(); }
+  else if(act==="liq-add-fijo"){ if(f){ f.fijos=f.fijos||[]; f.fijos.push({ label:"", amount:"" }); render(); } }
+  else if(act==="liq-del-fijo"){ if(f){ f.fijos.splice(parseInt(el.getAttribute("data-i"),10),1); render(); } }
+  else if(act==="liq-add-extra"){ if(f){ f.extras=f.extras||[]; f.extras.push({ label:"", tipo:el.getAttribute("data-t")||"rem", amount:"" }); render(); } }
+  else if(act==="liq-del-extra"){ if(f){ f.extras.splice(parseInt(el.getAttribute("data-i"),10),1); render(); } }
+  else if(act==="liq-reset-params"){ if(confirm("¿Volver a los parámetros de la cátedra (SMVM $ 376.600, divisor 200, aportes 11 % + 3 % + 3 %)?")){ lset("voz_liq_params", {}); render(); } }
+}
+/* Recalcula sólo el recibo (sin re-render) para no perder el foco mientras se escribe. */
+function liqRefresh(){
+  var c=liqCurrent(); if(!c) return;
+  var box=document.getElementById("liq-preview"); if(box) box.innerHTML=liqReciboHtml(c.emp, c.form, c.res);
+  var how=document.getElementById("liq-how"); if(how) how.innerHTML=liqHowHtml(c.res);
+  var tot=document.getElementById("liq-tot"); if(tot) tot.innerHTML=liqTotHtml(c.res);
+}
+function liqBind(){
+  var f;
+  if ((f=document.getElementById("f_liq_period"))) f.addEventListener("change", function(e){ if(!e.target.value) return; state.liq.period=e.target.value; if(state.liq.emp) liqOpen(state.liq.emp); else render(); });
+  if ((f=document.getElementById("f_liq_kind"))) f.addEventListener("change", function(e){ state.liq.kind=e.target.value; if(state.liq.emp) liqOpen(state.liq.emp); else render(); });
+  if ((f=document.getElementById("f_liq_nperiod"))) f.addEventListener("change", function(e){ if(e.target.value){ state.liq.nPeriod=e.target.value; render(); } });
+  document.querySelectorAll("[data-liq]").forEach(function(el){
+    var k=el.getAttribute("data-liq");
+    var ev=(el.tagName==="SELECT")?"change":"input";
+    el.addEventListener(ev, function(e){
+      var fo=state.liq.form; if(!fo) return;
+      fo[k]=e.target.value;
+      if(k==="licEspTipo"){ var d=(LIQ_LIC_ESP[fo.licEspTipo]||{}).dias; if(d && !liqNum(fo.licEspDias)) fo.licEspDias=String(d); render(); return; }
+      if(k==="sacMetodo"){ render(); return; }
+      liqRefresh();
+    });
+  });
+  document.querySelectorAll("input[data-liqb]").forEach(function(el){ el.addEventListener("change", function(e){ var fo=state.liq.form; if(!fo) return; fo[el.getAttribute("data-liqb")]=!!e.target.checked; if(el.getAttribute("data-liqb")==="embargo") render(); else liqRefresh(); }); });
+  document.querySelectorAll("[data-liqfx]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=state.liq.form; if(!fo) return; var i=parseInt(el.getAttribute("data-liqfx"),10); if(fo.fijos[i]) fo.fijos[i][el.getAttribute("data-k")]=e.target.value; liqRefresh(); }); });
+  document.querySelectorAll("[data-liqx]").forEach(function(el){ el.addEventListener(el.tagName==="SELECT"?"change":"input", function(e){ var fo=state.liq.form; if(!fo) return; var i=parseInt(el.getAttribute("data-liqx"),10); if(fo.extras[i]) fo.extras[i][el.getAttribute("data-k")]=e.target.value; liqRefresh(); }); });
+  document.querySelectorAll("[data-liqsac]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=state.liq.form; if(!fo||!fo.sacMeses) return; var i=parseInt(el.getAttribute("data-liqsac"),10); if(fo.sacMeses[i]){ fo.sacMeses[i].rem=e.target.value; fo.sacMeses[i].src="cargado a mano"; } liqRefresh(); }); });
+  document.querySelectorAll("[data-liqp]").forEach(function(el){ el.addEventListener("input", function(e){ liqSetParam(el.getAttribute("data-liqp"), e.target.value); liqRefresh(); }); });
+}
+/* ----- Liquidación · recibo y pantalla ----- */
+function liqReciboHtml(emp, f, res, copyLabel){
+  var P=liqParams();
+  var C="#111827", M="#4b5563", B="#d6dce5", A="#1e3a8a", T="#f3f6fb";
+  var cell='padding:5px 6px;border-bottom:1px solid '+B+';vertical-align:top;';
+  var num='text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;';
+  var money=function(x){ return x==null?'':liqMoney(x); };
+  var kv=function(k, v){ return '<div style="min-width:0"><div style="font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:'+M+'">'+k+'</div><div style="font-size:12px;font-weight:600;color:'+C+';overflow-wrap:anywhere">'+(v?esc(v):'—')+'</div></div>'; };
+  var anios=liqAntigYears(emp, f.period);
+  var asignada = (f.kind==="quincena1"||f.kind==="quincena2") ? ("$ "+liqMoney(liqNum(f.valorHora))+" por hora") : (liqNum(f.basico)?("$ "+liqMoney(liqNum(f.basico))+" mensual"):"");
+  var rows=res.lines.map(function(l){
+    return '<tr><td style="'+cell+'color:'+C+'">'+esc(l.label)+'</td><td style="'+cell+'text-align:center;color:'+M+';white-space:nowrap">'+esc(l.unid)+'</td><td style="'+cell+num+'">'+money(l.rem)+'</td><td style="'+cell+num+'">'+money(l.norem)+'</td><td style="'+cell+num+'">'+money(l.desc)+'</td></tr>';
+  }).join('');
+  var th='padding:6px 6px;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:'+M+';border-bottom:1.5px solid '+C+';';
+  var empleador=P.empleador||brandName()||"";
+  var pago=[f.lugarPago||"", f.fechaPago?fDMY(f.fechaPago):""].filter(Boolean).join(", ");
+  var dep=[f.depPeriodo?("período "+f.depPeriodo):"", f.depFecha?fDMY(f.depFecha):"", f.depBanco||""].filter(Boolean).join(" · ");
+  return '<div style="background:#ffffff;color:'+C+';border:1px solid '+B+';border-radius:8px;padding:18px 18px 16px;font-family:\'Public Sans\',Arial,sans-serif;font-size:12px;line-height:1.45">'+
+    '<div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;border-bottom:2px solid '+A+';padding-bottom:10px;margin-bottom:10px">'+
+      '<div style="min-width:0"><div style="font-size:15px;font-weight:800;color:'+A+'">'+(empleador?esc(empleador):'<span style="color:#b45309">Razón social del empleador</span>')+'</div>'+
+        '<div style="font-size:11px;color:'+M+'">CUIT '+(P.cuit?esc(P.cuit):'—')+(P.domicilio?(' · '+esc(P.domicilio)):'')+'</div></div>'+
+      '<div style="text-align:right"><div style="font-size:13px;font-weight:800;letter-spacing:.04em">RECIBO DE HABERES</div>'+
+        '<div style="font-size:11px;color:'+M+'">Art. 140 LCT · '+esc(liqPeriodLabel(f.period, f.kind))+'</div>'+
+        (copyLabel?('<div style="font-size:10px;color:'+M+';margin-top:2px;letter-spacing:.05em">'+esc(copyLabel)+'</div>'):'')+'</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px 12px;background:'+T+';border-radius:6px;padding:9px 10px;margin-bottom:10px">'+
+      kv("Apellido y nombre", ((emp.last_name||"")+", "+(emp.first_name||"")).replace(/^, |, $/,""))+kv("CUIL", emp.cuil||"")+kv("Legajo", emp.legajo_number||"")+
+      kv("Fecha de ingreso", emp.hire_date?fDMY(String(emp.hire_date).slice(0,10)):"")+kv("Categoría", f.categoria||emp.category||"")+kv("Tarea / puesto", emp.position||"")+
+      kv("Convenio", emp.collective_agreement||"")+kv("Antigüedad", anios!=null?(anios+" año"+(anios===1?"":"s")):"")+kv("Remuneración asignada", asignada)+
+    '</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;min-width:430px;border-collapse:collapse;font-size:11.5px">'+
+      '<thead><tr><th style="'+th+'text-align:left">Concepto</th><th style="'+th+'text-align:center">Unid.</th><th style="'+th+'text-align:right">Remunerativo</th><th style="'+th+'text-align:right">No remunerativo</th><th style="'+th+'text-align:right">Descuentos</th></tr></thead>'+
+      '<tbody>'+rows+
+        '<tr><td style="padding:7px;font-weight:800">Totales</td><td></td><td style="padding:7px;font-weight:800;'+num+'">'+liqMoney(res.totRem)+'</td><td style="padding:7px;font-weight:800;'+num+'">'+liqMoney(res.totNoRem)+'</td><td style="padding:7px;font-weight:800;'+num+'">'+liqMoney(res.totDesc)+'</td></tr>'+
+      '</tbody></table></div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;padding:10px 12px;background:'+A+';color:#fff;border-radius:6px">'+
+      '<span style="font-size:12px;font-weight:700;letter-spacing:.04em">NETO A COBRAR</span><span style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums">$ '+liqMoney(res.neto)+'</span></div>'+
+    '<div style="font-size:11px;color:'+C+';margin-top:6px"><b>Son:</b> '+esc(res.letras)+'</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 16px;margin-top:12px;font-size:10.5px;color:'+M+'">'+
+      '<div><b style="color:'+C+'">Lugar y fecha de pago:</b> '+(pago?esc(pago):'______________')+'</div>'+
+      '<div><b style="color:'+C+'">Último depósito de aportes:</b> '+(dep?esc(dep):'______________')+'</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:26px;font-size:10px;color:'+M+';text-align:center">'+
+      '<div style="border-top:1px solid '+C+';padding-top:4px">Firma y sello del empleador</div>'+
+      '<div style="border-top:1px solid '+C+';padding-top:4px">Recibí el duplicado de este recibo · firma del trabajador</div>'+
+    '</div>'+
+  '</div>';
+}
+function liqHowHtml(res){
+  var items=res.lines.filter(function(l){ return l.formula; }).map(function(l){ return '<li style="margin:0 0 5px"><b style="color:var(--ink)">'+esc(l.label)+':</b> '+esc(l.formula)+'</li>'; }).join('');
+  var notes=(res.notes||[]).map(function(n){ return '<li style="margin:0 0 5px">'+esc(n)+'</li>'; }).join('');
+  return '<h3 style="font-size:13.5px;font-weight:600;color:var(--ink);margin:0 0 8px">Cómo se calculó</h3>'+
+    '<ul style="margin:0;padding-left:18px;font-size:12.5px;color:var(--muted);line-height:1.5">'+items+notes+'</ul>';
+}
+function liqTotHtml(res){
+  var i=res.info||{};
+  var box=function(k, v, strong){ return '<div style="min-width:0"><div class="eyebrow">'+k+'</div><div style="font-size:'+(strong?'19':'15')+'px;font-weight:'+(strong?'700':'600')+';color:'+(strong?'var(--teal-strong)':'var(--ink)')+';letter-spacing:-.01em;white-space:nowrap">$ '+liqMoney(v)+'</div></div>'; };
+  var ref="";
+  if(i.fija!=null) ref='Remuneración fija $ '+liqMoney(i.fija)+' · valor día (÷ 30) $ '+liqMoney(i.valorDia)+' · día de vacaciones/licencia (÷ 25) $ '+liqMoney(i.valorDia25)+' · valor hora $ '+liqMoney(i.valorHora);
+  else if(i.mayor!=null) ref='Mayor remuneración del semestre: $ '+liqMoney(i.mayor)+(i.mayorLbl?(' ('+esc(i.mayorLbl)+')'):'');
+  else if(i.valorHora!=null) ref='Valor hora $ '+liqMoney(i.valorHora)+' · jornada '+esc(i.regimen||"");
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px">'+box("Remunerativo", res.totRem)+box("No remunerativo", res.totNoRem)+box("Descuentos", res.totDesc)+box("Neto", res.neto, true)+'</div>'+
+    (ref?('<p style="margin:9px 0 0;font-size:11.5px;color:var(--muted)">'+ref+'</p>'):'');
+}
+/* Campos del formulario */
+function liqIn(key, label, val, o){
+  o=o||{};
+  return '<label class="field"><span class="field-label">'+label+'</span><div class="input-row">'+
+    (o.pre?('<span style="color:var(--faint);font-size:13px">'+o.pre+'</span>'):'')+
+    '<input data-liq="'+key+'" '+(o.type?('type="'+o.type+'" '):'type="text" inputmode="decimal" ')+'placeholder="'+esc(o.ph||'')+'" value="'+esc(val==null?'':String(val))+'">'+
+    (o.suf?('<span style="color:var(--faint);font-size:12.5px;white-space:nowrap">'+o.suf+'</span>'):'')+
+  '</div>'+(o.hint?('<span class="field-hint">'+esc(o.hint)+'</span>'):'')+'</label>';
+}
+function liqSel(key, label, val, opts){
+  return '<label class="field"><span class="field-label">'+label+'</span><select class="bare" data-liq="'+key+'">'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(String(val)===String(o[0])?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select></label>';
+}
+function liqChk(key, label, on){ return '<label style="display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);cursor:pointer"><input type="checkbox" data-liqb="'+key+'"'+(on?' checked':'')+'> '+label+'</label>'; }
+function liqCard(title, body, hint){ return '<div class="card" style="margin-bottom:14px"><h3 style="font-size:13.5px;font-weight:600;color:var(--ink);margin:0 0 '+(hint?'4':'12')+'px">'+title+'</h3>'+(hint?('<p style="font-size:12px;color:var(--muted);margin:0 0 12px">'+hint+'</p>'):'')+'<div style="display:grid;gap:12px">'+body+'</div></div>'; }
+function liqRow(cols, html){ return '<div class="liq-g'+cols+'">'+html+'</div>'; }
+function liqFormHtml(emp, f){
+  var P=liqParams(), H=f.hints||{}, html="";
+  var isQ=(f.kind==="quincena1"||f.kind==="quincena2");
+  var hintBox=function(txt){ return txt?('<p style="font-size:12px;color:var(--muted);margin:0;display:flex;gap:6px;align-items:flex-start"><span style="color:var(--teal);flex-shrink:0;margin-top:2px">'+ic('info',12)+'</span><span>'+esc(txt)+'</span></p>'):''; };
+  if(f.kind==="mensual"){
+    var fijos=(f.fijos||[]).map(function(x, i){
+      return '<div style="display:flex;gap:8px;align-items:center"><div class="input-row" style="flex:1.4"><input data-liqfx="'+i+'" data-k="label" placeholder="Concepto (ej.: presentismo)" value="'+esc(x.label||"")+'"></div>'+
+        '<div class="input-row" style="flex:1"><span style="color:var(--faint);font-size:13px">$</span><input data-liqfx="'+i+'" data-k="amount" inputmode="decimal" placeholder="0" value="'+esc(x.amount||"")+'"></div>'+
+        '<button class="btn btn-ghost btn-sm" data-action="liq-del-fijo" data-i="'+i+'" title="Quitar">'+ic('trash',13)+'</button></div>';
+    }).join('');
+    html += liqCard("Remuneración fija",
+      liqRow(2, liqIn("basico","Sueldo básico",f.basico,{ pre:"$", ph:"0", hint:H.basico })+liqIn("categoria","Categoría",f.categoria,{ type:"text", ph:"Ej: Administrativo B" }))+
+      liqRow(3, liqIn("tituloPct","Adicional por título",f.tituloPct,{ suf:"% del básico", ph:"0" })+liqIn("antigAnios","Antigüedad",f.antigAnios,{ suf:"años", ph:"0" })+liqIn("antigPct","Antigüedad por año",f.antigPct,{ suf:"%", ph:"1" }))+
+      hintBox(H.antig)+
+      liqRow(2, liqSel("antigBase","La antigüedad se calcula sobre",f.antigBase,[["basico","El básico"],["basico_titulo","Básico + título"]])+liqIn("diasMes","Días a liquidar",f.diasMes,{ suf:"de 30", ph:"30", hint:H.diasMes||"Menos de 30 sólo si ingresó o egresó en el mes." }))+
+      (fijos?('<div style="display:grid;gap:8px">'+fijos+'</div>'):'')+
+      '<div><button class="btn btn-ghost btn-sm" data-action="liq-add-fijo">'+ic('plus',13)+' Adicional fijo</button> <span style="font-size:11.5px;color:var(--faint)">Integra la remuneración fija (valor día ÷ 30 y valor hora ÷ '+esc(String(P.divisor))+').</span></div>',
+      "Mes comercial de 30 días. Con esto se arma la remuneración fija de la que salen el valor día, el valor hora y el día de vacaciones.");
+    html += liqCard("Novedades del mes",
+      hintBox(H.asist)+hintBox(H.lic)+
+      liqRow(3, liqIn("inasist","Inasistencias injustificadas",f.inasist,{ suf:"días", ph:"0" })+liqIn("enfDias","Enfermedad inculpable",f.enfDias,{ suf:"días", ph:"0", hint:"Se pagan como trabajados." })+liqIn("sinGoceDias","Días sin goce",f.sinGoceDias,{ suf:"días", ph:"0", hint:f.sinGoceNota?("Incluye "+f.sinGoceNota+"."):"Licencias sin goce o por maternidad (ANSES)." }))+
+      liqRow(3, liqIn("he50","Horas extras al 50 %",f.he50,{ suf:"h", ph:"0", hint:"Días hábiles." })+liqIn("he100","Horas extras al 100 %",f.he100,{ suf:"h", ph:"0", hint:"Sábado después de las 13 h, domingo o feriado." })+liqIn("feriados","Feriados trabajados",f.feriados,{ suf:"días", ph:"0", hint:"Se agrega sueldo ÷ 25 por día." }))+
+      liqRow(2, liqIn("vacDias","Vacaciones gozadas en el mes",f.vacDias,{ suf:"días", ph:"0", hint:H.vac })+liqIn("vacPromVar","Promedio de variables para vacaciones",f.vacPromVar,{ pre:"$", ph:"0", hint:H.vacProm }))+
+      liqRow(2, liqSel("licEspTipo","Licencia especial paga (art. 158 LCT)",f.licEspTipo,Object.keys(LIQ_LIC_ESP).map(function(k){ var t=LIQ_LIC_ESP[k]; return [k, t.label+(t.dias?(" · "+t.dias+" días"):"")]; }))+liqIn("licEspDias","Días de licencia",f.licEspDias,{ suf:"días", ph:"0", hint:"Se descuentan del básico y se pagan ÷ 25." }))+
+      liqRow(3, liqIn("comVentas","Ventas del mes",f.comVentas,{ pre:"$", ph:"0" })+liqIn("comPct","Comisión",f.comPct,{ suf:"% s/ ventas", ph:"0" })+liqIn("comMonto","o comisión en $",f.comMonto,{ pre:"$", ph:"0", hint:"Si no cargás ventas y %." })));
+    html += liqCard("No remunerativo del convenio",
+      liqRow(2, liqIn("noRemLabel","Concepto",f.noRemLabel,{ type:"text", ph:"Suma no remunerativa CCT" })+liqIn("noRem","Importe mensual",f.noRem,{ pre:"$", ph:"0", hint:"Se descuenta ÷ 30 por día de inasistencia." }))+
+      '<div style="display:flex;gap:18px;flex-wrap:wrap">'+liqChk("noRemOS","Aporta obra social ("+liqPctTxt(P.os)+")", f.noRemOS)+liqChk("noRemSind","Aporta sindicato", f.noRemSind)+'</div>',
+      "No lleva jubilación ni Ley 19.032 y no integra el SAC: sólo los aportes que pacte el CCT.");
+  }
+  else if(isQ){
+    html += liqCard("Jornal de la quincena",
+      hintBox(H.asist)+hintBox(H.lic)+
+      liqRow(2, liqIn("valorHora","Valor hora",f.valorHora,{ pre:"$", ph:"0", hint:H.valorHora })+liqSel("regimen","Jornada",f.regimen,Object.keys(LIQ_REGIMEN).map(function(k){ return [k, LIQ_REGIMEN[k].label]; })))+
+      liqRow(3, liqIn("jornadas","Jornadas trabajadas",f.jornadas,{ ph:"0", hint:H.jornadas })+liqIn("enfDias","Enfermedad inculpable",f.enfDias,{ suf:"jornadas", ph:"0" })+liqIn("inasist","Inasistencias injustificadas",f.inasist,{ suf:"jornadas", ph:"0", hint:"No se pagan." }))+
+      liqRow(3, liqIn("he50","Horas extras al 50 %",f.he50,{ suf:"h", ph:"0" })+liqIn("he100","Horas extras al 100 %",f.he100,{ suf:"h", ph:"0" })+liqIn("feriados","Feriados pagos",f.feriados,{ suf:"jornadas", ph:"0" })),
+      "Cada jornada se paga como 8 horas: la nocturna de 7 h y la insalubre de 6 h equivalen a la jornada diurna de 8 h.");
+  }
+  else if(f.kind==="sac"){
+    var meses=(f.sacMeses||[]).map(function(m, i){
+      return '<div class="liq-sac"><span style="font-size:13px;color:var(--ink)">'+esc(m.label)+'</span>'+
+        '<div class="input-row"><span style="color:var(--faint);font-size:13px">$</span><input data-liqsac="'+i+'" inputmode="decimal" placeholder="0" value="'+esc(m.rem||"")+'"></div>'+
+        '<span class="src">'+esc(m.src||"")+'</span></div>';
+    }).join('');
+    html += liqCard("Cuadro de remuneraciones del semestre",
+      hintBox(H.sac)+'<div style="display:grid;gap:8px">'+meses+'</div>'+
+      liqRow(2, liqSel("sacMetodo","Proporcional por",f.sacMetodo,[["meses","Meses (criterio de la cátedra)"],["dias","Días trabajados"]])+
+        (f.sacMetodo==="dias"
+          ? ('<div class="liq-g2">'+liqIn("sacDiasTrab","Días trabajados",f.sacDiasTrab,{ ph:"0" })+liqIn("sacDiasSem","Días del semestre",f.sacDiasSem,{ ph:"184" })+'</div>')
+          : liqIn("sacMesesTrab","Meses trabajados",f.sacMesesTrab,{ suf:"de 6", ph:"6" }))),
+      "Sólo remunerativos: 50 % de la mayor remuneración mensual del semestre (art. 121 LCT), proporcional al tiempo trabajado. Las liquidaciones guardadas completan cada mes solas.");
+  }
+  var extras=(f.extras||[]).map(function(x, i){
+    return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="input-row" style="flex:1.4;min-width:150px"><input data-liqx="'+i+'" data-k="label" placeholder="Concepto" value="'+esc(x.label||"")+'"></div>'+
+      '<select class="bare" data-liqx="'+i+'" data-k="tipo" style="width:auto;flex:0 0 auto">'+[["rem","Remunerativo"],["norem","No remunerativo"],["desc","Descuento"]].map(function(o){ return '<option value="'+o[0]+'"'+(x.tipo===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select>'+
+      '<div class="input-row" style="flex:1;min-width:110px"><span style="color:var(--faint);font-size:13px">$</span><input data-liqx="'+i+'" data-k="amount" inputmode="decimal" placeholder="0" value="'+esc(x.amount||"")+'"></div>'+
+      '<button class="btn btn-ghost btn-sm" data-action="liq-del-extra" data-i="'+i+'" title="Quitar">'+ic('trash',13)+'</button></div>';
+  }).join('');
+  html += liqCard("Aportes, embargos y otros conceptos",
+    liqRow(2, liqIn("sindPct","Cuota sindical",f.sindPct,{ suf:"%", ph:"0", hint:H.sind })+
+      '<div style="font-size:12px;color:var(--muted);align-self:end;padding-bottom:6px">Además: jubilación '+liqPctTxt(P.jub)+' · Ley 19.032 '+liqPctTxt(P.pami)+' · obra social '+liqPctTxt(P.os)+' sobre el total remunerativo.</div>')+
+    liqChk("embargo","Hay un embargo judicial sobre el sueldo (Dec. 484/87)", f.embargo)+
+    (f.embargo?liqIn("embargoSaldo","Saldo pendiente del oficio",f.embargoSaldo,{ pre:"$", ph:"0", hint:"Hasta 2 SMVM se retiene el 10 % del excedente sobre 1 SMVM; por encima, el 20 %. SMVM: $ "+liqMoney(liqNum(P.smvm))+" (cambialo en Parámetros)." }):'')+
+    (extras?('<div style="display:grid;gap:8px">'+extras+'</div>'):'')+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="liq-add-extra" data-t="rem">'+ic('plus',13)+' Remunerativo</button><button class="btn btn-ghost btn-sm" data-action="liq-add-extra" data-t="norem">'+ic('plus',13)+' No remunerativo</button><button class="btn btn-ghost btn-sm" data-action="liq-add-extra" data-t="desc">'+ic('plus',13)+' Descuento</button></div>');
+  html += liqCard("Datos del recibo (art. 140 LCT)",
+    liqRow(2, liqIn("lugarPago","Lugar de pago",f.lugarPago,{ type:"text", ph:"Ej: CABA" })+liqIn("fechaPago","Fecha de pago",f.fechaPago,{ type:"date" }))+
+    liqRow(3, liqIn("depPeriodo","Último depósito de aportes · período",f.depPeriodo,{ type:"text", ph:"Ej: Agosto 2026" })+liqIn("depFecha","Fecha del depósito",f.depFecha,{ type:"date" })+liqIn("depBanco","Banco",f.depBanco,{ type:"text", ph:"Ej: Banco Nación" })),
+    "El recibo lleva los datos del empleador (se cargan en Parámetros), el neto en números y letras y la constancia del último depósito de aportes.");
+  return html;
+}
+var LIQ_CSS='<style>.liq-wrap{container-type:inline-size}.liq-col{container-type:inline-size;min-width:0}'+
+  '.liq-g2,.liq-g3{display:grid;gap:12px}@container (min-width:420px){.liq-g2{grid-template-columns:1fr 1fr}}@container (min-width:560px){.liq-g3{grid-template-columns:1fr 1fr 1fr}}'+
+  '.liq-grid{display:grid;gap:16px}@container (min-width:1000px){.liq-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:start}.liq-side{position:sticky;top:14px}}'+
+  '.liq-sac{display:grid;grid-template-columns:minmax(72px,96px) minmax(130px,1fr);gap:4px 10px;align-items:center}.liq-sac .src{grid-column:2;font-size:11px;color:var(--faint);margin-top:-2px}'+
+  '@container (min-width:520px){.liq-sac{grid-template-columns:96px minmax(150px,1fr) 150px}.liq-sac .src{grid-column:auto;margin-top:0}}'+
+  '.liq-tbl{width:100%;border-collapse:collapse;font-size:12.5px}.liq-tbl th{text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);padding:8px;border-bottom:1px solid var(--border)}'+
+  '.liq-tbl td{padding:8px;border-bottom:1px solid var(--border-soft);color:var(--ink);vertical-align:top}.liq-tbl td.n,.liq-tbl th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}</style>';
+Screens["mod2-liquidacion"] = function(){ return LIQ_CSS+'<div class="liq-wrap">'+liqScreenInner()+'</div>'; };
+function liqScreenInner(){
+  var s=state.liq, P=liqParams(), tab=s.tab||"liquidar";
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;color:var(--faint)">'+ic('briefcase',20)+'<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">Liquidación de sueldos</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">Recibo de haberes por empleado con los criterios de la cátedra: mes de 30 días, valor hora ÷ '+esc(String(P.divisor))+', vacaciones y licencias ÷ 25, aportes '+liqPctTxt(P.jub)+' + '+liqPctTxt(P.pami)+' + '+liqPctTxt(P.os)+', SAC y embargos. Las novedades salen de Asistencia y de Vacaciones y licencias.</p>';
+  if(s.msg) html += Note("ok", esc(s.msg));
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.noTable && tab!=="criterios") html += Note("warn", "Para guardar las liquidaciones falta crear la tabla: corré <b>sql_liquidacion.sql</b> en el SQL Editor de Supabase. Mientras tanto podés calcular y descargar el recibo en PDF.");
+  var tabs=[["liquidar","Liquidar"],["nomina","Nómina del mes"],["params","Parámetros"],["criterios","Criterios de cálculo"]];
+  html += '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'+tabs.map(function(t){ var on=tab===t[0]; return '<button class="pill-time" data-action="liq-tab" data-v="'+t[0]+'" style="cursor:pointer;border:none;background:'+(on?'var(--teal)':'var(--surface-2)')+';color:'+(on?'#fff':'var(--ink)')+'">'+t[1]+'</button>'; }).join('')+'</div>';
+
+  if(tab==="criterios"){
+    var CR=[
+      ["Mes y días","Mes comercial de 30 días. Valor día = remuneración fija ÷ 30."],
+      ["Aportes sobre remunerativos","Jubilación 11 % · Ley 19.032 3 % · obra social 3 % · sindicato según convenio."],
+      ["No remunerativo del CCT","Sólo obra social 3 % y sindicato, cuando el convenio lo indica. No integra el SAC."],
+      ["Inasistencia injustificada","Se descuenta (básico + adicionales fijos) ÷ 30 por día; también el no remunerativo ÷ 30."],
+      ["Enfermedad inculpable","Se paga como día trabajado (art. 208 LCT)."],
+      ["Valor hora (mensualizado)","Remuneración fija ÷ 200."],
+      ["Horas extras","50 % en días hábiles · 100 % sábado después de las 13 h, domingos y feriados."],
+      ["Jornada nocturna","7 h nocturnas = 8 h diurnas (de 21 a 6 h)."],
+      ["Jornada insalubre","6 h insalubres = 8 h diurnas."],
+      ["Feriado trabajado (mensualizado)","Se agrega sueldo ÷ 25 por el día trabajado."],
+      ["Vacaciones y licencias especiales","Sueldo ÷ 25 por día; si hay variables, se suma el promedio del año o de los últimos 6 meses. Plus vacacional = lo cobrado ÷ 25 menos lo que hubiera cobrado ÷ 30."],
+      ["Días de vacaciones (art. 150 LCT)","Hasta 5 años 14 · de 5 a 10 años 21 · de 10 a 20 años 28 · más de 20 años 35 (antigüedad al 31/12)."],
+      ["Sin tiempo mínimo (art. 153 LCT)","1 día de vacaciones cada 20 trabajados."],
+      ["Licencias especiales (art. 158 LCT)","Nacimiento 2 · matrimonio 10 · fallecimiento de cónyuge, hijo o padres 3 · hermano 1 · examen 2 (máx. 10 por año)."],
+      ["Embargo (Dec. 484/87)","Bruto hasta 2 SMVM: 10 % del excedente sobre 1 SMVM · más de 2 SMVM: 20 % del excedente."],
+      ["SAC (art. 121 LCT)","50 % de la mayor remuneración mensual remunerativa del semestre, proporcional al tiempo trabajado."],
+      ["Recibo (art. 140 LCT)","Datos del empleador y del trabajador, conceptos con su determinación, total bruto, deducciones, neto en números y letras, último depósito de aportes, lugar y fecha de pago y firma."]
+    ];
+    html += '<div class="card" style="padding:0;overflow:hidden"><table class="liq-tbl"><thead><tr><th style="width:34%">Tema</th><th>Criterio que aplica TalentIA</th></tr></thead><tbody>'+
+      CR.map(function(r){ return '<tr><td style="font-weight:600">'+esc(r[0])+'</td><td style="color:var(--muted)">'+esc(r[1])+'</td></tr>'; }).join('')+'</tbody></table></div>';
+    html += '<p style="font-size:11.5px;color:var(--faint);margin:10px 0 0">Criterios del material de Liquidación de Sueldos (UCES, unidades 1 a 4). SMVM de referencia: $ '+liqMoney(liqNum(P.smvm))+'.</p>';
+    return html;
+  }
+  if(tab==="params"){
+    var pin=function(k, label, o){ o=o||{}; return '<label class="field"><span class="field-label">'+label+'</span><div class="input-row">'+(o.pre?('<span style="color:var(--faint);font-size:13px">'+o.pre+'</span>'):'')+'<input data-liqp="'+k+'" '+(o.text?'type="text"':'type="text" inputmode="decimal"')+' placeholder="'+esc(String(o.ph!=null?o.ph:(LIQ_DEFAULTS[k]||"")))+'" value="'+esc(String(P[k]==null?"":P[k]))+'">'+(o.suf?('<span style="color:var(--faint);font-size:12.5px">'+o.suf+'</span>'):'')+'</div>'+(o.hint?('<span class="field-hint">'+esc(o.hint)+'</span>'):'')+'</label>'; };
+    html += liqCard("Valores de cálculo",
+      liqRow(2, pin("smvm","Salario mínimo, vital y móvil (SMVM)",{ pre:"$", hint:"Se usa para el embargo. Actualizalo cuando cambie." })+pin("divisor","Divisor del valor hora",{ suf:"horas" }))+
+      liqRow(3, pin("jub","Jubilación",{ suf:"%" })+pin("pami","Ley 19.032",{ suf:"%" })+pin("os","Obra social",{ suf:"%" }))+
+      liqRow(2, pin("sind","Cuota sindical por defecto",{ suf:"%", hint:"Se propone a quienes tienen convenio en el legajo." })+pin("antigPct","Antigüedad por año",{ suf:"%" })));
+    html += liqCard("Empleador (encabezado del recibo)",
+      liqRow(2, pin("empleador","Razón social",{ text:true, ph:brandName()||"Empresa S.A." })+pin("cuit","CUIT",{ text:true, ph:"30-00000000-0" }))+
+      pin("domicilio","Domicilio",{ text:true, ph:"Calle 123, CABA" })+
+      liqRow(2, pin("lugarPago","Lugar de pago habitual",{ text:true, ph:"CABA" })+pin("depBanco","Banco de depósito de aportes",{ text:true, ph:"Banco Nación" })));
+    html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="liq-reset-params">'+ic('rotate',13)+' Volver a los valores de la cátedra</button><span style="font-size:12px;color:var(--faint)">Los parámetros se guardan en este navegador.</span></div>';
+    return html;
+  }
+  if(s.loading || s.items===null){ html += '<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; return html; }
+
+  if(tab==="nomina"){
+    var mk=s.nPeriod||s.period||liqMonthNow(), rows=liqNominaRows(mk);
+    html += '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px"><label class="field"><span class="field-label">Período</span><div class="input-row"><input id="f_liq_nperiod" type="month" value="'+esc(mk)+'"></div></label>'+
+      (rows.length?('<button class="btn btn-ghost btn-sm" data-action="liq-csv" style="margin-bottom:3px">'+ic('download',13)+' Descargar CSV</button>'):'')+'</div>';
+    if(!rows.length){ html += Note("info", "No hay liquidaciones guardadas de "+esc(monthLabel(mk))+". Liquidá a cada empleado desde la pestaña «Liquidar»."); }
+    else {
+      var t={ r:0, n:0, d:0, x:0 };
+      html += '<div class="card" style="padding:0;overflow-x:auto"><table class="liq-tbl"><thead><tr><th>Empleado</th><th>Tipo</th><th class="n">Remunerativo</th><th class="n">No rem.</th><th class="n">Descuentos</th><th class="n">Neto</th><th></th></tr></thead><tbody>'+
+        rows.map(function(x){ var p=x.p; t.r+=Number(p.gross_rem)||0; t.n+=Number(p.gross_norem)||0; t.d+=Number(p.deductions)||0; t.x+=Number(p.net)||0;
+          return '<tr><td><b>'+esc(x.e?empFullName(x.e):"(empleado eliminado)")+'</b>'+(x.e&&x.e.legajo_number?(' <span style="color:var(--faint);font-size:11.5px">· leg. '+esc(x.e.legajo_number)+'</span>'):'')+'</td><td>'+esc((LIQ_KINDS[p.kind]||{}).short||p.kind)+'</td><td class="n">$ '+liqMoney(p.gross_rem)+'</td><td class="n">$ '+liqMoney(p.gross_norem)+'</td><td class="n">$ '+liqMoney(p.deductions)+'</td><td class="n"><b>$ '+liqMoney(p.net)+'</b></td>'+
+            '<td class="n">'+(x.e?('<button class="btn btn-ghost btn-sm" data-action="liq-open-saved" data-id="'+esc(p.id)+'">Abrir</button>'):'')+'</td></tr>'; }).join('')+
+        '<tr><td colspan="2"><b>Totales</b></td><td class="n"><b>$ '+liqMoney(t.r)+'</b></td><td class="n"><b>$ '+liqMoney(t.n)+'</b></td><td class="n"><b>$ '+liqMoney(t.d)+'</b></td><td class="n"><b>$ '+liqMoney(t.x)+'</b></td><td></td></tr></tbody></table></div>';
+      var act=(state.emp.items||[]).filter(function(e){ return (e.status||"activo")==="activo"; });
+      var faltan=act.filter(function(e){ return !rows.some(function(x){ return x.p.employee_id===e.id && (x.p.kind==="mensual"||x.p.kind==="quincena2"); }); });
+      if(faltan.length) html += '<p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">'+ic('info',12)+' Sin liquidar en '+esc(monthLabel(mk))+': '+faltan.map(function(e){ return esc(empFullName(e)); }).join(", ")+'.</p>';
+    }
+    return html;
+  }
+
+  /* Pestaña Liquidar */
+  var periodBar='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">'+
+    '<label class="field"><span class="field-label">Período</span><div class="input-row"><input id="f_liq_period" type="month" value="'+esc(s.period)+'"></div></label>'+
+    '<label class="field" style="min-width:220px"><span class="field-label">Tipo de liquidación</span><select class="bare" id="f_liq_kind">'+Object.keys(LIQ_KINDS).map(function(k){ return '<option value="'+k+'"'+(s.kind===k?' selected':'')+'>'+esc(LIQ_KINDS[k].label)+'</option>'; }).join('')+'</select></label>';
+  var emps=moduleEmployees();
+  if(!s.emp){
+    html += periodBar+'</div>';
+    if(!emps.length){ html += Note("info","No hay empleados activos. Cargalos en «Legajo del empleado»."); return html; }
+    html += empPicker(emps, "liq-emp", function(e){ var p=liqSavedFor(e.id, s.period, s.kind); return p?('<span style="color:var(--green);font-weight:700">Liquidado · $ '+liqMoney(p.net)+'</span>'):"Liquidar"; });
+    return html;
+  }
+  var e=liqEmpById(s.emp);
+  if(!e || !s.form){ html += Note("err","No encontré a este empleado."); return html; }
+  var res=liqCompute(s.form, P);
+  var saved=liqSavedFor(e.id, s.period, s.kind);
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="liq-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span>'+
+    (saved?'<span class="badge" style="color:var(--green)">'+ic('check',12)+' Guardada</span>':'<span class="badge" style="color:var(--amber)">Borrador</span>')+'</div>';
+  html += periodBar+'<button class="btn btn-ghost btn-sm" data-action="liq-rebuild" style="margin-bottom:3px">'+ic('rotate',13)+' Recalcular desde el legajo</button></div>';
+  if(s.form.hints && s.form.hints.saved) html += '<p style="font-size:12px;color:var(--muted);margin:-4px 0 12px">'+ic('info',12)+' '+esc(s.form.hints.saved)+'</p>';
+  html += '<div class="liq-grid"><div class="liq-col">'+liqFormHtml(e, s.form)+'</div>'+
+    '<div class="liq-side" style="min-width:0">'+
+      '<div class="card" style="margin-bottom:12px"><div id="liq-tot">'+liqTotHtml(res)+'</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'+
+          '<button class="btn btn-primary btn-sm" data-action="liq-save"'+(s.saving?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):(ic('check',13)+' '+(saved?'Actualizar liquidación':'Guardar liquidación')))+'</button>'+
+          '<button class="btn btn-ghost btn-sm" data-action="liq-pdf"'+(s.pdfBusy?' disabled':'')+'>'+(s.pdfBusy?(ic('loader',13,'spin')+' Generando…'):(ic('download',13)+' Recibo en PDF'))+'</button>'+
+        '</div></div>'+
+      ((!P.cuit || !(P.empleador||brandName()))?('<p style="font-size:12px;color:var(--amber);margin:0 0 8px">'+ic('info',12)+' Cargá la razón social y el CUIT del empleador en «Parámetros» para que salgan en el recibo.</p>'):'')+
+      '<div id="liq-preview" style="margin-bottom:12px">'+liqReciboHtml(e, s.form, res)+'</div>'+
+      '<div class="card" id="liq-how">'+liqHowHtml(res)+'</div>'+
+    '</div></div>';
+  var hist=liqEmpPayrolls(e.id);
+  if(hist.length){
+    html += '<h3 style="font-size:14px;color:var(--ink);margin:18px 0 8px">Liquidaciones guardadas de '+esc(e.first_name||empFullName(e))+'</h3>'+
+      '<div class="card" style="padding:0;overflow-x:auto"><table class="liq-tbl"><thead><tr><th>Período</th><th class="n">Remunerativo</th><th class="n">Descuentos</th><th class="n">Neto</th><th></th></tr></thead><tbody>'+
+      hist.map(function(p){ var on=(p.period===s.period && p.kind===s.kind);
+        return '<tr'+(on?' style="background:var(--teal-tint)"':'')+'><td>'+esc(liqPeriodLabel(p.period, p.kind))+'</td><td class="n">$ '+liqMoney(p.gross_rem)+'</td><td class="n">$ '+liqMoney(p.deductions)+'</td><td class="n"><b>$ '+liqMoney(p.net)+'</b></td>'+
+          '<td class="n" style="white-space:nowrap">'+(on?'':('<button class="btn btn-ghost btn-sm" data-action="liq-open-saved" data-id="'+esc(p.id)+'">Abrir</button> '))+'<button class="btn btn-ghost btn-sm" data-action="liq-del" data-id="'+esc(p.id)+'" title="Eliminar" style="color:var(--brick)">'+ic('trash',13)+'</button></td></tr>'; }).join('')+
+      '</tbody></table></div>';
+  }
+  return html;
+}
+
 /* ===================== MÓDULO 2 · 12 · OFF BOARDING ===================== */
 /* Un proceso de egreso por empleado. El checklist, la liquidación y la entrevista
    viajan como JSON dentro de la misma fila para no multiplicar tablas. */
@@ -12226,6 +13077,8 @@ function bind(){
       else if (act === "go-reportes") goReportes();
       else if (act === "rep-csv"){ repDownloadCSV(); }
       else if (act === "go-offboarding") goOffboarding();
+      else if (act === "go-liquidacion") goLiquidacion();
+      else if (act.indexOf("liq-") === 0) liqAction(act, el);
       else if (act === "offb-emp"){ offbOpen(el.getAttribute("data-e")); }
       else if (act === "offb-emp-back"){ state.offb.emp=null; state.offb.form=null; state.offb.msg=""; state.offb.error=null; render(); }
       else if (act === "offb-save"){ offbSave(el.getAttribute("data-e")); }
@@ -12479,6 +13332,7 @@ function bind(){
   document.querySelectorAll("input[data-offbtask]").forEach(function(el){ el.addEventListener("change", function(e){ offbToggleTask(el.getAttribute("data-offbtask"), e.target.checked); }); });
   document.querySelectorAll("input[data-offbnote]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo && fo.tasks[el.getAttribute("data-offbnote")]) fo.tasks[el.getAttribute("data-offbnote")].note=e.target.value; }); });
   document.querySelectorAll("input[data-offbconcept]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo) fo.settlement[el.getAttribute("data-offbconcept")]=e.target.value; }); });
+  liqBind();
 
   /* elegir la empresa de la sesión */
   if ((f=document.getElementById("f_brand_name"))){
