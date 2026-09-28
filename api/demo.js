@@ -1,6 +1,6 @@
 // Función serverless (Vercel) — PÚBLICA. Pedido de demo desde la página de presentación.
 // 1) Guarda el pedido en Supabase (tabla demo_requests) con la SERVICE ROLE.
-// 2) Avisa por mail al dueño (Brevo) con los datos y "responder a" = quien pidió la demo.
+// 2) El aviso por mail al dueño lo manda el navegador (Web3Forms); Brevo sólo si DEMO_MAIL_BREVO=1.
 // Variables de entorno en Vercel: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, BREVO_API_KEY, BREVO_SENDER.
 // Opcional: DEMO_NOTIFY_TO (a quién llega el aviso; por defecto el dueño).
 
@@ -79,7 +79,9 @@ module.exports = async function handler(req, res) {
     var mailed = false;
     var apiKey = process.env.BREVO_API_KEY, sender = process.env.BREVO_SENDER;
     var to = process.env.DEMO_NOTIFY_TO || "matipealv@gmail.com";
-    if (apiKey && sender && isEmail(to)) {
+    // El aviso al dueño sale desde el navegador por Web3Forms (Brevo suspendió la cuenta y
+    // responde "ok" sin entregar). Para volver a usar Brevo acá, poné DEMO_MAIL_BREVO=1 en Vercel.
+    if (process.env.DEMO_MAIL_BREVO === "1" && apiKey && sender && isEmail(to)) {
       var lines = [
         ["Nombre", row.name], ["Empresa", row.company], ["Email", row.email], ["Teléfono", row.phone || "—"],
         ["Empleados", SIZES[row.employees]], ["Plan de interés", PLANS[row.plan]], ["Mensaje", row.message || "—"]
