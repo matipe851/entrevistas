@@ -1828,11 +1828,12 @@ function render(){
     else if (MOD2_SHELL_SCREENS[state.screen]) out = mod2ShellWrap(MOD2_SHELL_SCREENS[state.screen], out);
     else if (MOD3_SHELL_SCREENS[state.screen]) out = mod3ShellWrap(MOD3_SHELL_SCREENS[state.screen], out);
   }
+  try{ document.documentElement.classList.toggle("is-landing", state.screen==="home"); }catch(e){}
   app.innerHTML = out; bind();
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v41.0-r114";
+var APP_VERSION = "v41.1-r115";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1864,25 +1865,425 @@ function GoogleButton(label){
    ================================================================ */
 var Screens = {};
 
+/* ===================== PÁGINA DE PRESENTACIÓN (LANDING) ===================== */
+/* La portada que ve quien entra sin sesión. "Ingresar" lleva a la consultora y el
+   formulario de demo manda el pedido a /api/demo (se guarda y avisa por mail). */
+var LAND_PLANS = [
+  { k:"inicial", name:"Inicial", who:"Hasta 25 empleados", desc:"Para pymes que quieren dejar el Excel y tener todo el personal ordenado.",
+    items:["Legajos digitales y documentación","Asistencia con fichador desde el celular","Vacaciones y licencias según la LCT","Liquidación de sueldos y recibos en PDF","Soporte por mail"] },
+  { k:"profesional", name:"Profesional", who:"De 26 a 150 empleados", desc:"Todo el circuito de RR. HH., de la búsqueda al recibo, con IA.", featured:true,
+    items:["Todo lo del plan Inicial","Reclutamiento con entrevistas por IA","Firma digital de recibos y documentos","Escalas de convenio, paritarias y costo laboral","Asistente de RR. HH. con IA y alertas"] },
+  { k:"empresa", name:"Empresa", who:"Más de 150 empleados o consultoras", desc:"Para equipos grandes o consultoras que gestionan varias empresas.",
+    items:["Todo lo del plan Profesional","Varias empresas y usuarios","Acompañamiento en la carga inicial","Capacitación para el equipo","Soporte prioritario"] }
+];
+var LAND_FAQ = [
+  ["¿Cuánto cuesta?", "Depende de la cantidad de empleados y de los módulos que uses. Pedí la demo y te pasamos una propuesta a medida, sin compromiso."],
+  ["¿Sirve para mi convenio colectivo?", "Sí. La liquidación sigue los criterios de la Ley de Contrato de Trabajo (mes de 30 días, horas extra al 50 % y 100 %, vacaciones y licencias ÷ 25, SAC, aportes y embargos) y cargás las escalas de tu convenio y cada aumento paritario."],
+  ["¿Tengo que instalar algo?", "No. TalentIA funciona en el navegador, en la computadora o en el celular. Los empleados fichan y firman desde su teléfono con un link, sin crearse una cuenta."],
+  ["¿La IA decide por mí?", "No. La IA ordena la información, sugiere y redacta borradores (entrevistas, certificados, respuestas del asistente). Las decisiones siempre las toma una persona de RR. HH."],
+  ["¿Quién ve los datos de mi empresa?", "Sólo las personas de tu equipo con acceso aprobado. Cada empresa ve únicamente su información."],
+  ["¿Puedo pasar la información que ya tengo?", "Sí. En la demo vemos cómo tenés hoy tu nómina y te acompañamos para cargar los legajos."]
+];
+
+function landState(){
+  if(!state.land) state.land = { sending:false, sent:false, error:"", f:{ name:"", company:"", email:"", phone:"", employees:"", plan:"", message:"" } };
+  return state.land;
+}
+function landCheck(t){ return '<li><span class="land-ok">'+ic("check",14)+'</span><span>'+t+'</span></li>'; }
+function landShot(src, alt, cls){
+  return '<div class="land-shot'+(cls?(' '+cls):'')+'"><div class="land-shot-bar"><i></i><i></i><i></i><span>entrevistas-two.vercel.app</span></div>'+
+    '<img src="'+src+'" alt="'+esc(alt)+'" loading="lazy" decoding="async"></div>';
+}
+function landSel(id, val, opts){
+  return '<select id="'+id+'" class="land-in">'+opts.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===val?' selected':'')+'>'+o[1]+'</option>'; }).join("")+'</select>';
+}
+
+var LAND_CSS = '<style id="land-css">'+
+'html.is-landing .wrap{max-width:none;padding:0}'+
+'html.is-landing body{background:#fff}'+
+'.land{font-family:"Manrope","Inter",ui-sans-serif,system-ui,sans-serif;color:var(--ink);overflow-x:hidden}'+
+'.land *{box-sizing:border-box}'+
+'.land-in-w{max-width:1160px;margin:0 auto;padding:0 20px}'+
+'.land-nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.86);backdrop-filter:saturate(1.4) blur(12px);-webkit-backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--border-soft)}'+
+'.land-nav .land-in-w{display:flex;align-items:center;gap:18px;height:66px}'+
+'.land-logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:19px;letter-spacing:-.02em;background:none;border:0;cursor:pointer;color:var(--ink);padding:0}'+
+'.land-logo b{color:var(--teal);font-weight:800}'+
+'.land-links{display:flex;gap:4px;margin-left:14px}'+
+'.land-links button{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;font-weight:500;padding:8px 12px;border-radius:999px;cursor:pointer}'+
+'.land-links button:hover{color:var(--ink);background:var(--surface-2)}'+
+'.land-nav-cta{margin-left:auto;display:flex;gap:8px;align-items:center}'+
+'.land-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;font:inherit;font-weight:700;font-size:14.5px;padding:12px 22px;cursor:pointer;border:1px solid transparent;transition:background .15s,transform .15s,box-shadow .15s;white-space:nowrap}'+
+'.land-btn-p{background:var(--teal);color:#fff;box-shadow:0 6px 18px rgba(26,165,160,.28)}'+
+'.land-btn-p:hover{background:var(--teal-strong);transform:translateY(-1px)}'+
+'.land-btn-g{background:#fff;color:var(--ink);border-color:var(--border)}'+
+'.land-btn-g:hover{border-color:var(--faint)}'+
+'.land-btn-sm{padding:9px 16px;font-size:13.5px}'+
+'.land-hero{background:radial-gradient(1200px 520px at 80% -10%,#E0F4F3 0,rgba(224,244,243,0) 60%),linear-gradient(#fff,#F4F6F8);padding:64px 0 0}'+
+'.land-hero-grid{display:grid;grid-template-columns:1fr;gap:34px;align-items:center}'+
+'.land-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--teal-strong);background:var(--teal-tint);padding:6px 12px;border-radius:999px;letter-spacing:.01em}'+
+'.land h1{font-size:clamp(34px,5.4vw,58px);line-height:1.04;letter-spacing:-.035em;font-weight:800;margin:18px 0 18px;max-width:880px}'+
+'.land h1 em{font-style:normal;color:var(--teal)}'+
+'.land-lead{font-size:clamp(16px,1.6vw,19px);line-height:1.6;color:var(--muted);max-width:640px;margin:0 0 28px}'+
+'.land-cta-row{display:flex;gap:10px;flex-wrap:wrap}'+
+'.land-trust{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:24px;font-size:13px;color:var(--muted)}'+
+'.land-trust span{display:inline-flex;align-items:center;gap:6px}'+
+'.land-trust svg{color:var(--teal)}'+
+'.land-hero-shot{margin-top:46px;position:relative}'+
+'.land-hero-shot:before{content:"";position:absolute;inset:40px -40px -20px;background:radial-gradient(closest-side,rgba(26,165,160,.18),rgba(26,165,160,0));filter:blur(10px);z-index:0}'+
+'.land-shot{position:relative;z-index:1;background:#fff;border-radius:18px;box-shadow:0 2px 6px rgba(16,24,40,.05),0 30px 70px rgba(16,24,40,.14);overflow:hidden;border:1px solid var(--border-soft)}'+
+'.land-shot-bar{display:flex;align-items:center;gap:6px;height:34px;padding:0 14px;background:#F7F8FA;border-bottom:1px solid var(--border-soft)}'+
+'.land-shot-bar i{width:10px;height:10px;border-radius:50%;background:#E3E7EE;display:block}'+
+'.land-shot-bar span{margin-left:12px;font-size:11.5px;color:var(--faint);background:#fff;border-radius:999px;padding:3px 12px;border:1px solid var(--border-soft)}'+
+'.land-shot img{display:block;width:100%;height:auto}'+
+'.land-shot.narrow{max-width:470px;margin:0 auto;width:100%}'+
+'.land-sec{padding:88px 0}'+
+'.land-sec-alt{background:var(--bg)}'+
+'.land-kicker{font-size:12.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--teal-strong)}'+
+'.land h2{font-size:clamp(28px,3.6vw,40px);line-height:1.12;letter-spacing:-.03em;font-weight:800;margin:10px 0 14px}'+
+'.land-sub{font-size:16.5px;line-height:1.6;color:var(--muted);max-width:680px;margin:0}'+
+'.land-center{text-align:center}.land-center .land-sub{margin:0 auto}'+
+'.land-mods{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:44px}'+
+'.land-card{background:#fff;border-radius:20px;padding:26px;box-shadow:var(--shadow);border:1px solid var(--border-soft)}'+
+'.land-sec-alt .land-card{border-color:transparent}'+
+'.land-ico{width:44px;height:44px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;background:var(--teal-tint);color:var(--teal-strong);margin-bottom:16px}'+
+'.land-card h3{font-size:18px;font-weight:800;letter-spacing:-.02em;margin:0 0 8px}'+
+'.land-card p{font-size:14.5px;line-height:1.6;color:var(--muted);margin:0}'+
+'.land ul.land-list{list-style:none;padding:0;margin:16px 0 0;display:grid;gap:9px}'+
+'.land-list li{display:flex;gap:9px;align-items:flex-start;font-size:14.5px;line-height:1.5;color:var(--ink)}'+
+'.land-ok{flex:none;width:20px;height:20px;border-radius:50%;background:var(--teal-tint);color:var(--teal-strong);display:inline-flex;align-items:center;justify-content:center;margin-top:1px}'+
+'.land-row{display:grid;grid-template-columns:1fr;gap:34px;align-items:center;margin-top:70px}'+
+'.land-row:first-of-type{margin-top:50px}'+
+'.land-row h3{font-size:clamp(22px,2.6vw,28px);font-weight:800;letter-spacing:-.025em;margin:8px 0 12px;line-height:1.2}'+
+'.land-row p{font-size:16px;line-height:1.65;color:var(--muted);margin:0}'+
+'.land-feats{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:44px}'+
+'.land-feat{background:#fff;border-radius:18px;padding:20px;box-shadow:var(--shadow)}'+
+'.land-feat .land-ico{width:38px;height:38px;border-radius:12px;margin-bottom:12px}'+
+'.land-feat h4{font-size:15.5px;font-weight:800;margin:0 0 6px;letter-spacing:-.01em}'+
+'.land-feat p{font-size:13.5px;line-height:1.55;color:var(--muted);margin:0}'+
+'.land-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:44px;counter-reset:st}'+
+'.land-step{position:relative;padding:26px;border-radius:20px;background:var(--bg)}'+
+'.land-step:before{counter-increment:st;content:counter(st);display:inline-flex;width:34px;height:34px;border-radius:50%;background:var(--ink);color:#fff;font-weight:800;align-items:center;justify-content:center;margin-bottom:14px}'+
+'.land-step h4{font-size:17px;font-weight:800;margin:0 0 6px}'+
+'.land-step p{font-size:14.5px;line-height:1.6;color:var(--muted);margin:0}'+
+'.land-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:18px;margin-top:44px;align-items:stretch}'+
+'.land-plan{display:flex;flex-direction:column;background:#fff;border-radius:22px;padding:28px;box-shadow:var(--shadow);border:1px solid transparent;position:relative}'+
+'.land-plan.is-feat{background:var(--ink);color:#fff;box-shadow:0 30px 60px rgba(22,32,46,.22)}'+
+'.land-plan.is-feat p,.land-plan.is-feat .land-who{color:#AEB8C6}'+
+'.land-plan.is-feat h3,.land-plan.is-feat .land-price{color:#fff}'+
+'.land h1,.land h2,.land h3,.land h4{color:inherit}'+
+'.land-plan.is-feat .land-list li{color:#fff}'+
+'.land-plan.is-feat .land-ok{background:rgba(26,165,160,.22);color:#5FD4CF}'+
+'.land-badge{position:absolute;top:22px;right:22px;font-size:11.5px;font-weight:700;background:var(--teal);color:#fff;border-radius:999px;padding:4px 10px}'+
+'.land-plan h3{font-size:21px;font-weight:800;margin:0 0 4px}'+
+'.land-who{font-size:13.5px;font-weight:600;color:var(--muted)}'+
+'.land-price{font-size:30px;font-weight:800;letter-spacing:-.03em;margin:18px 0 4px}'+
+'.land-price small{font-size:13px;font-weight:600;opacity:.65;letter-spacing:0;margin-left:6px}'+
+'.land-plan p{font-size:14px;line-height:1.55;color:var(--muted);margin:0}'+
+'.land-plan .land-list{flex:1;margin:20px 0 24px}'+
+'.land-plan .land-btn{width:100%}'+
+'.land-plan.is-feat .land-btn-g{background:transparent;color:#fff;border-color:rgba(255,255,255,.3)}'+
+'.land-faq{max-width:820px;margin:40px auto 0;display:grid;gap:10px}'+
+'.land-faq details{background:#fff;border-radius:16px;box-shadow:var(--shadow);padding:0 22px}'+
+'.land-faq summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:14px;padding:19px 0;font-weight:700;font-size:15.5px}'+
+'.land-faq summary::-webkit-details-marker{display:none}'+
+'.land-faq summary:after{content:"+";font-size:22px;font-weight:500;color:var(--teal);transition:transform .2s}'+
+'.land-faq details[open] summary:after{transform:rotate(45deg)}'+
+'.land-faq details p{margin:0 0 19px;font-size:14.5px;line-height:1.65;color:var(--muted)}'+
+'.land-demo{background:var(--ink);color:#fff;border-radius:28px;padding:clamp(26px,4vw,52px);display:grid;grid-template-columns:1fr;gap:34px;position:relative;overflow:hidden}'+
+'.land-demo:before{content:"";position:absolute;width:520px;height:520px;right:-180px;top:-220px;background:radial-gradient(closest-side,rgba(26,165,160,.35),rgba(26,165,160,0))}'+
+'.land-demo > *{position:relative}'+
+'.land-demo h2{color:#fff}'+
+'.land-demo .land-sub{color:#AEB8C6}'+
+'.land-demo .land-list li{color:#fff}'+
+'.land-demo .land-ok{background:rgba(26,165,160,.22);color:#5FD4CF}'+
+'.land-form{background:#fff;color:var(--ink);border-radius:22px;padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:12px}'+
+'.land-form label{display:grid;gap:6px;font-size:12.5px;font-weight:700;color:var(--muted)}'+
+'.land-form .full{grid-column:1/-1}'+
+'.land .land-in{font-family:inherit;font-weight:500;line-height:1.4}'+
+'.land-in{width:100%;font:inherit;font-size:15px;color:var(--ink);background:#fff;border:1px solid var(--border);border-radius:12px;padding:11px 13px;outline:none}'+
+'.land-in:focus{border-color:var(--teal);box-shadow:0 0 0 4px var(--ring)}'+
+'textarea.land-in{resize:vertical;min-height:88px}'+
+'.land-hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}'+
+'.land-err{grid-column:1/-1;background:#FEF2F2;color:#B91C1C;border-radius:12px;padding:10px 13px;font-size:13.5px}'+
+'.land-fine{grid-column:1/-1;font-size:12px;color:var(--faint);margin:0;line-height:1.5}'+
+'.land-thanks{background:#fff;color:var(--ink);border-radius:22px;padding:34px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}'+
+'.land-thanks .land-ico{width:56px;height:56px;border-radius:50%;margin:0}'+
+'.land-thanks h3{font-size:22px;font-weight:800;margin:6px 0 0}'+
+'.land-thanks p{font-size:15px;line-height:1.6;color:var(--muted);margin:0;max-width:380px}'+
+'.land-foot{padding:44px 0 50px;border-top:1px solid var(--border-soft);margin-top:88px}'+
+'.land-foot .land-in-w{display:flex;flex-wrap:wrap;gap:18px 30px;align-items:center;justify-content:space-between}'+
+'.land-foot-links{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13.5px}'+
+'.land-foot-links a,.land-foot-links button{color:var(--muted);text-decoration:none;background:none;border:0;font:inherit;cursor:pointer;padding:0}'+
+'.land-foot-links a:hover,.land-foot-links button:hover{color:var(--ink)}'+
+'.land-mentor{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:22px;background:#FFF5F4;border-radius:20px;padding:20px 24px}'+
+'.land-mentor h4{margin:0 0 4px;font-size:16px;font-weight:800}'+
+'.land-mentor p{margin:0;font-size:14px;color:var(--muted);line-height:1.5}'+
+'@media (min-width:900px){'+
+'.land-row{grid-template-columns:5fr 7fr;gap:56px}'+
+'.land-row.rev{grid-template-columns:7fr 5fr}'+
+'.land-row.rev .land-row-txt{order:2}'+
+'.land-demo{grid-template-columns:5fr 6fr;gap:48px;align-items:center}'+
+'}'+
+'@media (max-width:860px){.land-links{display:none}}'+
+'@media (max-width:560px){.land-nav-cta .land-btn-g{display:none}.land-form{grid-template-columns:1fr}.land-hero{padding-top:40px}.land-sec{padding:64px 0}}'+
+'</style>';
+
 Screens.home = function(){
-  return Header() +
-  '<div class="brand-lockup" style="max-width:460px;margin:0 auto 26px">' +
-    logoMark(72) +
-    '<h2 class="brand-word">Talent<span class="dot">IA</span></h2>' +
-    '<p class="brand-slogan">“Elegir mejor”</p>' +
-    '<p style="margin:14px 0 0;font-size:13.5px;color:var(--muted);line-height:1.55">Selección y gestión de personas con inteligencia artificial: datos que ordenan la decisión, personas que la toman.</p>' +
-  '</div>' +
-  '<div style="max-width:460px;margin:0 auto;display:grid;gap:12px">' +
-    '<button class="tile tile-dark" data-action="go-recruiter" style="width:100%">' + ic('briefcase',24) + '<h3>Ingresar a la consultora</h3><p>Para equipos de RR. HH.: reclutamiento y selección, administración de personal, clima y cultura. Se entra con la cuenta de la empresa.</p></button>' +
-    '<button class="tile" data-action="go-mentor" style="width:100%;border-color:var(--brick)">' +
-      '<span style="color:var(--brick)">' + ic('mic',24) + '</span>' +
-      '<h3>Mentor para entrevistas con IA</h3>' +
-      '<p>¿Tenés una entrevista esta semana? Adaptá tu CV al puesto y practicala hablando con nuestra IA. Te devolvemos el CV reescrito y un informe con qué mejorar. El primero es gratis.</p>' +
-      '<span style="margin-top:6px;font-size:11.5px;font-weight:700;color:var(--brick);letter-spacing:.03em">PARA QUIEN BUSCA TRABAJO ›</span>' +
-    '</button>' +
-  '</div>' +
-  '<p class="footer-note">Son dos accesos distintos: la consultora entra con su cuenta de empresa y quien busca trabajo se registra solo en Mentor IA.</p>';
+  var L = landState(), f = L.f;
+  var nav =
+    '<nav class="land-nav"><div class="land-in-w">'+
+      '<button class="land-logo" data-action="land-go" data-t="land-top" aria-label="TalentIA">'+logoMark(30)+'<span>Talent<b>IA</b></span></button>'+
+      '<div class="land-links">'+
+        '<button data-action="land-go" data-t="land-funciones">Funciones</button>'+
+        '<button data-action="land-go" data-t="land-como">Cómo funciona</button>'+
+        '<button data-action="land-go" data-t="land-planes">Planes</button>'+
+        '<button data-action="land-go" data-t="land-faq">Preguntas</button>'+
+      '</div>'+
+      '<div class="land-nav-cta">'+
+        '<button class="land-btn land-btn-g land-btn-sm" data-action="go-recruiter">'+ic("lock",14)+' Ingresar</button>'+
+        '<button class="land-btn land-btn-p land-btn-sm" data-action="land-go" data-t="land-demo">Pedí una demo</button>'+
+      '</div>'+
+    '</div></nav>';
+
+  var hero =
+    '<header class="land-hero" id="land-top"><div class="land-in-w">'+
+      '<span class="land-eyebrow">'+ic("sparkle",14)+' Software de RR. HH. con inteligencia artificial</span>'+
+      '<h1>Seleccioná, administrá y liquidá a tu personal <em>en un solo lugar.</em></h1>'+
+      '<p class="land-lead">TalentIA junta el reclutamiento con IA, los legajos, la asistencia, las licencias y la liquidación de sueldos según la ley argentina. Menos planillas, menos errores y más tiempo para las personas.</p>'+
+      '<div class="land-cta-row">'+
+        '<button class="land-btn land-btn-p" data-action="land-go" data-t="land-demo">Pedí una demo gratis '+ic("chevron",15)+'</button>'+
+        '<button class="land-btn land-btn-g" data-action="land-go" data-t="land-funciones">Ver cómo funciona</button>'+
+      '</div>'+
+      '<div class="land-trust">'+
+        '<span>'+ic("check",15)+' Ley de Contrato de Trabajo</span>'+
+        '<span>'+ic("check",15)+' Recibo de haberes art. 140</span>'+
+        '<span>'+ic("check",15)+' Firma digital de documentos</span>'+
+        '<span>'+ic("check",15)+' Fichador con foto desde el celular</span>'+
+      '</div>'+
+      '<div class="land-hero-shot">'+landShot("/img/landing-panel.jpg","Panel de administración de personal con alertas de vencimientos, firmas y liquidaciones")+'</div>'+
+    '</div></header>';
+
+  var mods =
+    '<section class="land-sec" id="land-funciones"><div class="land-in-w">'+
+      '<div class="land-center"><div class="land-kicker">Tres módulos, un mismo equipo</div>'+
+      '<h2>Todo el ciclo del empleado, de la búsqueda al recibo</h2>'+
+      '<p class="land-sub">Empezá por lo que más te urge y sumá el resto cuando quieras. La información se carga una sola vez y pasa de un módulo al otro.</p></div>'+
+      '<div class="land-mods">'+
+        '<div class="land-card"><span class="land-ico">'+ic("briefcase",21)+'</span><h3>Reclutamiento y selección</h3><p>Publicá búsquedas, recibí postulaciones y hacé la primera entrevista con IA: el candidato responde hablando y vos recibís un informe ordenado para decidir.</p>'+
+          '<ul class="land-list">'+landCheck("Portal de búsquedas y postulaciones")+landCheck("Entrevistas por voz con IA")+landCheck("Del candidato elegido al legajo, en un clic")+'</ul></div>'+
+        '<div class="land-card"><span class="land-ico">'+ic("users",21)+'</span><h3>Administración de personal</h3><p>Legajos, asistencia, vacaciones, licencias, sanciones, capacitación y liquidación de sueldos conectados entre sí, con alertas de lo que vence.</p>'+
+          '<ul class="land-list">'+landCheck("Fichador con foto y ubicación")+landCheck("Liquidación con ausencias automáticas")+landCheck("Recibos y documentos con firma digital")+'</ul></div>'+
+        '<div class="land-card"><span class="land-ico">'+ic("msg",21)+'</span><h3>Clima y cultura</h3><p>Medí cómo está tu gente con encuestas periódicas y detectá a tiempo lo que hay que cuidar, antes de que se convierta en una renuncia.</p>'+
+          '<ul class="land-list">'+landCheck("Encuestas de clima")+landCheck("Resultados por área")+landCheck("Seguimiento en el tiempo")+'</ul></div>'+
+      '</div>'+
+
+      '<div class="land-row"><div class="land-row-txt"><div class="land-kicker">Panel con alertas</div><h3>Abrís TalentIA y sabés qué atender hoy</h3>'+
+        '<p>Documentos vencidos, períodos de prueba que terminan, exámenes médicos, vacaciones por aprobar, firmas pendientes y empleados sin liquidar, todo en una sola lista y ordenado por urgencia.</p>'+
+        '<ul class="land-list">'+landCheck("Vencimientos de documentación y capacitaciones")+landCheck("Fin del período de prueba con aviso previo")+landCheck("Un clic y vas directo a resolverlo")+'</ul></div>'+
+        landShot("/img/landing-alertas.jpg","Alertas del personal: vencimientos, firmas pendientes y liquidaciones")+'</div>'+
+
+      '<div class="land-row rev"><div class="land-row-txt"><div class="land-kicker">Liquidación de sueldos</div><h3>El recibo sale con las novedades del mes, sin volver a cargarlas</h3>'+
+        '<p>TalentIA trae del legajo el sueldo, la antigüedad y la categoría, y de Asistencia las ausencias justificadas y sin justificar y las horas extra. Vos revisás y el recibo queda listo para firmar.</p>'+
+        '<ul class="land-list">'+landCheck("Horas extra, feriados, vacaciones, licencias y SAC")+landCheck("Aportes, sindicato y embargos según la ley")+landCheck("Escalas de convenio, paritarias y costo laboral")+'</ul></div>'+
+        landShot("/img/landing-recibo.jpg","Liquidación de sueldos con el recibo de haberes","narrow")+'</div>'+
+
+      '<div class="land-row"><div class="land-row-txt"><div class="land-kicker">Asistente con IA</div><h3>Preguntale a TalentIA como le preguntarías a un colega</h3>'+
+        '<p>¿Cuánto SAC le toca a Lucía? ¿Quién tiene vacaciones pendientes? El asistente responde con los datos de tu empresa y te cita la ley, para que decidas con información.</p>'+
+        '<ul class="land-list">'+landCheck("Responde con tus legajos, licencias y liquidaciones")+landCheck("Cita los artículos de la LCT")+landCheck("Redacta sanciones y comunicaciones")+'</ul></div>'+
+        landShot("/img/landing-chat.jpg","Asistente de RR. HH. con IA respondiendo una consulta sobre el SAC")+'</div>'+
+    '</div></section>';
+
+  var feats = [
+    ["clock","Fichador desde el celular","Entrada y salida con foto, ubicación y hora del servidor. Sin relojes ni tarjetas."],
+    ["file","Ausencias justificadas","El empleado manda la foto del certificado y la IA lo lee. RR. HH. sólo aprueba."],
+    ["send","Firma digital","Recibos, legajos y documentos firmados desde el celular, con constancia."],
+    ["home","Vacaciones y licencias","Días según antigüedad (art. 150 LCT), saldos y aprobaciones en un solo lugar."],
+    ["list","Escalas y paritarias","Cargás la escala del convenio y aplicás los aumentos a toda la nómina."],
+    ["info","Alertas de vencimientos","Documentos, exámenes, capacitaciones y períodos de prueba que vencen, con aviso previo."],
+    ["alert","Sanciones","Apercibimientos y suspensiones con el tope legal y la notificación lista."],
+    ["shield","Salud y seguridad","Exámenes médicos, entregas de EPP y capacitaciones con vencimientos."]
+  ];
+  var grid =
+    '<section class="land-sec land-sec-alt"><div class="land-in-w">'+
+      '<div class="land-center"><div class="land-kicker">Y mucho más</div><h2>Pensado para cómo se trabaja en Argentina</h2>'+
+      '<p class="land-sub">Cada función sigue los criterios de la ley laboral y de los convenios, para que no tengas que hacer las cuentas a mano.</p></div>'+
+      '<div class="land-feats">'+feats.map(function(x){ return '<div class="land-feat"><span class="land-ico">'+ic(x[0],18)+'</span><h4>'+x[1]+'</h4><p>'+x[2]+'</p></div>'; }).join("")+'</div>'+
+    '</div></section>';
+
+  var steps =
+    '<section class="land-sec" id="land-como"><div class="land-in-w">'+
+      '<div class="land-center"><div class="land-kicker">Cómo funciona</div><h2>Empezar es simple</h2>'+
+      '<p class="land-sub">No hay que instalar nada ni cambiar todo de golpe.</p></div>'+
+      '<div class="land-steps">'+
+        '<div class="land-step"><h4>Pedí la demo</h4><p>Nos contás cuántas personas tiene tu equipo y qué te gustaría resolver primero. Te mostramos TalentIA con ejemplos de tu rubro.</p></div>'+
+        '<div class="land-step"><h4>Armamos tu cuenta</h4><p>Configuramos tu empresa, tu convenio y los accesos de tu equipo. Te ayudamos a cargar los legajos que ya tenés.</p></div>'+
+        '<div class="land-step"><h4>Empezá a trabajar</h4><p>Tus empleados fichan y firman desde el celular y vos liquidás, controlás y decidís desde un solo panel.</p></div>'+
+      '</div>'+
+    '</div></section>';
+
+  var plans =
+    '<section class="land-sec land-sec-alt" id="land-planes"><div class="land-in-w">'+
+      '<div class="land-center"><div class="land-kicker">Planes</div><h2>Un plan para cada tamaño de equipo</h2>'+
+      '<p class="land-sub">El precio depende de la cantidad de empleados y de los módulos. Pedinos una propuesta y te la mandamos sin compromiso.</p></div>'+
+      '<div class="land-plans">'+LAND_PLANS.map(function(p){
+        return '<div class="land-plan'+(p.featured?' is-feat':'')+'">'+(p.featured?'<span class="land-badge">Más elegido</span>':'')+
+          '<h3>'+p.name+'</h3><div class="land-who">'+p.who+'</div>'+
+          '<div class="land-price">Consultar</div><p>'+p.desc+'</p>'+
+          '<ul class="land-list">'+p.items.map(landCheck).join("")+'</ul>'+
+          '<button class="land-btn '+(p.featured?'land-btn-p':'land-btn-g')+'" data-action="land-plan" data-plan="'+p.k+'">Consultar precio</button>'+
+        '</div>';
+      }).join("")+'</div>'+
+    '</div></section>';
+
+  var faq =
+    '<section class="land-sec" id="land-faq"><div class="land-in-w">'+
+      '<div class="land-center"><div class="land-kicker">Preguntas frecuentes</div><h2>Lo que más nos preguntan</h2></div>'+
+      '<div class="land-faq">'+LAND_FAQ.map(function(q, i){ return '<details'+(i===0?' open':'')+'><summary>'+q[0]+'</summary><p>'+q[1]+'</p></details>'; }).join("")+'</div>'+
+    '</div></section>';
+
+  var formHtml = L.sent
+    ? '<div class="land-thanks"><span class="land-ico">'+ic("check",26)+'</span><h3>¡Listo, recibimos tu pedido!</h3>'+
+        '<p>Te escribimos a <b>'+esc(f.email)+'</b> en las próximas 24 horas hábiles para coordinar la demo.</p>'+
+        '<button class="land-btn land-btn-g land-btn-sm" data-action="land-again" style="margin-top:8px">Enviar otro pedido</button></div>'
+    : '<div class="land-form" id="land-form">'+
+        '<label>Nombre y apellido<input id="land_name" class="land-in" autocomplete="name" maxlength="120" value="'+esc(f.name)+'"></label>'+
+        '<label>Empresa<input id="land_company" class="land-in" autocomplete="organization" maxlength="160" value="'+esc(f.company)+'"></label>'+
+        '<label>Email de trabajo<input id="land_email" type="email" class="land-in" autocomplete="email" maxlength="200" value="'+esc(f.email)+'"></label>'+
+        '<label>Teléfono (opcional)<input id="land_phone" type="tel" class="land-in" autocomplete="tel" maxlength="60" value="'+esc(f.phone)+'"></label>'+
+        '<label>Cantidad de empleados'+landSel("land_employees", f.employees, [["","Elegí una opción"],["1-10","1 a 10"],["11-50","11 a 50"],["51-150","51 a 150"],["151-500","151 a 500"],["500+","Más de 500"]])+'</label>'+
+        '<label>Plan que te interesa'+landSel("land_plan", f.plan, [["","Todavía no sé"],["inicial","Inicial"],["profesional","Profesional"],["empresa","Empresa"]])+'</label>'+
+        '<label class="full">¿Qué te gustaría resolver? (opcional)<textarea id="land_message" class="land-in" maxlength="2000" placeholder="Por ejemplo: liquidamos 40 sueldos de Comercio en Excel y queremos ordenar las licencias.">'+esc(f.message)+'</textarea></label>'+
+        '<div class="land-hp" aria-hidden="true"><label>Sitio web<input id="land_website" tabindex="-1" autocomplete="off"></label></div>'+
+        (L.error ? '<div class="land-err">'+esc(L.error)+'</div>' : '')+
+        '<button class="land-btn land-btn-p full" data-action="land-submit"'+(L.sending?' disabled style="opacity:.7"':'')+'>'+(L.sending?(ic("loader",16)+' Enviando…'):('Pedir mi demo '+ic("send",15)))+'</button>'+
+        '<p class="land-fine">Usamos tus datos sólo para contactarte por la demo. Ver <a href="/privacy.html" target="_blank" rel="noopener" style="color:inherit">política de privacidad</a>.</p>'+
+      '</div>';
+
+  var demo =
+    '<section class="land-sec" id="land-demo" style="padding-top:20px"><div class="land-in-w">'+
+      '<div class="land-demo"><div>'+
+        '<div class="land-kicker" style="color:#5FD4CF">Demo gratis</div>'+
+        '<h2>Mirá TalentIA funcionando con casos como los tuyos</h2>'+
+        '<p class="land-sub">En 30 minutos te mostramos cómo quedaría tu equipo en TalentIA y respondemos todas tus dudas. Sin costo y sin compromiso.</p>'+
+        '<ul class="land-list" style="margin-top:22px">'+landCheck("Recorrido por los módulos que te interesan")+landCheck("Propuesta de precio según tu cantidad de empleados")+landCheck("Te ayudamos a pasar tu información actual")+'</ul>'+
+      '</div>'+formHtml+'</div>'+
+      '<div class="land-mentor"><div><h4>¿Estás buscando trabajo?</h4><p>Probá el Mentor para entrevistas con IA: adaptá tu CV al puesto y practicá la entrevista hablando. El primero es gratis.</p></div>'+
+        '<button class="land-btn land-btn-g land-btn-sm" data-action="go-mentor">'+ic("mic",15)+' Ir al Mentor IA</button></div>'+
+    '</div></section>';
+
+  var foot =
+    '<footer class="land-foot"><div class="land-in-w">'+
+      '<div style="display:flex;align-items:center;gap:10px">'+logoMark(28)+'<div><div style="font-weight:800;font-size:16px">Talent<span style="color:var(--teal)">IA</span></div><div style="font-size:12.5px;color:var(--muted)">“Elegir mejor” · Consultora de RR. HH. con IA</div></div></div>'+
+      '<div class="land-foot-links">'+
+        '<button data-action="go-recruiter">Ingresar</button>'+
+        '<button data-action="land-go" data-t="land-demo">Pedir una demo</button>'+
+        '<button data-action="go-mentor">Mentor IA</button>'+
+        '<a href="/privacy.html" target="_blank" rel="noopener">Privacidad</a>'+
+        '<a href="/terms.html" target="_blank" rel="noopener">Términos</a>'+
+        '<span style="color:var(--faint)">© '+(new Date()).getFullYear()+' TalentIA</span>'+
+      '</div>'+
+    '</div></footer>';
+
+  return LAND_CSS + '<div class="land">' + nav + hero + mods + grid + steps + plans + faq + demo + foot + '</div>';
 };
+
+function landReadForm(){
+  var L = landState(), g = function(id){ var el=document.getElementById(id); return el ? el.value : null; };
+  ["name","company","email","phone","employees","plan","message"].forEach(function(k){ var v=g("land_"+k); if(v!==null) L.f[k]=v; });
+  return L.f;
+}
+function landScrollTo(id){
+  var el = document.getElementById(id); if(!el) return;
+  var y = el.getBoundingClientRect().top + (window.pageYOffset||0) - (id==="land-top"?0:74);
+  try{ window.scrollTo({ top:Math.max(0,y), behavior:(document.hidden?"auto":"smooth") }); }catch(e){ window.scrollTo(0, y); }
+}
+function landSubmit(){
+  var L = landState(); if(L.sending) return;
+  var f = landReadForm();
+  var hp = (document.getElementById("land_website")||{}).value || "";
+  var err = "";
+  if(String(f.name).trim().length < 2) err = "Contanos tu nombre.";
+  else if(!String(f.company).trim()) err = "Contanos el nombre de tu empresa.";
+  else if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(String(f.email).trim())) err = "Revisá el email: parece que le falta algo.";
+  if(err){ L.error = err; render(); landScrollTo("land-form"); return; }
+  L.error = ""; L.sending = true; render();
+  fetch("/api/demo", { method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ name:f.name, company:f.company, email:f.email, phone:f.phone, employees:f.employees, plan:f.plan, message:f.message, website:hp }) })
+    .then(function(r){ return r.json().catch(function(){ return { ok:false, error:"HTTP "+r.status }; }).then(function(j){ if(r.status===429) j={ ok:false, error:"rate_limited" }; return j; }); })
+    .then(function(j){
+      L.sending = false;
+      if(j && j.ok){ L.sent = true; L.error = ""; }
+      else L.error = (j && j.error==="rate_limited") ? "Recibimos varios pedidos seguidos desde tu conexión. Probá de nuevo en un rato." :
+                     (j && j.error==="bad_email") ? "Revisá el email: parece que le falta algo." :
+                     "No pudimos enviar el pedido. Probá de nuevo o escribinos a matipealv@gmail.com.";
+      render(); landScrollTo("land-demo");
+    })
+    .catch(function(){ L.sending=false; L.error="No pudimos conectarnos. Revisá tu conexión y probá de nuevo."; render(); });
+}
+function landAction(act, el){
+  var L = landState();
+  if(act === "land-go"){ landReadForm(); landScrollTo(el.getAttribute("data-t")); }
+  else if(act === "land-plan"){ landReadForm(); L.f.plan = el.getAttribute("data-plan")||""; var s=document.getElementById("land_plan"); if(s) s.value=L.f.plan; landScrollTo("land-demo"); setTimeout(function(){ var n=document.getElementById("land_name"); if(n && !n.value) try{ n.focus({ preventScroll:true }); }catch(e){} }, 450); }
+  else if(act === "land-submit") landSubmit();
+  else if(act === "land-again"){ L.sent=false; L.f={ name:L.f.name, company:L.f.company, email:L.f.email, phone:L.f.phone, employees:"", plan:"", message:"" }; render(); landScrollTo("land-demo"); }
+  else if(act === "land-dm-reload"){ state.landDemos=null; render(); }
+  else if(act === "land-dm-status") landDemoSetStatus(el.getAttribute("data-id"), el.getAttribute("data-s"));
+}
+function landBind(){
+  if(state.screen !== "home") return;
+  var form = document.getElementById("land-form"); if(!form) return;
+  form.querySelectorAll("input.land-in, textarea.land-in").forEach(function(inp){
+    inp.addEventListener("keydown", function(e){ if(e.key==="Enter" && inp.tagName!=="TEXTAREA"){ e.preventDefault(); landSubmit(); } });
+  });
+}
+
+/* ---- Panel del dueño: pedidos de demo ---- */
+function landDemosLoad(){
+  state.landDemosLoading = true;
+  supaFetch("/rest/v1/demo_requests?select=*&order=created_at.desc&limit=300")
+    .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, j:j }; }); })
+    .then(function(x){ state.landDemosLoading=false; if(x.ok && Array.isArray(x.j)){ state.landDemos=x.j; state.landDemosErr=""; } else { state.landDemos=[]; state.landDemosErr=(x.j && (x.j.message||x.j.code)) || "No se pudieron leer los pedidos."; } if(state.screen==="admin") render(); })
+    .catch(function(){ state.landDemosLoading=false; state.landDemos=[]; state.landDemosErr="No se pudieron leer los pedidos."; if(state.screen==="admin") render(); });
+}
+function landDemoNew(){ return (state.landDemos||[]).filter(function(d){ return (d.status||"nuevo")==="nuevo"; }).length; }
+function landDemoSetStatus(id, st){
+  var d = (state.landDemos||[]).filter(function(x){ return x.id===id; })[0]; if(!d) return;
+  var prev = d.status; d.status = st; render();
+  supaFetch("/rest/v1/demo_requests?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify({ status:st }) })
+    .then(function(r){ if(!r.ok){ d.status=prev; state.landDemosErr="No se pudo cambiar el estado."; render(); } })
+    .catch(function(){ d.status=prev; state.landDemosErr="No se pudo cambiar el estado."; render(); });
+}
+function landDemosHtml(){
+  if(state.landDemos==null){ if(!state.landDemosLoading) setTimeout(landDemosLoad, 0); return '<p style="color:var(--muted);font-size:13.5px">'+ic("loader",14)+' Cargando pedidos…</p>'; }
+  var items = state.landDemos;
+  var PL = { inicial:"Inicial", profesional:"Profesional", empresa:"Empresa" };
+  var SZ = { "1-10":"1 a 10", "11-50":"11 a 50", "51-150":"51 a 150", "151-500":"151 a 500", "500+":"Más de 500" };
+  var ST = { nuevo:["Nuevo","var(--blue)","var(--blue-tint)"], contactado:["Contactado","var(--amber)","var(--amber-tint)"], cliente:["Cliente","var(--green)","var(--green-tint)"], descartado:["Descartado","var(--muted)","var(--surface-2)"] };
+  var head = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">'+
+    '<p style="font-size:13px;color:var(--muted);margin:0">Pedidos que llegaron desde la página de presentación. Cada uno también te llega por mail; respondé ese mail para escribirle.</p>'+
+    '<button class="btn btn-ghost btn-sm" data-action="land-dm-reload">'+ic("rotate",13)+' Actualizar</button></div>';
+  var err = state.landDemosErr ? Note("err", esc(state.landDemosErr)) : "";
+  if(!items.length) return head + err + (state.landDemosErr ? "" : Note("info", "Todavía no llegó ningún pedido de demo."));
+  return head + err + '<div style="display:grid;gap:10px">' + items.map(function(d){
+    var st = ST[d.status||"nuevo"] || ST.nuevo;
+    var when = d.created_at ? new Date(d.created_at) : null;
+    var whenTxt = when ? (when.toLocaleDateString("es-AR")+" "+when.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})) : "";
+    var btn = function(s, label){ return (d.status||"nuevo")===s ? "" : '<button class="btn btn-ghost btn-sm" data-action="land-dm-status" data-id="'+esc(d.id)+'" data-s="'+s+'">'+label+'</button>'; };
+    return '<div class="card" style="padding:16px 18px">'+
+      '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">'+
+        '<div><div style="font-weight:700;font-size:15px">'+esc(d.company||"(sin empresa)")+' <span style="font-weight:500;color:var(--muted)">· '+esc(d.name||"")+'</span></div>'+
+        '<div style="font-size:13px;color:var(--muted);margin-top:3px"><a href="mailto:'+esc(d.email||"")+'" style="color:var(--teal-strong)">'+esc(d.email||"")+'</a>'+(d.phone?(' · '+esc(d.phone)):'')+' · '+esc(whenTxt)+'</div></div>'+
+        '<span class="badge" style="background:'+st[2]+';color:'+st[1]+';border-color:transparent;font-weight:600">'+st[0]+'</span>'+
+      '</div>'+
+      '<div style="display:flex;gap:6px 16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:10px">'+
+        '<span>Empleados: <b style="color:var(--ink)">'+esc(SZ[d.employees]||"sin indicar")+'</b></span>'+
+        '<span>Plan: <b style="color:var(--ink)">'+esc(PL[d.plan]||"todavía no sabe")+'</b></span></div>'+
+      (d.message ? '<p style="font-size:13.5px;line-height:1.55;margin:10px 0 0;white-space:pre-wrap">'+esc(d.message)+'</p>' : '')+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">'+btn("contactado","Marcar contactado")+btn("cliente","Pasó a cliente")+btn("descartado","Descartar")+btn("nuevo","Volver a nuevo")+'</div>'+
+    '</div>';
+  }).join("") + '</div>';
+}
+
 
 Screens["pin-set"] = function(){
   return Header() +
@@ -7997,8 +8398,9 @@ Screens["admin"] = function(){
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 18px;border-bottom:1px solid var(--border-soft);padding-bottom:10px">'+
       solapa("metricas","Métricas","eye")+
       solapa("cuentas","Cuentas"+(pendientes?(" ("+pendientes+")"):""),"users")+
+    solapa("demos","Pedidos de demo"+(landDemoNew()?(" ("+landDemoNew()+")"):""),"mail")+
     '</div>' +
-    (tab==="cuentas"
+    (tab==="demos" ? landDemosHtml() : tab==="cuentas"
       ? ('<p style="font-size:13px;color:var(--muted);margin:0 0 14px">Cuentas registradas en la consultora. Aprobá a cada persona para darle acceso, o revocáselo cuando quieras. Los usuarios del Mentor IA no aparecen acá: se registran solos y no tocan nada de RR. HH.</p>' + AdminPanel())
       : AdminMetrics());
 };
@@ -14026,6 +14428,7 @@ function bind(){
       else if (act === "go-recruiter"){ setDoor("consultora"); enterRecruiter(); }
       /* ---- Mentor IA (la otra puerta) ---- */
       else if (act === "go-mentor") goMentor();
+      else if (act.indexOf("land-") === 0) landAction(act, el);
       else if (act === "mentor-login") mentorLogin();
       else if (act === "mentor-home"){ setDoor("mentor"); state.mentor.error=null; state.mentor.report=null; state.mentor.cv.error=null; state.mentor.cv.report=null; state.screen="mentor-home"; render(); if(state.mentor.sessions===null) loadMentorSessions(); if(state.mentor.cv.list===null) loadMentorCvs(); }
       else if (act === "mentor-new") mentorNewForm();
@@ -14461,7 +14864,7 @@ function bind(){
   document.querySelectorAll("input[data-offbtask]").forEach(function(el){ el.addEventListener("change", function(e){ offbToggleTask(el.getAttribute("data-offbtask"), e.target.checked); }); });
   document.querySelectorAll("input[data-offbnote]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo && fo.tasks[el.getAttribute("data-offbnote")]) fo.tasks[el.getAttribute("data-offbnote")].note=e.target.value; }); });
   document.querySelectorAll("input[data-offbconcept]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo) fo.settlement[el.getAttribute("data-offbconcept")]=e.target.value; }); });
-  liqBind(); fjBind(); sancBind(); rhaiBind();
+  liqBind(); fjBind(); sancBind(); rhaiBind(); landBind();
 
   /* elegir la empresa de la sesión */
   if ((f=document.getElementById("f_brand_name"))){
