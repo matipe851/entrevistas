@@ -1701,6 +1701,8 @@ var state = {
   asist: { loading:false, items:null, error:null, config:null, day:"", search:"", msg:"", view:"resumen", justifyId:null, justifyText:"", folder:null, ctlMonth:null, ctlEmp:null, absNotes:[], absKey:null, absText:"" },
   lic: { loading:false, items:null, notes:null, error:null, msg:"", emp:null, form:null },
   m2a: { loading:false, loaded:false, showAll:false, at:null, noPayrolls:false },
+  sanc: { loading:false, items:null, error:null, msg:"", emp:null, form:null, saving:false, archiving:null, noTable:false, signLink:"" },
+  rhai: { loading:false, loaded:false, msgs:[], draft:"", asking:false, error:null },
   liq: { loading:false, items:null, error:null, msg:"", emp:null, form:null, saving:false, pdfBusy:false, noTable:false, tab:"liquidar", period:"", kind:"mensual", nPeriod:"" },
   perf: { loading:false, items:null, error:null, msg:"", emp:null, form:null, view:"emp", ai:null, rankAI:null, aiQ:"" },
   cap: { loading:false, items:null, error:null, msg:"", emp:null, form:null, ai:null },
@@ -1750,7 +1752,7 @@ var app = document.getElementById("app");
 var REC_SHELL_SCREENS = { "rec-home":"dash", "cv-home":"cvs", "jobs-home":"jobs", "config":"config" };
 var MOD3_SHELL_SCREENS = { "mod3-home":"home", "mod3-encuestas":"encuestas", "mod3-encuesta-new":"encuestas", "mod3-encuesta":"encuestas",
   "mod3-enps":"enps", "mod3-feedback":"feedback", "mod3-valores":"valores", "mod3-planes":"planes", "mod3-comunicacion":"comunicacion" };
-var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-liquidacion":"liquidacion", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion", "mod2-beneficios":"beneficios", "mod2-reportes":"reportes", "mod2-offboarding":"offboarding" };
+var MOD2_SHELL_SCREENS = { "mod2-home":"home", "mod2-legajo":"legajo", "mod2-abm":"abm", "mod2-asistencia":"asistencia", "mod2-licencias":"licencias", "mod2-liquidacion":"liquidacion", "mod2-sanciones":"sanciones", "mod2-asistente":"asistente", "mod2-desempeno":"desempeno", "mod2-capacitacion":"capacitacion", "mod2-salud":"salud", "mod2-documentacion":"documentacion", "mod2-beneficios":"beneficios", "mod2-reportes":"reportes", "mod2-offboarding":"offboarding" };
 function render(){
   var out = Screens[state.screen]();
   if (supaConfigured() && isLoggedIn()){
@@ -1762,7 +1764,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v40.4-r112";
+var APP_VERSION = "v40.5-r113";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2032,7 +2034,7 @@ Screens["hub"] = function(){
       areas:"Portal de búsquedas · Banco de CVs · Entrevistas · Resultados" },
     { n:"02", icon:"users", title:"Administración de personal", action:"go-module-admin-hr",
       desc:"El ciclo completo del empleado, desde el legajo hasta el egreso.",
-      areas:"12 áreas · Legajo · Asistencia · Licencias · Reportes" },
+      areas:"14 áreas · Legajo · Asistencia · Licencias · Reportes" },
     { n:"03", icon:"globe", title:"Clima y cultura", action:"go-module-clima",
       desc:"Encuestas de clima, eNPS, feedback, valores, planes de acción y comunicación interna.",
       areas:"6 áreas · Todas activas y enlazadas entre sí" }
@@ -2087,7 +2089,9 @@ Screens["mod2-home"] = function(){
     { active:true, action:"go-documentacion", icon:"copy", tag:"Activo", title:"9 · Documentación", desc:"Por empleado: contratos, recibos, certificados, constancias, firmas digitales y vencimientos, con lectura de PDF por IA." },
     { active:true, action:"go-beneficios", icon:"sparkle", tag:"Activo", title:"10 · Beneficios", desc:"Por empleado, en subcarpetas: obra social, prepaga, bonificaciones, beneficios corporativos y préstamos, con adjuntos y vencimientos." },
     { active:true, action:"go-reportes", icon:"list", tag:"Activo", title:"11 · Reportes", desc:"Dotación, rotación, ausentismo y costos del personal, con gráficos por mes y exportación a CSV." },
-    { active:true, action:"go-offboarding", icon:"back", tag:"Activo", title:"12 · Off boarding", desc:"Proceso de egreso completo: checklist por área, liquidación final estimada, entrevista de salida y cierre del legajo." }
+    { active:true, action:"go-offboarding", icon:"back", tag:"Activo", title:"12 · Off boarding", desc:"Proceso de egreso completo: checklist por área, liquidación final estimada, entrevista de salida y cierre del legajo." },
+    { active:true, action:"go-sanciones", icon:"alert", tag:"Activo", title:"13 · Sanciones disciplinarias", desc:"Llamados de atención, apercibimientos y suspensiones: la IA redacta la nota, se firma y la suspensión se descuenta sola al liquidar." },
+    { active:true, action:"go-asistente-rh", icon:"sparkle", tag:"Activo", title:"14 · Asistente de RR. HH. con IA", desc:"Preguntale sobre tu personal y la ley laboral: SAC, vacaciones, ausencias, costos, preaviso. Responde con tus datos y cita la LCT." }
   ];
   return Header() +
     backlink("go-hub","Volver a áreas") +
@@ -7988,6 +7992,8 @@ function mod2SideNav(active){
     { key:'asistencia',    action:'go-asistencia',      icon:'clock',  label:'Asistencia y horarios' },
     { key:'licencias',     action:'go-licencias',       icon:'home',   label:'Vacaciones y licencias' },
     { key:'liquidacion',   action:'go-liquidacion',    icon:'briefcase', label:'Liquidación de sueldos' },
+    { key:'sanciones',     action:'go-sanciones',      icon:'alert',     label:'Sanciones' },
+    { key:'asistente',     action:'go-asistente-rh',   icon:'sparkle',   label:'Asistente IA' },
     { key:'desempeno',     action:'go-desempeno',       icon:'eye',    label:'Evaluación de desempeño' },
     { key:'capacitacion',  action:'go-capacitacion',    icon:'users',  label:'Capacitación' },
     { key:'salud',         action:'go-salud',           icon:'shield', label:'Salud y seguridad' },
@@ -10674,6 +10680,372 @@ function repAsistencia(year){
   return out.meses?out:null;
 }
 
+/* ===================== MÓDULO 2 · 13 · SANCIONES DISCIPLINARIAS ===================== */
+/* Llamada a la IA con reintento (Gemini a veces responde "alta demanda") y lectura robusta:
+   /api/analyze trabaja en modo JSON, así que pedimos {"texto": "..."} y lo desarmamos. */
+function rhAiText(prompt){
+  var tries=0;
+  function once(){
+    tries++;
+    return fetch("/api/analyze", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ task:"assistant", prompt:prompt+"\n\nFormato de salida: devolvé un JSON {\"texto\": \"...\"} donde texto es la respuesta completa (usá \\n para los saltos de línea)." }) })
+      .then(function(r){ return r.json(); }).then(function(j){
+        if(j && j.ok && j.answer){
+          var a=String(j.answer).trim(), o=null;
+          try{ o=JSON.parse(a); }catch(e){ var m=a.match(/\{[\s\S]*\}/); if(m){ try{ o=JSON.parse(m[0]); }catch(e2){} } }
+          if(typeof o==="string") return o;
+          if(o && typeof o==="object"){ var t=o.texto||o.respuesta||o.nota||o.text||o.answer; if(t) return String(t); return Object.keys(o).map(function(k){ var v=o[k]; return (typeof v==="string")?v:JSON.stringify(v); }).join("\n\n"); }
+          return a;
+        }
+        if(j && j.error==="gemini_error" && tries<3) return new Promise(function(res){ setTimeout(res, 2500*tries); }).then(once);
+        var err=new Error((j&&j.error)||"error"); throw err;
+      });
+  }
+  return once();
+}
+
+/* Llamados de atención, apercibimientos y suspensiones (arts. 67, 68, 218 a 220 LCT).
+   La IA redacta la nota, se archiva en Documentación y se manda a firmar; las suspensiones
+   se descuentan solas en Liquidación como días sin goce. */
+var SANC_TYPES = {
+  llamado:{ label:"Llamado de atención", color:"var(--blue)" },
+  apercibimiento:{ label:"Apercibimiento", color:"var(--amber)" },
+  suspension:{ label:"Suspensión disciplinaria", color:"var(--brick)" }
+};
+function dbListSanctions(){
+  return supaFetch("/rest/v1/sanctions?select=*&order=incident_date.desc,created_at.desc")
+    .then(function(r){ return r.json().then(function(j){ return { ok:r.ok, items:(r.ok && Array.isArray(j))?j:[] }; }); })
+    .catch(function(){ return { ok:false, items:[] }; });
+}
+function dbCreateSanction(row){
+  return supaFetch("/rest/v1/sanctions", { method:"POST", headers:{ Prefer:"return=representation" }, body:JSON.stringify(row) })
+    .then(function(r){ return r.json().then(function(j){ if(r.ok && j && j[0]) return j[0]; throw new Error("insert_failed"); }); });
+}
+function dbUpdateSanction(id, patch){
+  return supaFetch("/rest/v1/sanctions?id=eq."+encodeURIComponent(id), { method:"PATCH", headers:{ Prefer:"return=minimal" }, body:JSON.stringify(patch) })
+    .then(function(r){ if(!r.ok) throw new Error("update_failed"); return true; });
+}
+function dbDeleteSanction(id){
+  return supaFetch("/rest/v1/sanctions?id=eq."+encodeURIComponent(id), { method:"DELETE" }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+function sancEmpItems(empId){ return (state.sanc.items||[]).filter(function(x){ return x.employee_id===empId; }); }
+/* Días de suspensión del año (tope legal: 30 días en un año desde la primera, art. 220 LCT). */
+function sancSuspDays(empId, year, exceptId){
+  return sancEmpItems(empId).filter(function(x){ return x.type==="suspension" && x.id!==exceptId && String(x.start_date||x.incident_date||"").slice(0,4)===String(year); })
+    .reduce(function(a,x){ return a+(parseInt(x.days,10)||0); },0);
+}
+function goSanciones(){
+  var s=state.sanc; state.error=null; state.empPick=""; state.empPickInactive=false;
+  s.msg=""; s.error=null; s.emp=null; s.form=null;
+  state.screen="mod2-sanciones"; render(); loadSanciones();
+}
+function loadSanciones(){
+  var s=state.sanc;
+  if(!(supaConfigured() && isLoggedIn())){ s.items=[]; if(state.emp.items===null) state.emp.items=[]; render(); return; }
+  s.loading=true; render();
+  Promise.all([ (state.emp.items!==null?Promise.resolve(state.emp.items):dbListEmployees()), dbListSanctions(), dbListDocs().catch(function(){ return []; }) ])
+    .then(function(r){ state.emp.items=r[0]||[]; s.items=r[1].items||[]; s.noTable=!r[1].ok; state.doc.items=r[2]||state.doc.items||[]; s.loading=false; render(); })
+    .catch(function(){ s.loading=false; s.items=[]; s.error="No pude cargar las sanciones."; render(); });
+}
+function sancNew(){
+  var t=todayISO()||"";
+  state.sanc.form={ id:null, type:"apercibimiento", incident_date:t, notified_date:t, start_date:"", days:"", facts:"", text:"", drafting:false };
+  render();
+}
+function sancEdit(id){ var x=(state.sanc.items||[]).filter(function(z){ return z.id===id; })[0]; if(!x) return;
+  state.sanc.form={ id:x.id, type:x.type, incident_date:String(x.incident_date||"").slice(0,10), notified_date:String(x.notified_date||"").slice(0,10), start_date:String(x.start_date||"").slice(0,10), days:x.days?String(x.days):"", facts:x.facts||"", text:x.text||"", drafting:false };
+  render();
+}
+/* La IA redacta la nota de la sanción a partir de los hechos. */
+function sancDraft(){
+  var s=state.sanc, f=s.form, e=liqEmpById(s.emp); if(!f || !e) return;
+  if(!(f.facts||"").trim()){ s.error="Contá primero qué pasó (los hechos)."; render(); return; }
+  f.drafting=true; s.error=null; render();
+  var P=liqParams();
+  var empresa=P.empleador||brandName()||"la empresa";
+  var tipo=(SANC_TYPES[f.type]||{}).label||f.type;
+  var dias=parseInt(f.days,10)||0;
+  var prompt="Sos abogado laboralista argentino y redactás notificaciones disciplinarias para RR. HH. Redactá la nota de "+tipo.toUpperCase()+" para notificar al trabajador por escrito.\n"+
+    "Empleador: "+empresa+(P.cuit?(" (CUIT "+P.cuit+")"):"")+". Trabajador: "+empFullName(e)+(e.dni?(", DNI "+e.dni):"")+(e.legajo_number?(", legajo "+e.legajo_number):"")+(e.position?(", "+e.position):"")+".\n"+
+    "Fecha del hecho: "+(f.incident_date?fDMY(f.incident_date):"(no indicada)")+". Fecha de notificación: "+(f.notified_date?fDMY(f.notified_date):"(no indicada)")+".\n"+
+    (f.type==="suspension"?("Suspensión de "+dias+" día(s)"+(f.start_date?(" a partir del "+fDMY(f.start_date)):"")+", sin goce de haberes.\n"):"")+
+    "HECHOS (lo que contó RR. HH.):\n\"\"\"\n"+String(f.facts).slice(0,3000)+"\n\"\"\"\n\n"+
+    "Reglas: tono formal y respetuoso, sin adjetivos ofensivos ni juicios sobre la persona; describí los hechos concretos con fecha y lugar tal como fueron informados, sin inventar datos (si falta algo, dejá [completar]); "+
+    "encuadrá en el deber de cumplimiento del art. 84 y el poder disciplinario de los arts. 67 y 68 de la LCT"+(f.type==="suspension"?(", con la justa causa y el plazo de los arts. 218 a 220 (máximo 30 días en un año)"):"")+"; "+
+    "aclará que puede cuestionar la medida dentro de los 30 días (art. 67 LCT); cerrá con lugar y fecha y espacio para firma del empleador y notificación del trabajador. "+
+    "En «texto» va sólo la nota, sin comentarios.";
+  rhAiText(prompt).then(function(t){ f.drafting=false; f.text=String(t).trim(); render(); })
+    .catch(function(e){ f.drafting=false; s.error=(e&&e.message==="rate_limited")?"Demasiadas consultas seguidas: esperá unos minutos.":"La IA está saturada en este momento. Probá de nuevo en un rato."; render(); });
+}
+function sancSave(){
+  var s=state.sanc, f=s.form, e=liqEmpById(s.emp); if(!f || !e || s.saving) return Promise.resolve(null);
+  if(!f.incident_date){ s.error="Cargá la fecha del hecho."; render(); return Promise.resolve(null); }
+  if(!(f.facts||"").trim()){ s.error="Describí los hechos."; render(); return Promise.resolve(null); }
+  var days=0, start=null, end=null;
+  if(f.type==="suspension"){
+    days=parseInt(f.days,10)||0;
+    if(days<1){ s.error="Cargá los días de suspensión."; render(); return Promise.resolve(null); }
+    start=f.start_date||f.notified_date||f.incident_date;
+    var y=start.slice(0,4), used=sancSuspDays(e.id, y, f.id);
+    if(used+days>30){ s.error="Supera el tope de 30 días de suspensión en el año (art. 220 LCT): ya tiene "+used+" día(s) en "+y+"."; render(); return Promise.resolve(null); }
+    var d=parseYMD(start); d.setDate(d.getDate()+days-1); end=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);
+  }
+  var row={ employee_id:e.id, type:f.type, incident_date:f.incident_date, notified_date:f.notified_date||null, start_date:start, end_date:end, days:days||null, facts:String(f.facts).trim(), text:String(f.text||"").trim() };
+  s.saving=true; s.error=null; render();
+  return (f.id?dbUpdateSanction(f.id,row).then(function(){ return Object.assign({ id:f.id }, row); }):dbCreateSanction(row)).then(function(saved){
+    return dbListSanctions().then(function(r){ s.items=r.items||[]; s.saving=false; s.form=null; s.msg=(SANC_TYPES[row.type]||{}).label+" guardado"+(row.type==="suspension"?(": "+days+" día(s) sin goce del "+fDMY(start)+" al "+fDMY(end)+" (se descuentan solos al liquidar)."):"."); render(); return saved; });
+  }).catch(function(){ s.saving=false; s.error="No pude guardar. Si es la primera vez, corré sql_sanciones.sql en Supabase."; render(); return null; });
+}
+function sancDelete(id){
+  if(!confirm("¿Eliminar esta sanción? No se puede deshacer.")) return;
+  dbDeleteSanction(id).then(function(){ return dbListSanctions(); }).then(function(r){ state.sanc.items=r.items||[]; state.sanc.msg="Sanción eliminada."; render(); });
+}
+function sancPaperHtml(x, e){
+  var P=liqParams(), emp=P.empleador||brandName()||"";
+  return '<div style="background:#fff;color:#111827;padding:36px 40px;font-family:\'Public Sans\',Arial,sans-serif;font-size:13px;line-height:1.6">'+
+    '<div style="border-bottom:2px solid #1e3a8a;padding-bottom:10px;margin-bottom:18px;display:flex;justify-content:space-between;gap:10px"><div><div style="font-size:16px;font-weight:800;color:#1e3a8a">'+esc(emp||"Empleador")+'</div><div style="font-size:11px;color:#4b5563">'+(P.cuit?("CUIT "+esc(P.cuit)):"")+(P.domicilio?(" · "+esc(P.domicilio)):"")+'</div></div>'+
+    '<div style="text-align:right;font-size:12px;font-weight:700">'+esc(((SANC_TYPES[x.type]||{}).label||"").toUpperCase())+'<div style="font-weight:400;color:#4b5563">'+esc(empFullName(e))+(e.legajo_number?(" · leg. "+esc(e.legajo_number)):"")+'</div></div></div>'+
+    '<div style="white-space:pre-wrap">'+esc(x.text||x.facts||"")+'</div></div>';
+}
+/* PDF de la nota → Documentación (constancia) → firma del empleado. */
+function sancArchive(id){
+  var s=state.sanc, x=(s.items||[]).filter(function(z){ return z.id===id; })[0], e=x?liqEmpById(x.employee_id):null; if(!x || !e || s.archiving) return;
+  if(!(x.text||"").trim()){ s.error="Primero redactá la nota (con IA o a mano) y guardala."; render(); return; }
+  if(!(window.html2canvas && window.jspdf && window.jspdf.jsPDF)){ s.error="No pude generar el PDF en este navegador."; render(); return; }
+  if(!audioUploadConfigured()){ s.error="Para archivar hay que tener Cloudinary configurado."; render(); return; }
+  s.archiving=id; s.error=null; render();
+  var wrap=document.createElement("div"); wrap.style.cssText="position:fixed;left:-10000px;top:0;width:800px;background:#fff";
+  wrap.innerHTML=sancPaperHtml(x, e); document.body.appendChild(wrap);
+  var tl=((SANC_TYPES[x.type]||{}).label||"Sanción")+" · "+fDMY(String(x.incident_date).slice(0,10));
+  html2canvas(wrap, { scale:2, backgroundColor:"#ffffff" }).then(function(canvas){
+    var pdf=new window.jspdf.jsPDF({ unit:"pt", format:"a4" }); var pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    var iw=pw-40, ih=canvas.height*(iw/canvas.width), img=canvas.toDataURL("image/jpeg",0.92), y=20, resto=ih;
+    pdf.addImage(img,"JPEG",20,y,iw,ih); while(resto>ph-40){ resto-=(ph-40); pdf.addPage(); y=20-(ih-resto); pdf.addImage(img,"JPEG",20,y,iw,ih); }
+    try{ document.body.removeChild(wrap); }catch(err){}
+    var name="sancion_"+String(x.type)+"_"+String(x.incident_date).slice(0,10)+".pdf";
+    return uploadAudioToCloudinary(new File([pdf.output("blob")], name, { type:"application/pdf" }), "sanciones/"+name.replace(/\.pdf$/,"")+"_"+Date.now()).then(function(url){ return { url:url, name:name }; });
+  }).then(function(up){
+    var row={ employee_id:e.id, type:"constancia", title:tl, detail:"Sanción disciplinaria notificada por escrito"+(x.type==="suspension"?(" · "+x.days+" día(s) de suspensión sin goce"):"")+".", doc_date:String(x.notified_date||x.incident_date).slice(0,10), file_url:up.url, file_name:up.name, signed:false };
+    var old=x.doc_id?(state.doc.items||[]).filter(function(d){ return d.id===x.doc_id; })[0]:null;
+    return (old?dbUpdateDoc(old.id,{ title:row.title, detail:row.detail, doc_date:row.doc_date, file_url:row.file_url, file_name:row.file_name, signed:false, signed_at:null }).then(function(){ return old; }):dbCreateDoc(row));
+  }).then(function(doc){
+    return dbUpdateSanction(x.id, { doc_id:doc.id }).then(function(){ return Promise.all([dbListSanctions(), dbListDocs()]); }).then(function(r){
+      s.items=r[0].items||s.items; state.doc.items=r[1]||[];
+      var d=(state.doc.items||[]).filter(function(z){ return z.id===doc.id; })[0]; if(!d) return;
+      var token=d.sign_token||randToken(), link=buildDocLink(token), email=((e.email)||"").trim();
+      return dbUpdateDoc(d.id, { sign_token:token, signed:false, signed_at:null }).then(function(){
+        d.sign_token=token;
+        if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ s.signLink=link; s.msg="Nota archivada en Documentación. El empleado no tiene email: pasale este link para que la firme."; return; }
+        return notifyDocEmail(email, empFullName(e), link, tl).then(function(j){ if(j&&j.ok) s.msg="Nota archivada en Documentación y enviada a firmar a "+email+"."; else { s.signLink=link; s.msg="Nota archivada. "+signEmailError(j)+" Pasale este link."; } });
+      });
+    });
+  }).then(function(){ s.archiving=null; render(); })
+  .catch(function(){ try{ document.body.removeChild(wrap); }catch(err){} s.archiving=null; s.error="No pude archivar la nota."; render(); });
+}
+function sancAction(act, el){
+  var s=state.sanc;
+  if(act==="sanc-emp"){ s.emp=el.getAttribute("data-e"); s.form=null; s.msg=""; s.error=null; s.signLink=""; render(); }
+  else if(act==="sanc-emp-back"){ s.emp=null; s.form=null; s.msg=""; s.error=null; render(); }
+  else if(act==="sanc-new") sancNew();
+  else if(act==="sanc-edit") sancEdit(el.getAttribute("data-id"));
+  else if(act==="sanc-cancel"){ s.form=null; render(); }
+  else if(act==="sanc-draft") sancDraft();
+  else if(act==="sanc-save") sancSave();
+  else if(act==="sanc-del") sancDelete(el.getAttribute("data-id"));
+  else if(act==="sanc-archive") sancArchive(el.getAttribute("data-id"));
+}
+function sancBind(){
+  var f=state.sanc.form; if(!f || state.screen!=="mod2-sanciones") return;
+  document.querySelectorAll("[data-sanc]").forEach(function(el){ el.addEventListener(el.tagName==="SELECT"?"change":"input", function(e){ f[el.getAttribute("data-sanc")]=e.target.value; if(el.tagName==="SELECT") render(); }); });
+}
+Screens["mod2-sanciones"] = function(){
+  var s=state.sanc;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;color:var(--faint)">'+ic('alert',20)+'<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">Sanciones disciplinarias</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 16px">Llamados de atención, apercibimientos y suspensiones con sus hechos. La IA redacta la nota, se archiva en Documentación y el empleado la firma. Las suspensiones se descuentan solas al liquidar el sueldo.</p>';
+  if(s.msg) html += Note("ok", esc(s.msg));
+  if(s.error) html += Note("err", esc(s.error));
+  if(s.noTable) html += Note("warn","Falta crear la tabla: corré <b>sql_sanciones.sql</b> en Supabase.");
+  if(s.loading || s.items===null){ return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Cargando…</p></div>'; }
+  var emps=moduleEmployees();
+  if(!s.emp){
+    if(!emps.length) return html+Note("info","No hay empleados activos. Cargalos en «Legajo del empleado».");
+    return html+empPicker(emps, "sanc-emp", function(e){ var n=sancEmpItems(e.id).length; return n?('<span style="color:var(--amber);font-weight:700">'+n+' sanción'+(n===1?'':'es')+'</span>'):"Ver"; });
+  }
+  var e=liqEmpById(s.emp); if(!e) return html+Note("err","No encontré a este empleado.");
+  var y=(todayISO()||"").slice(0,4), used=sancSuspDays(e.id, y);
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" data-action="sanc-emp-back">'+ic('back',14)+' Empleados</button><span style="font-weight:800;color:var(--ink);font-size:15px">'+esc(empFullName(e))+(e.legajo_number?(' · leg. '+esc(e.legajo_number)):'')+'</span><span class="badge" style="color:'+(used>=30?'var(--brick)':'var(--muted)')+'">Suspensión '+y+': '+used+' de 30 días</span></div>';
+  if(s.signLink) html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><input readonly value="'+esc(s.signLink)+'" onclick="this.select()" style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:7px 10px;color:var(--ink);font-size:12px;font-family:inherit"><button type="button" class="btn btn-ghost btn-sm" data-action="emp-copy-signlink" data-link="'+esc(s.signLink)+'">'+ic('copy',13)+' Copiar link</button></div>';
+  var f=s.form;
+  if(!f){ html += '<button class="btn btn-primary btn-sm" data-action="sanc-new" style="margin-bottom:14px">'+ic('plus',14)+' Nueva sanción</button>'; }
+  else {
+    var inp=function(k,label,v,t){ return '<label class="field"><span class="field-label">'+label+'</span><div class="input-row"><input data-sanc="'+k+'" type="'+(t||'text')+'" value="'+esc(v||'')+'"></div></label>'; };
+    html += '<div class="card" style="margin-bottom:14px"><h3 style="font-size:13.5px;font-weight:600;color:var(--ink);margin:0 0 12px">'+(f.id?'Editar sanción':'Nueva sanción')+'</h3><div style="display:grid;gap:12px">'+
+      '<label class="field"><span class="field-label">Tipo</span><select class="bare" data-sanc="type">'+Object.keys(SANC_TYPES).map(function(k){ return '<option value="'+k+'"'+(f.type===k?' selected':'')+'>'+esc(SANC_TYPES[k].label)+'</option>'; }).join('')+'</select></label>'+
+      '<div class="grid2" style="gap:12px">'+inp("incident_date","Fecha del hecho",f.incident_date,"date")+inp("notified_date","Fecha de notificación",f.notified_date,"date")+'</div>'+
+      (f.type==="suspension"?('<div class="grid2" style="gap:12px">'+inp("days","Días de suspensión (sin goce)",f.days,"number")+inp("start_date","Desde",f.start_date,"date")+'</div><p style="font-size:12px;color:var(--muted);margin:0">'+ic('info',12)+' Máximo 30 días en el año (art. 220 LCT). Este año ya tiene '+used+'. Se descuentan solos en Liquidación.</p>'):'')+
+      '<label class="field"><span class="field-label">Hechos (qué pasó, cuándo y dónde)</span><div class="input-row" style="align-items:flex-start"><textarea data-sanc="facts" rows="3" placeholder="Ej: El 12/09 llegó 2 horas tarde sin aviso y no respondió los llamados del supervisor.">'+esc(f.facts||"")+'</textarea></div></label>'+
+      '<div><button class="btn btn-teal btn-sm" data-action="sanc-draft"'+(f.drafting?' disabled':'')+'>'+(f.drafting?(ic('loader',13,'spin')+' Redactando…'):(ic('sparkle',13)+' Redactar la nota con IA'))+'</button></div>'+
+      '<label class="field"><span class="field-label">Nota para notificar (podés editarla)</span><div class="input-row" style="align-items:flex-start"><textarea data-sanc="text" rows="12" placeholder="Tocá «Redactar la nota con IA» o escribila acá.">'+esc(f.text||"")+'</textarea></div></label>'+
+      '<div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" data-action="sanc-save"'+(s.saving?' disabled':'')+'>'+(s.saving?(ic('loader',13,'spin')+' Guardando…'):'Guardar')+'</button><button class="btn btn-ghost btn-sm" data-action="sanc-cancel">Cancelar</button></div>'+
+    '</div></div>';
+  }
+  var items=sancEmpItems(e.id);
+  if(!items.length) return html+'<p style="font-size:13px;color:var(--muted)">Sin sanciones registradas.</p>';
+  html += '<div style="display:grid;gap:8px">'+items.map(function(x){
+    var t=SANC_TYPES[x.type]||{ label:x.type, color:"var(--muted)" };
+    var d=x.doc_id?(state.doc.items||[]).filter(function(z){ return z.id===x.doc_id; })[0]:null;
+    var st=d?(d.signed?'<span class="badge" style="color:var(--green)">'+ic('check',11)+' Firmada</span>':'<span class="badge" style="color:var(--amber)">'+ic('clock',11)+' Pendiente de firma</span>'):'<span class="badge" style="color:var(--muted)">Sin notificar</span>';
+    return '<div style="padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-left:3px solid '+t.color+';border-radius:var(--r)">'+
+      '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><b style="font-size:13px;color:var(--ink)">'+esc(t.label)+'</b> <span style="font-size:12px;color:var(--muted)">· hecho '+esc(fDMY(String(x.incident_date).slice(0,10)))+(x.type==="suspension"?(' · '+x.days+' día(s) del '+esc(fDMY(String(x.start_date).slice(0,10)))+' al '+esc(fDMY(String(x.end_date).slice(0,10)))):'')+'</span></div>'+st+'</div>'+
+      '<p style="margin:6px 0 0;font-size:12.5px;color:var(--muted);white-space:pre-wrap">'+esc(String(x.facts||"").slice(0,300))+'</p>'+
+      '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">'+
+        '<button class="btn btn-teal btn-sm" data-action="sanc-archive" data-id="'+esc(x.id)+'"'+(s.archiving?' disabled':'')+'>'+(s.archiving===x.id?(ic('loader',13,'spin')+' Archivando…'):(ic('send',13)+' '+(d?'Reenviar a firmar':'Archivar y enviar a firmar')))+'</button>'+
+        '<button class="btn btn-ghost btn-sm" data-action="sanc-edit" data-id="'+esc(x.id)+'">Editar</button>'+
+        (d&&d.file_url?('<a class="btn btn-ghost btn-sm" href="'+esc(d.file_url)+'" target="_blank" rel="noopener">'+ic('file',13)+' Ver PDF</a>'):'')+
+        '<button class="dl-audio" data-action="sanc-del" data-id="'+esc(x.id)+'" style="background:none;border:none;color:var(--brick);cursor:pointer;font-size:11px;margin-left:auto">'+ic('trash',12)+' eliminar</button></div>'+
+    '</div>';
+  }).join('')+'</div>';
+  return html;
+};
+
+/* ===================== MÓDULO 2 · 14 · ASISTENTE DE RR. HH. CON IA ===================== */
+/* Responde preguntas con los datos de la app (legajos, licencias, ausencias, liquidaciones,
+   sanciones, vencimientos) y la ley laboral argentina. No guarda la conversación. */
+function goAsistenteRH(){
+  var a=state.rhai; state.error=null; a.error=null; state.screen="mod2-asistente"; render();
+  if(!a.loaded && !a.loading) rhaiLoad();
+}
+function rhaiLoad(){
+  var a=state.rhai;
+  if(!(supaConfigured() && isLoggedIn())){ a.loaded=true; render(); return; }
+  a.loading=true; render();
+  var nada=function(){ return []; };
+  Promise.all([ dbListEmployees().catch(nada), dbListLeaves().catch(nada), dbListPayrolls().catch(function(){ return { items:[] }; }), dbListAttendance().catch(nada), dbListAbsenceNotes().catch(nada),
+    dbListSanctions().catch(function(){ return { items:[] }; }), dbListDocs().catch(nada), dbListTraining().catch(nada), dbListHealth().catch(nada) ])
+    .then(function(r){
+      state.emp.items=r[0]||[]; state.lic.items=r[1]||[]; state.liq.items=r[2].items||[]; state.asist.items=r[3]||[]; state.asist.absNotes=r[4]||[];
+      state.sanc.items=r[5].items||[]; state.doc.items=r[6]||[]; state.cap.items=r[7]||[]; state.hs.items=r[8]||[];
+      a.loading=false; a.loaded=true; render();
+    }).catch(function(){ a.loading=false; a.loaded=true; render(); });
+}
+/* Resumen compacto de los datos para el modelo. */
+function rhaiContext(){
+  var hoy=new Date(), y=hoy.getFullYear(), mk=liqMonthNow(), mkPrev=liqAddMonths(mk,-1);
+  var P=liqParams(), lines=[];
+  var ctlNow={}, ctlPrev={};
+  try{ asistMonthControl(mk).forEach(function(x){ if(x.emp) ctlNow[x.emp.id]=x; }); asistMonthControl(mkPrev).forEach(function(x){ if(x.emp) ctlPrev[x.emp.id]=x; }); }catch(e){}
+  var fich=function(id, m){ return (state.asist.items||[]).some(function(p){ return p.employee_id===id && String(tsDayKey(p.punched_at)).slice(0,7)===m; }); };
+  var aus=function(c, id, m){ if(!c || !fich(id,m)) return "sin fichadas"; var nj=c.absent.filter(function(x){ return !x.note; }).length, j=c.absent.length-nj; return nj+" sin justificar, "+j+" justificadas, "+c.late.length+" tardanzas, horas extra "+fmtMinDur(c.extra.reduce(function(s,x){ return s+(x.min||0); },0)); };
+  (state.emp.items||[]).forEach(function(e){
+    var hire=repHireDate(e), ant=hire?antigText(hire, hoy):"s/d";
+    var bal=null; try{ bal=licVacBalance(e, y); }catch(x){}
+    var lv={}; (state.lic.items||[]).forEach(function(l){ if(l.employee_id!==e.id || String(l.start_date).slice(0,4)!==String(y)) return; var k=l.type+(l.status!=="aprobada"?("("+l.status+")"):""); lv[k]=(lv[k]||0)+(parseInt(l.days,10)||leaveDays(l.start_date,l.end_date)); });
+    var pr=liqEmpPayrolls(e.id).slice(0,3).map(function(p){ return liqPeriodLabel(p.period,p.kind)+": rem $"+liqMoney(p.gross_rem)+", neto $"+liqMoney(p.net)+(p.employer_cost?(", costo $"+liqMoney(p.employer_cost)):""); });
+    var sc=sancEmpItems(e.id).map(function(x){ return ((SANC_TYPES[x.type]||{}).label||x.type)+" "+String(x.incident_date).slice(0,10)+(x.days?(" ("+x.days+"d)"):""); });
+    var venc=[].concat(state.doc.items||[], state.cap.items||[], state.hs.items||[]).filter(function(t){ return t.employee_id===e.id && t.expiry_date; }).map(function(t){ return (t.title||t.type)+" vence "+String(t.expiry_date).slice(0,10); });
+    lines.push("- "+empFullName(e)+(e.legajo_number?(" (leg. "+e.legajo_number+")"):"")+" | "+(e.status||"activo")+" | puesto: "+(e.position||"s/d")+" | cat.: "+(e.category||"s/d")+" | convenio: "+(e.collective_agreement||"s/d")+" | contrato: "+(e.contract_type||"s/d")+
+      " | ingreso: "+(e.hire_date?String(e.hire_date).slice(0,10):"s/d")+" (antigüedad "+ant+")"+(e.termination_date?(" | egreso "+String(e.termination_date).slice(0,10)+" "+(e.termination_reason||"")):"")+
+      " | salario legajo: "+(e.salary||"s/d")+(e.birth_date?(" | nacimiento "+String(e.birth_date).slice(0,10)):"")+
+      (bal?(" | vacaciones "+y+": corresponden "+bal.entitlement+", gozadas "+bal.used+", disponibles "+bal.avail):"")+
+      (Object.keys(lv).length?(" | licencias "+y+": "+Object.keys(lv).map(function(k){ return k+" "+lv[k]+"d"; }).join(", ")):"")+
+      " | asistencia "+mk+": "+aus(ctlNow[e.id], e.id, mk)+" | asistencia "+mkPrev+": "+aus(ctlPrev[e.id], e.id, mkPrev)+
+      (pr.length?(" | liquidaciones: "+pr.join("; ")):"")+(sc.length?(" | sanciones: "+sc.join("; ")):"")+(venc.length?(" | vencimientos: "+venc.slice(0,4).join("; ")):""));
+  });
+  return "Empresa: "+(P.empleador||brandName()||"s/d")+". Hoy: "+fDMY(todayISO()||"")+". Parámetros de liquidación: SMVM $"+liqMoney(liqNum(P.smvm))+", valor hora = fija ÷ "+P.divisor+", aportes "+P.jub+"% + "+P.pami+"% + "+P.os+"%, contribuciones "+P.contribPct+"%.\n"+
+    "EMPLEADOS ("+(state.emp.items||[]).length+"):\n"+lines.join("\n");
+}
+function rhaiAsk(q){
+  var a=state.rhai; q=String(q||"").trim(); if(!q || a.asking) return;
+  a.msgs=a.msgs||[]; a.msgs.push({ role:"user", text:q }); a.draft=""; a.asking=true; a.error=null; render();
+  var ctx=rhaiContext(); if(ctx.length>15000) ctx=ctx.slice(0,15000)+"\n[… datos recortados]";
+  var hist=a.msgs.slice(-7,-1).map(function(m){ return (m.role==="user"?"RR. HH.: ":"Asistente: ")+String(m.text).slice(0,1200); }).join("\n");
+  var prompt="Sos el asistente de RR. HH. de TalentIA, experto en liquidación de sueldos y en la Ley de Contrato de Trabajo argentina (Ley 20.744), convenios colectivos y la práctica de RR. HH. en Argentina. "+
+    "Respondé en español rioplatense, claro y concreto. Cuando la respuesta sale de los datos, usá los números de abajo y mostrá la cuenta; cuando sale de la ley, citá el artículo. "+
+    "Para cálculos usá estos criterios: mes comercial de 30 días, valor día = remuneración fija ÷ 30, valor hora = fija ÷ 200, vacaciones y licencias especiales ÷ 25, SAC = 50 % de la mayor remuneración del semestre proporcional al tiempo trabajado, aportes 11 % + 3 % + 3 %. "+
+    "Si un dato no está, decilo y explicá cómo sacarlo en la app; no inventes. No des nombres de otras personas que no estén en los datos. Si la consulta es delicada (despidos, sanciones), recomendá validar con un abogado laboralista.\n\n"+
+    "=== DATOS DE LA APP ===\n"+ctx+"\n\n"+(hist?("=== CONVERSACIÓN PREVIA ===\n"+hist+"\n\n"):"")+"=== PREGUNTA ===\n"+q+"\n\nEn «texto» podés usar viñetas con '- '.";
+  rhAiText(prompt).then(function(t){
+      a.asking=false; a.msgs.push({ role:"ai", text:String(t) });
+      render(); var box=document.getElementById("rhai-log"); if(box) box.scrollTop=box.scrollHeight;
+    }).catch(function(e){ a.asking=false; var m=e&&e.message; a.error=(m==="no_key")?"Falta configurar la clave de IA (GEMINI_API_KEY) en Vercel.":(m==="rate_limited")?"Demasiadas consultas seguidas: esperá unos minutos.":"La IA está saturada en este momento. Probá de nuevo en un rato."; render(); });
+}
+function rhaiAction(act, el){
+  var a=state.rhai;
+  if(act==="rhai-send") rhaiAsk(a.draft);
+  else if(act==="rhai-q") rhaiAsk(el.getAttribute("data-q"));
+  else if(act==="rhai-clear"){ a.msgs=[]; a.error=null; render(); }
+  else if(act==="rhai-reload"){ a.loaded=false; rhaiLoad(); }
+}
+function rhaiBind(){
+  var el=document.getElementById("f_rhai"); if(!el) return;
+  el.addEventListener("input", function(e){ state.rhai.draft=e.target.value; });
+  el.addEventListener("keydown", function(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); rhaiAsk(state.rhai.draft); } });
+  var box=document.getElementById("rhai-log"); if(box) box.scrollTop=box.scrollHeight;
+}
+function rhaiFmt(t){
+  return esc(t).replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").split("\n").map(function(l){ return /^\s*[-•*]\s+/.test(l)?('<div style="padding-left:14px;text-indent:-10px">• '+l.replace(/^\s*[-•*]\s+/,"")+'</div>'):(l.trim()?('<div>'+l+'</div>'):'<div style="height:6px"></div>'); }).join("");
+}
+Screens["mod2-asistente"] = function(){
+  var a=state.rhai;
+  var html=Header()+backlink("go-module-admin-hr","Volver a Administración");
+  html += '<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;color:var(--faint)">'+ic('sparkle',20)+'<h2 style="font-size:19px;font-weight:600;color:var(--ink);letter-spacing:-.02em">Asistente de RR. HH.</h2></div>';
+  html += '<p style="font-size:13px;color:var(--muted);margin:6px 0 14px">Preguntale sobre tu personal y la ley laboral. Responde con los datos de TalentIA (legajos, licencias, asistencia, liquidaciones, sanciones y vencimientos) y cita la LCT. Revisá siempre las cuentas antes de usarlas.</p>';
+  if(a.loading || !a.loaded) return html+'<div class="center-block">'+ic('loader',26,'spin')+'<p>Leyendo los datos del personal…</p></div>';
+  var msgs=a.msgs||[];
+  var sug=["¿Cuánto le corresponde de SAC a cada empleado este semestre?","¿Quién faltó más sin justificar este mes y el anterior?","¿Cuántos días de vacaciones le quedan a cada uno?","¿Qué dice la LCT sobre el preaviso y cuánto sería para cada empleado?","¿Qué vencimientos tengo en los próximos 30 días?","¿Cuál es el costo laboral total del último mes liquidado?"];
+  html += '<div class="card" style="padding:0;overflow:hidden">'+
+    '<div id="rhai-log" style="max-height:56vh;min-height:220px;overflow-y:auto;padding:16px;display:grid;gap:12px;align-content:start">'+
+    (msgs.length?msgs.map(function(m){ return m.role==="user"
+        ? '<div style="justify-self:end;max-width:85%;background:var(--teal);color:#fff;border-radius:14px 14px 4px 14px;padding:9px 13px;font-size:13.5px;white-space:pre-wrap">'+esc(m.text)+'</div>'
+        : '<div style="justify-self:start;max-width:92%;background:var(--surface-2);color:var(--ink);border-radius:14px 14px 14px 4px;padding:10px 14px;font-size:13.5px;line-height:1.55">'+rhaiFmt(m.text)+'</div>'; }).join('')
+      : ('<div style="color:var(--muted);font-size:13px">Probá con alguna de estas:</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+sug.map(function(q){ return '<button class="btn btn-ghost btn-sm" data-action="rhai-q" data-q="'+esc(q)+'" style="text-align:left">'+esc(q)+'</button>'; }).join('')+'</div>'))+
+    (a.asking?('<div style="justify-self:start;color:var(--muted);font-size:13px">'+ic('loader',13,'spin')+' Pensando…</div>'):'')+
+    '</div>'+
+    (a.error?('<div style="padding:0 16px">'+Note("err", esc(a.error))+'</div>'):'')+
+    '<div style="display:flex;gap:8px;align-items:flex-end;padding:12px;border-top:1px solid var(--border)"><div class="input-row" style="flex:1;align-items:flex-start"><textarea id="f_rhai" rows="2" placeholder="Escribí tu pregunta… (Enter para enviar)">'+esc(a.draft||"")+'</textarea></div>'+
+    '<button class="btn btn-primary" data-action="rhai-send"'+(a.asking?' disabled':'')+'>'+ic('send',15)+'</button></div></div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+(msgs.length?'<button class="btn btn-ghost btn-sm" data-action="rhai-clear">'+ic('trash',13)+' Nueva conversación</button>':'')+'<button class="btn btn-ghost btn-sm" data-action="rhai-reload">'+ic('rotate',13)+' Actualizar datos</button><span style="font-size:11.5px;color:var(--faint);align-self:center">La conversación no se guarda.</span></div>';
+  return html;
+};
+
+/* ===================== RECLUTAMIENTO → LEGAJO: PASAR A EMPLEADO ===================== */
+/* Desde la entrevista, el candidato elegido pasa al Legajo con sus datos y su CV;
+   RR. HH. completa DNI, CUIL y demás y al guardar sigue el circuito normal (firma del legajo). */
+function hireSplitName(n){ var p=String(n||"").trim().split(/\s+/); if(p.length<2) return { first:p[0]||"", last:"" }; return { first:p.slice(0, p.length>3?2:1).join(" "), last:p.slice(p.length>3?2:1).join(" ") }; }
+function hireFromInterview(){
+  var x=state.dash.detail; if(!x) return;
+  var nm=hireSplitName(x.candidate_name);
+  var f=emptyEmpForm();
+  f.first_name=nm.first; f.last_name=nm.last; f.email=(x.candidate_email||"").trim(); f.position=x.position||"";
+  f.hire_date=todayISO()||""; f.contract_type="Período de prueba"; f.status="activo";
+  f.notes="Ingresó desde Reclutamiento: entrevista del "+(x.completed_at?fDMY(String(x.completed_at).slice(0,10)):"")+(typeof x.score==="number"?(" · puntaje "+x.score+"/10"):"")+(x.recommendation?(" · "+x.recommendation):"")+".";
+  var cvUrl=x.cv_url||"";
+  if(!cvUrl){ var cv=(state.cvbank.cvs||[]).filter(function(c){ return c.candidate_email && x.candidate_email && String(c.candidate_email).toLowerCase()===String(x.candidate_email).toLowerCase() && c.cv_url; })[0]; if(cv) cvUrl=cv.cv_url; }
+  if(cvUrl) f.documents=[{ label:"CV", filename:"CV de "+(x.candidate_name||"candidato"), url:cvUrl }];
+  f.fromRecruit=true;
+  state.empform=f; state.screen="emp-form";
+  if(state.emp.items===null) dbListEmployees().then(function(l){ state.emp.items=l||[]; }).catch(function(){});
+  render(); window.scrollTo(0,0);
+}
+function hireAction(act){ if(act==="hire-from-interview") hireFromInterview(); }
+(function(){
+  var orig=Screens["interview-detail"];
+  Screens["interview-detail"]=function(){
+    var h=orig(); var x=state.dash.detail;
+    if(!x || !(supaConfigured() && isLoggedIn())) return h;
+    var card='<div class="card" style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:220px"><b style="font-size:13.5px;color:var(--ink)">¿Lo elegiste?</b><p style="margin:3px 0 0;font-size:12.5px;color:var(--muted)">Pasalo a Administración de personal: se abre su legajo con nombre, email, puesto y CV cargados; completás DNI, CUIL y salario y lo guardás.</p></div>'+
+      '<button class="btn btn-primary btn-sm" data-action="hire-from-interview">'+ic('users',14)+' Pasar a empleado</button></div>';
+    var i=h.indexOf('<div class="grid2" style="margin-top:16px">');
+    return i>=0 ? (h.slice(0,i)+card+h.slice(i)) : (h+card);
+  };
+  var origEmp=Screens["emp-form"];
+  Screens["emp-form"]=function(){
+    var h=origEmp(); var f=state.empform;
+    if(f && f.fromRecruit && !f.id){ var i=h.indexOf('<div class="card"'); var note=Note("info","Viene de Reclutamiento: revisá los datos, completá DNI, CUIL, categoría, convenio y salario, y guardá el legajo."); return i>=0?(h.slice(0,i)+note+h.slice(i)):(note+h); }
+    return h;
+  };
+})();
+
 /* ===================== FICHADOR · JUSTIFICAR AUSENCIA ===================== */
 /* Desde el mismo link del fichador, el empleado saca una foto del certificado con el celular,
    la IA lee las fechas de reposo (nunca el diagnóstico) y la ausencia queda justificada en
@@ -11474,6 +11846,9 @@ function liqBuildForm(emp, mk, kind){
     if(nv.he100min) f.he100=String(liqH(nv.he100min));
     if(nv.vac) f.vacDias=String(Math.min(30,nv.vac));
     if(nv.mat){ f.sinGoceDias=String(Math.min(30,nv.mat)); f.sinGoceNota="licencia por maternidad: la asignación la paga ANSES"; }
+    var susp=0, rg=liqRange(mk, kind);
+    (state.sanc && state.sanc.items || []).forEach(function(x){ if(x.employee_id===emp.id && x.type==="suspension" && x.start_date) susp+=liqOverlapDays(x.start_date, x.end_date||x.start_date, rg.from, rg.to); });
+    if(susp){ f.sinGoceDias=String(Math.min(30, (parseInt(f.sinGoceDias,10)||0)+susp)); f.sinGoceNota=(f.sinGoceNota?(f.sinGoceNota+" · "):"")+susp+" día(s) de suspensión disciplinaria (art. 218 LCT)"; H.lic=(H.lic?(H.lic+" "):"")+"Suspensión disciplinaria en el período: "+susp+" día(s) sin goce."; }
     if(nv.licEsp){ f.licEspDias=String(nv.licEsp); f.licEspTipo=nv.licEspTipo||"otra"; }
     var pv=liqPromVariables(emp.id, mk);
     if(pv.n){ f.vacPromVar=String(pv.prom); H.vacProm="Promedio de comisiones y horas extras de "+pv.n+" liquidación"+(pv.n===1?"":"es")+" guardada"+(pv.n===1?"":"s")+" de los últimos 12 meses."; }
@@ -11510,11 +11885,12 @@ function loadLiquidacion(){
     (state.asist.items!==null?Promise.resolve(state.asist.items):dbListAttendance().catch(nada)),
     ((state.asist.absNotes&&state.asist.absNotes.length)?Promise.resolve(state.asist.absNotes):dbListAbsenceNotes().catch(nada)),
     dbListScales(),
+    (typeof dbListSanctions==="function"?dbListSanctions():Promise.resolve({ items:[] })),
     dbListDocs().catch(nada)
   ]).then(function(r){
     state.emp.items=r[0]||[]; s.items=r[1].items||[]; s.noTable=!r[1].ok;
     state.lic.items=r[2]||[]; state.asist.items=r[3]||[]; state.asist.absNotes=r[4]||[];
-    s.scales=r[5].items||[]; s.noScaleTable=!r[5].ok; state.doc.items=r[6]||state.doc.items||[];
+    s.scales=r[5].items||[]; s.noScaleTable=!r[5].ok; state.sanc.items=r[6].items||[]; state.doc.items=r[7]||state.doc.items||[];
     s.loading=false;
     if(s.pendingOpen){ var po=s.pendingOpen; s.pendingOpen=null; if(liqEmpById(po)){ liqOpen(po); return; } }
     render();
@@ -13758,6 +14134,11 @@ function bind(){
       else if (act === "go-liquidacion") goLiquidacion();
       else if (act.indexOf("m2a-") === 0) mod2AlertAction(act, el);
       else if (act.indexOf("fj-") === 0) fjAction(act, el);
+      else if (act === "go-sanciones") goSanciones();
+      else if (act === "go-asistente-rh") goAsistenteRH();
+      else if (act.indexOf("sanc-") === 0) sancAction(act, el);
+      else if (act.indexOf("rhai-") === 0) rhaiAction(act, el);
+      else if (act.indexOf("hire-") === 0) hireAction(act, el);
       else if (act.indexOf("liq-") === 0) liqAction(act, el);
       else if (act === "offb-emp"){ offbOpen(el.getAttribute("data-e")); }
       else if (act === "offb-emp-back"){ state.offb.emp=null; state.offb.form=null; state.offb.msg=""; state.offb.error=null; render(); }
@@ -14012,7 +14393,7 @@ function bind(){
   document.querySelectorAll("input[data-offbtask]").forEach(function(el){ el.addEventListener("change", function(e){ offbToggleTask(el.getAttribute("data-offbtask"), e.target.checked); }); });
   document.querySelectorAll("input[data-offbnote]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo && fo.tasks[el.getAttribute("data-offbnote")]) fo.tasks[el.getAttribute("data-offbnote")].note=e.target.value; }); });
   document.querySelectorAll("input[data-offbconcept]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo) fo.settlement[el.getAttribute("data-offbconcept")]=e.target.value; }); });
-  liqBind(); fjBind();
+  liqBind(); fjBind(); sancBind(); rhaiBind();
 
   /* elegir la empresa de la sesión */
   if ((f=document.getElementById("f_brand_name"))){
