@@ -1833,7 +1833,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v41.1-r115";
+var APP_VERSION = "v41.2-r116";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -1864,6 +1864,52 @@ function GoogleButton(label){
    SCREENS
    ================================================================ */
 var Screens = {};
+
+/* ===================== ENVÍO DE MAILS CON RESPALDO ===================== */
+/* Todos los avisos de la app pasan por /api/notify (Brevo). Si Brevo falla (por ejemplo,
+   cuenta suspendida), no se pierde el mail:
+   1) con sesión y Google conectado, sale desde el Gmail del usuario (gmail.send);
+   2) si el destinatario es el dueño de la plataforma, va por Web3Forms (llega a su casilla);
+   3) si no, Brevo como último recurso.
+   Se engancha una sola vez sobre fetch("/api/notify"), así cubre todos los envíos. */
+var MAIL_OWNER = (function(){ try{ return String((ADMIN_EMAILS && ADMIN_EMAILS[0]) || "matipealv@gmail.com").toLowerCase(); }catch(e){ return "matipealv@gmail.com"; } })();
+var __nativeFetch = (typeof window !== "undefined" && window.fetch) ? window.fetch.bind(window) : null;
+function mailJsonResponse(o){ return new Response(JSON.stringify(o), { status:200, headers:{ "Content-Type":"application/json" } }); }
+function web3formsSend(subject, message, replyTo, fromName){
+  if(!WEB3FORMS_KEY || !__nativeFetch) return Promise.resolve({ ok:false, error:"no_web3forms" });
+  var body = { access_key:WEB3FORMS_KEY, subject:String(subject || "Aviso de TalentIA").slice(0, 200), from_name:String(fromName || "TalentIA").slice(0, 120), message:String(message || "(sin contenido)").slice(0, 40000) };
+  if(replyTo && /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(String(replyTo).trim())) body.email = String(replyTo).trim();
+  return __nativeFetch("https://api.web3forms.com/submit", { method:"POST", headers:{ "Content-Type":"application/json", Accept:"application/json" }, body:JSON.stringify(body) })
+    .then(function(r){ return r.json().then(function(j){ return { ok:!!(j && j.success), via:"web3forms", detail:j && j.message }; }).catch(function(){ return { ok:r.ok, via:"web3forms" }; }); })
+    .catch(function(){ return { ok:false, error:"network" }; });
+}
+function smartNotify(b, input, init){
+  // Orden: 1) Gmail del usuario (si tiene sesión y Google conectado); 2) si el aviso es para el
+  // dueño, Web3Forms (Brevo puede responder "ok" y no entregar); 3) Brevo como último recurso.
+  var to = String(b.to || "").trim().toLowerCase();
+  var toOwner = !!to && to === MAIL_OWNER;
+  var tryGmail = false;
+  try{ tryGmail = googleConnected() && supaConfigured() && isLoggedIn(); }catch(e){}
+  var brevo = function(){ return __nativeFetch(input, init).catch(function(){ return mailJsonResponse({ ok:false, error:"network" }); }); };
+  var first = tryGmail ? gmailSend(b.to, b.subject, b.message).catch(function(){ return { ok:false }; }) : Promise.resolve({ ok:false, skipped:true });
+  return first.then(function(g){
+    if(g && g.ok) return mailJsonResponse({ ok:true, via:"gmail" });
+    if(!toOwner) return brevo();
+    return web3formsSend(b.subject, b.message, b.replyTo, b.brandName).then(function(w){ return w.ok ? mailJsonResponse({ ok:true, via:"web3forms" }) : brevo(); });
+  });
+}
+if(__nativeFetch){
+  window.fetch = function(input, init){
+    try{
+      var url = (typeof input === "string") ? input : ((input && input.url) || "");
+      if(/\/api\/notify(?:[?#]|$)/.test(url) && init && String(init.method || "").toUpperCase() === "POST" && typeof init.body === "string"){
+        var b = {}; try{ b = JSON.parse(init.body) || {}; }catch(e){}
+        return smartNotify(b, input, init);
+      }
+    }catch(e){}
+    return __nativeFetch(input, init);
+  };
+}
 
 /* ===================== PÁGINA DE PRESENTACIÓN (LANDING) ===================== */
 /* La portada que ve quien entra sin sesión. "Ingresar" lleva a la consultora y el
@@ -2197,6 +2243,14 @@ function landScrollTo(id){
   var y = el.getBoundingClientRect().top + (window.pageYOffset||0) - (id==="land-top"?0:74);
   try{ window.scrollTo({ top:Math.max(0,y), behavior:(document.hidden?"auto":"smooth") }); }catch(e){ window.scrollTo(0, y); }
 }
+function landDemoMailText(f){
+  var PL = { inicial:"Inicial", profesional:"Profesional", empresa:"Empresa" };
+  var SZ = { "1-10":"1 a 10", "11-50":"11 a 50", "51-150":"51 a 150", "151-500":"151 a 500", "500+":"Más de 500" };
+  return "Nuevo pedido de demo desde la página de TalentIA\n\n" +
+    "Nombre: " + f.name + "\nEmpresa: " + f.company + "\nEmail: " + f.email + "\nTeléfono: " + (f.phone || "—") +
+    "\nEmpleados: " + (SZ[f.employees] || "Sin indicar") + "\nPlan de interés: " + (PL[f.plan] || "Todavía no sé") +
+    "\nMensaje: " + (f.message || "—") + "\n\nRespondé este mail para escribirle directamente. También lo ves en TalentIA → Panel del dueño → Pedidos de demo.";
+}
 function landSubmit(){
   var L = landState(); if(L.sending) return;
   var f = landReadForm();
@@ -2207,18 +2261,30 @@ function landSubmit(){
   else if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(String(f.email).trim())) err = "Revisá el email: parece que le falta algo.";
   if(err){ L.error = err; render(); landScrollTo("land-form"); return; }
   L.error = ""; L.sending = true; render();
+  var done = function(j){
+    L.sending = false;
+    if(j && j.ok){ L.sent = true; L.error = ""; }
+    else L.error = (j && j.error==="rate_limited") ? "Recibimos varios pedidos seguidos desde tu conexión. Probá de nuevo en un rato." :
+                   (j && j.error==="bad_email") ? "Revisá el email: parece que le falta algo." :
+                   "No pudimos enviar el pedido. Probá de nuevo o escribinos a matipealv@gmail.com.";
+    render(); landScrollTo("land-demo");
+  };
   fetch("/api/demo", { method:"POST", headers:{ "Content-Type":"application/json" },
     body: JSON.stringify({ name:f.name, company:f.company, email:f.email, phone:f.phone, employees:f.employees, plan:f.plan, message:f.message, website:hp }) })
     .then(function(r){ return r.json().catch(function(){ return { ok:false, error:"HTTP "+r.status }; }).then(function(j){ if(r.status===429) j={ ok:false, error:"rate_limited" }; return j; }); })
     .then(function(j){
-      L.sending = false;
-      if(j && j.ok){ L.sent = true; L.error = ""; }
-      else L.error = (j && j.error==="rate_limited") ? "Recibimos varios pedidos seguidos desde tu conexión. Probá de nuevo en un rato." :
-                     (j && j.error==="bad_email") ? "Revisá el email: parece que le falta algo." :
-                     "No pudimos enviar el pedido. Probá de nuevo o escribinos a matipealv@gmail.com.";
-      render(); landScrollTo("land-demo");
+      // Si el servidor no pudo mandar el aviso por mail (o no respondió bien), lo mandamos
+      // desde acá por Web3Forms, que llega a la casilla del dueño.
+      if(hp || (j && (j.error==="rate_limited" || j.error==="bad_email" || j.error==="bad_name" || j.error==="bad_company"))) return j;
+      if(j && j.ok && j.mailed) return j;
+      return web3formsSend("Pedido de demo: " + f.company + " (" + f.name + ")", landDemoMailText(f), f.email, "TalentIA · Pedidos de demo")
+        .then(function(w){ return (j && j.ok) ? j : (w.ok ? { ok:true, mailed:true } : j); });
     })
-    .catch(function(){ L.sending=false; L.error="No pudimos conectarnos. Revisá tu conexión y probá de nuevo."; render(); });
+    .then(done)
+    .catch(function(){
+      web3formsSend("Pedido de demo: " + f.company + " (" + f.name + ")", landDemoMailText(f), f.email, "TalentIA · Pedidos de demo")
+        .then(function(w){ if(w.ok) done({ ok:true }); else { L.sending=false; L.error="No pudimos conectarnos. Revisá tu conexión y probá de nuevo."; render(); } });
+    });
 }
 function landAction(act, el){
   var L = landState();
