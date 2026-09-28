@@ -1762,7 +1762,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v40.3-r111";
+var APP_VERSION = "v40.4-r112";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -10674,6 +10674,153 @@ function repAsistencia(year){
   return out.meses?out:null;
 }
 
+/* ===================== FICHADOR · JUSTIFICAR AUSENCIA ===================== */
+/* Desde el mismo link del fichador, el empleado saca una foto del certificado con el celular,
+   la IA lee las fechas de reposo (nunca el diagnóstico) y la ausencia queda justificada en
+   Asistencia; si es reposo médico, además se crea una licencia por enfermedad pendiente. */
+var FJ_REASONS = [["enfermedad","Enfermedad (certificado médico con reposo)"],["turno","Turno o estudio médico"],["tramite","Trámite personal"],["otro","Otro motivo"]];
+function fjToday(){ return todayISO() || new Date().toISOString().slice(0,10); }
+function fjNorm(x){ return String(x||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z ]+/g," ").trim(); }
+function fjOpen(){
+  var f=state.fichador; if(!f) return;
+  try{ stopFichadorCamera(); }catch(e){}
+  f.phase="justify";
+  f.fj={ reason:"enfermedad", from:fjToday(), to:fjToday(), detail:"", fileUrl:"", fileName:"", preview:"", uploading:false, reading:false, cert:null, warn:"", error:"", sending:false, done:null };
+  render();
+}
+function fjBack(){ var f=state.fichador; if(!f) return; f.phase="form"; f.fj=null; render(); }
+/* Convierte la foto (o la 1.ª página del PDF) en un JPEG liviano. */
+function fjToJpeg(file){
+  return new Promise(function(resolve, reject){
+    var toBlob=function(canvas){ canvas.toBlob(function(b){ b?resolve({ blob:b, url:canvas.toDataURL("image/jpeg",0.85) }):reject(new Error("blob")); }, "image/jpeg", 0.85); };
+    var fit=function(w,h){ var m=1600, k=Math.min(1, m/Math.max(w,h)); return { w:Math.round(w*k), h:Math.round(h*k) }; };
+    if(/pdf/i.test(file.type||"") || /\.pdf$/i.test(file.name||"")){
+      if(!window.pdfjsLib){ reject(new Error("sin_pdfjs")); return; }
+      file.arrayBuffer().then(function(buf){ return pdfjsLib.getDocument({ data:buf }).promise; }).then(function(pdf){ return pdf.getPage(1); }).then(function(page){
+        var vp=page.getViewport({ scale:2 }); var s=fit(vp.width, vp.height); var vp2=page.getViewport({ scale:2*(s.w/vp.width) });
+        var c=document.createElement("canvas"); c.width=Math.round(vp2.width); c.height=Math.round(vp2.height);
+        return page.render({ canvasContext:c.getContext("2d"), viewport:vp2 }).promise.then(function(){ toBlob(c); });
+      }).catch(reject);
+      return;
+    }
+    var img=new Image(), u=URL.createObjectURL(file);
+    img.onload=function(){ var s=fit(img.naturalWidth, img.naturalHeight); var c=document.createElement("canvas"); c.width=s.w; c.height=s.h; var g=c.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,s.w,s.h); g.drawImage(img,0,0,s.w,s.h); URL.revokeObjectURL(u); toBlob(c); };
+    img.onerror=function(){ URL.revokeObjectURL(u); reject(new Error("img")); };
+    img.src=u;
+  });
+}
+function fjFile(file){
+  var f=state.fichador, j=f&&f.fj; if(!j || !file) return;
+  if(file.size>15*1024*1024){ j.error="El archivo es muy pesado (máx. 15 MB)."; render(); return; }
+  j.error=""; j.warn=""; j.cert=null; j.uploading=true; j.reading=true; j.fileName=file.name||"certificado.jpg"; render();
+  fjToJpeg(file).then(function(img){
+    j.preview=img.url;
+    var up=audioUploadConfigured() ? uploadAudioToCloudinary(new File([img.blob], "certificado.jpg", { type:"image/jpeg" }), "certificados/cert_"+Date.now()+"_"+Math.random().toString(36).slice(2,7)).then(function(u){ j.fileUrl=u; }).catch(function(){ j.error="No pude subir la foto; igual podés enviar la justificación."; }) : Promise.resolve();
+    up.then(function(){ j.uploading=false; render(); });
+    var b64=img.url.split(",")[1]||"";
+    return fetch("/api/analyze", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ task:"medical_cert", image:b64, mime:"image/jpeg" }) })
+      .then(function(r){ return r.json(); }).then(function(res){
+        j.reading=false;
+        if(!(res && res.ok && res.cert)){ j.warn="No pude leer el certificado automáticamente: completá las fechas a mano."; render(); return; }
+        var c=res.cert; j.cert=c;
+        var re=/^\d{4}-\d{2}-\d{2}$/;
+        if(re.test(c.reposo_desde||"")) j.from=c.reposo_desde; else if(re.test(c.fecha_emision||"")) j.from=c.fecha_emision;
+        if(re.test(c.reposo_hasta||"") && c.reposo_hasta>=j.from) j.to=c.reposo_hasta;
+        else if(Number(c.dias_reposo)>0 && re.test(j.from)){ var d=parseYMD(j.from); d.setDate(d.getDate()+Number(c.dias_reposo)-1); j.to=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+        else j.to=j.from;
+        if(c.tipo==="asistencia") j.reason="turno";
+        var warns=[];
+        if(c.es_certificado===false) warns.push("La imagen no parece un certificado médico.");
+        if(c.legible===false) warns.push("El certificado no se lee bien: revisá las fechas.");
+        var pac=fjNorm(c.paciente), nom=fjNorm((f.first||"")+" "+(f.last||""));
+        if(pac && nom && !pac.split(" ").some(function(w){ return w.length>2 && nom.indexOf(w)>=0; })) warns.push("El nombre del certificado («"+c.paciente+"») no coincide con el tuyo.");
+        if(c.observacion) warns.push(String(c.observacion));
+        j.warn=warns.join(" ");
+        var det=[c.profesional?("Dr./Dra. "+c.profesional+(c.matricula?(" (M.P. "+c.matricula+")"):"")):"", c.institucion||"", Number(c.dias_reposo)>0?(c.dias_reposo+" día(s) de reposo"):""].filter(Boolean).join(" · ");
+        if(det && !j.detail) j.detail=det;
+        render();
+      });
+  }).catch(function(){ j.uploading=false; j.reading=false; j.error="No pude procesar el archivo. Probá con otra foto."; render(); });
+}
+function fjSend(){
+  var f=state.fichador, j=f&&f.fj; if(!j || j.sending) return;
+  if(!(f.dni||"").trim()){ j.error="Cargá tu DNI (o N° de legajo)."; render(); return; }
+  if(!j.from){ j.error="Cargá desde qué día faltaste."; render(); return; }
+  if(j.to && j.to<j.from){ j.error="La fecha «hasta» es anterior a «desde»."; render(); return; }
+  if(j.uploading){ j.error="Esperá a que termine de subir la foto."; render(); return; }
+  j.sending=true; j.error=""; render();
+  fetch("/api/fichar", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ code:f.code, action:"justify", first_name:(f.first||"").trim(), last_name:(f.last||"").trim(), dni:(f.dni||"").trim(), from:j.from, to:(j.to||j.from), reason:j.reason, detail:j.detail||"", file_url:j.fileUrl||"" }) })
+    .then(function(r){ return r.json(); }).then(function(res){
+      j.sending=false;
+      if(res && res.ok){ j.done=res; render(); return; }
+      var e=res&&res.error;
+      j.error = e==="no_match" ? "No encontramos tu legajo con ese DNI. Revisalo o avisale a RR. HH." :
+        e==="bad_range" ? "El período no es válido (máximo 31 días y hasta 90 días atrás)." :
+        e==="bad_dates" ? "Revisá las fechas." : e==="rate_limited" ? "Demasiados intentos: esperá unos minutos." :
+        "No pudimos enviar la justificación. Probá de nuevo.";
+      render();
+    }).catch(function(){ j.sending=false; j.error="No pudimos conectar. Revisá tu conexión."; render(); });
+}
+function fjAction(act){
+  if(act==="fj-open") fjOpen();
+  else if(act==="fj-back") fjBack();
+  else if(act==="fj-send") fjSend();
+}
+function fjEntryHtml(){
+  return '<div style="max-width:520px;margin:14px auto 0;text-align:center"><button class="btn btn-ghost" data-action="fj-open" style="width:100%">'+ic('file',15)+' ¿Faltaste? Justificá tu ausencia con el certificado</button></div>';
+}
+function fjScreen(){
+  var f=state.fichador, j=f.fj||{};
+  var head='<div style="display:flex;align-items:center;gap:10px;padding:14px 4px 18px;max-width:520px;margin:0 auto">'+ic('file',24)+'<span style="font-weight:800;font-size:16px;color:var(--ink)">Justificar ausencia'+(f.company?(' · '+esc(f.company)):'')+'</span></div>';
+  if(j.done){
+    var d=j.done;
+    return head+'<div class="card" style="max-width:520px;margin:0 auto"><div class="center-block" style="padding:26px 12px">'+ic('check',34)+'<h2 style="font-size:20px">¡Listo!</h2><p>'+esc(d.employee_name||"")+': justificamos '+d.days+' día'+(d.days===1?'':'s')+'. RR. HH. ya lo ve en Asistencia'+(d.leave?' y tiene una licencia por enfermedad para aprobar.':'.')+'</p><button class="btn btn-ghost btn-sm" data-action="fj-back" style="margin-top:14px">'+ic('back',14)+' Volver al fichador</button></div></div>';
+  }
+  var inp=function(id, label, val, o){ o=o||{}; return '<label class="field"><span class="field-label">'+label+'</span><div class="input-row"><input id="'+id+'" '+(o.type?('type="'+o.type+'" '):'')+(o.im?('inputmode="'+o.im+'" '):'')+'placeholder="'+esc(o.ph||'')+'" value="'+esc(val||'')+'"></div></label>'; };
+  var c=j.cert;
+  var html=head+'<div class="card" style="max-width:520px;margin:0 auto"><p style="font-size:13px;color:var(--muted);margin:0 0 14px">Sacale una foto al certificado (o subí el PDF). La IA lee las fechas de reposo y la ausencia queda justificada para RR. HH. <b>No se guarda el diagnóstico.</b></p>';
+  if(j.error) html+=Note("err", esc(j.error));
+  html+='<div style="display:grid;gap:12px">'+
+    '<div class="grid2" style="gap:12px">'+inp("f_fj_first","Nombre",f.first,{ ph:"Nombre" })+inp("f_fj_last","Apellido",f.last,{ ph:"Apellido" })+'</div>'+
+    inp("f_fj_dni","N° de documento (DNI) o legajo",f.dni,{ im:"numeric", ph:"Ej: 30123456" })+
+    '<label class="field"><span class="field-label">Motivo</span><select class="bare" id="f_fj_reason">'+FJ_REASONS.map(function(o){ return '<option value="'+o[0]+'"'+(j.reason===o[0]?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select></label>'+
+    '<div class="field"><span class="field-label">Certificado o comprobante</span>'+
+      '<label style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed var(--border);border-radius:12px;padding:16px;cursor:pointer;background:var(--surface);text-align:center">'+
+        (j.preview?('<img src="'+j.preview+'" alt="Certificado" style="max-width:100%;max-height:220px;border-radius:8px">'):(ic('file',22)+'<span style="font-size:13px;color:var(--ink);font-weight:600">Sacar foto o elegir archivo</span><span style="font-size:11.5px;color:var(--muted)">Foto nítida, con buena luz y el certificado entero</span>'))+
+        '<input id="f_fj_file" type="file" accept="image/*,application/pdf" capture="environment" style="display:none"></label>'+
+      ((j.uploading||j.reading)?('<p style="font-size:12px;color:var(--teal);margin:8px 0 0">'+ic('loader',12,'spin')+' '+(j.reading?'Leyendo el certificado con IA…':'Subiendo la foto…')+'</p>'):'')+
+    '</div>'+
+    (c?('<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--ink)"><b>Leímos del certificado:</b> '+
+      esc([c.reposo_desde?("reposo desde "+fDMY(c.reposo_desde)):"", c.reposo_hasta?("hasta "+fDMY(c.reposo_hasta)):"", Number(c.dias_reposo)>0?(c.dias_reposo+" día(s)"):"", c.profesional?("Dr./Dra. "+c.profesional):"", c.institucion||""].filter(Boolean).join(" · ")||"sin datos claros")+'. Revisá las fechas antes de enviar.</div>'):'')+
+    (j.warn?Note("warn", esc(j.warn)):'')+
+    '<div class="grid2" style="gap:12px">'+inp("f_fj_from","Desde",j.from,{ type:"date" })+inp("f_fj_to","Hasta",j.to,{ type:"date" })+'</div>'+
+    '<label class="field"><span class="field-label">Detalle (opcional)</span><div class="input-row" style="align-items:flex-start"><textarea id="f_fj_detail" rows="2" placeholder="Ej: médico, centro de salud, días de reposo">'+esc(j.detail||"")+'</textarea></div></label>'+
+  '</div>'+
+  '<div style="display:flex;gap:10px;margin-top:18px"><button class="btn btn-primary btn-block" data-action="fj-send"'+((j.sending||j.uploading||j.reading)?' disabled':'')+'>'+(j.sending?(ic('loader',15,'spin')+' Enviando…'):(ic('send',15)+' Enviar justificación'))+'</button>'+
+  '<button class="btn btn-ghost" data-action="fj-back">Volver</button></div></div>';
+  return html;
+}
+function fjBind(){
+  var f=state.fichador; if(!f || state.screen!=="fichador" || f.phase!=="justify" || !f.fj) return;
+  var j=f.fj, el;
+  [["f_fj_first","first"],["f_fj_last","last"],["f_fj_dni","dni"]].forEach(function(p){ var x=document.getElementById(p[0]); if(x) x.addEventListener("input", function(e){ f[p[1]]=e.target.value; }); });
+  if((el=document.getElementById("f_fj_reason"))) el.addEventListener("change", function(e){ j.reason=e.target.value; });
+  if((el=document.getElementById("f_fj_from"))) el.addEventListener("input", function(e){ j.from=e.target.value; if(!j.to || j.to<j.from) j.to=j.from; });
+  if((el=document.getElementById("f_fj_to"))) el.addEventListener("input", function(e){ j.to=e.target.value; });
+  if((el=document.getElementById("f_fj_detail"))) el.addEventListener("input", function(e){ j.detail=e.target.value; });
+  if((el=document.getElementById("f_fj_file"))) el.addEventListener("change", function(e){ var file=e.target.files&&e.target.files[0]; if(file) fjFile(file); });
+}
+(function(){
+  var orig=Screens["fichador"];
+  Screens["fichador"]=function(){
+    var f=state.fichador;
+    if(f && f.phase==="justify" && !f.loading && !f.error) return fjScreen();
+    var h=orig();
+    if(f && !f.loading && !f.error && f.phase!=="done") h+=fjEntryHtml();
+    return h;
+  };
+})();
+
 /* ===================== MÓDULO 2 · PANEL DE ALERTAS ===================== */
 /* Junta en el panel del módulo lo que necesita atención: vencimientos (documentación,
    capacitación, salud y seguridad, beneficios), licencias por aprobar, firmas pendientes,
@@ -13610,6 +13757,7 @@ function bind(){
       else if (act === "go-offboarding") goOffboarding();
       else if (act === "go-liquidacion") goLiquidacion();
       else if (act.indexOf("m2a-") === 0) mod2AlertAction(act, el);
+      else if (act.indexOf("fj-") === 0) fjAction(act, el);
       else if (act.indexOf("liq-") === 0) liqAction(act, el);
       else if (act === "offb-emp"){ offbOpen(el.getAttribute("data-e")); }
       else if (act === "offb-emp-back"){ state.offb.emp=null; state.offb.form=null; state.offb.msg=""; state.offb.error=null; render(); }
@@ -13864,7 +14012,7 @@ function bind(){
   document.querySelectorAll("input[data-offbtask]").forEach(function(el){ el.addEventListener("change", function(e){ offbToggleTask(el.getAttribute("data-offbtask"), e.target.checked); }); });
   document.querySelectorAll("input[data-offbnote]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo && fo.tasks[el.getAttribute("data-offbnote")]) fo.tasks[el.getAttribute("data-offbnote")].note=e.target.value; }); });
   document.querySelectorAll("input[data-offbconcept]").forEach(function(el){ el.addEventListener("input", function(e){ var fo=offbForm(); if(fo) fo.settlement[el.getAttribute("data-offbconcept")]=e.target.value; }); });
-  liqBind();
+  liqBind(); fjBind();
 
   /* elegir la empresa de la sesión */
   if ((f=document.getElementById("f_brand_name"))){
@@ -14074,7 +14222,7 @@ function bind(){
   if ((f=document.getElementById("fichEntradaBtn"))) f.addEventListener("click", function(){ doFichar("entrada"); });
   if ((f=document.getElementById("fichSalidaBtn"))) f.addEventListener("click", function(){ doFichar("salida"); });
   // Al mostrar el fichador (form), arrancamos cámara y ubicación.
-  if (state.screen==="fichador" && state.fichador && state.fichador.phase!=="done" && !state.fichador.error && !state.fichador.loading){
+  if (state.screen==="fichador" && state.fichador && state.fichador.phase!=="done" && state.fichador.phase!=="justify" && !state.fichador.error && !state.fichador.loading){
     startFichadorCamera();
     if (!state.fichador.geo && !state.fichador.geoErr) requestFichadorGeo();
   } else if (state.screen!=="fichador" && rt.camStream){ stopFichadorCamera(); }
