@@ -1833,7 +1833,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v41.2-r116";
+var APP_VERSION = "v41.3-r117";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
@@ -2071,7 +2071,8 @@ var LAND_CSS = '<style id="land-css">'+
 '.land-demo{grid-template-columns:5fr 6fr;gap:48px;align-items:center}'+
 '}'+
 '@media (max-width:860px){.land-links{display:none}}'+
-'@media (max-width:560px){.land-nav-cta .land-btn-g{display:none}.land-form{grid-template-columns:1fr}.land-hero{padding-top:40px}.land-sec{padding:64px 0}}'+
+'.land-xs{display:none}'+
+'@media (max-width:560px){.land-nav .land-in-w{gap:10px;padding:0 14px}.land-logo{font-size:17px}.land-nav-cta{gap:6px}.land-nav-cta .land-btn{padding:8px 13px;font-size:13px}.land-nav-cta .land-btn svg{display:none}.land-lg{display:none}.land-xs{display:inline}.land-form{grid-template-columns:1fr}.land-hero{padding-top:40px}.land-sec{padding:64px 0}}'+
 '</style>';
 
 Screens.home = function(){
@@ -2087,7 +2088,7 @@ Screens.home = function(){
       '</div>'+
       '<div class="land-nav-cta">'+
         '<button class="land-btn land-btn-g land-btn-sm" data-action="go-recruiter">'+ic("lock",14)+' Ingresar</button>'+
-        '<button class="land-btn land-btn-p land-btn-sm" data-action="land-go" data-t="land-demo">Pedí una demo</button>'+
+        '<button class="land-btn land-btn-p land-btn-sm" data-action="land-go" data-t="land-demo"><span class="land-lg">Pedí una demo</span><span class="land-xs">Demo</span></button>'+
       '</div>'+
     '</div></nav>';
 
