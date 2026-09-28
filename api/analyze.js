@@ -341,9 +341,9 @@ async function callOneModel(model, key, parts, maxTokens, temp, thinkingOff) {
   return { ok: r.ok, status: r.status, data: data };
 }
 function modelUnavailable(res) {
-  if (res.status === 404) return true;
+  if (res.status === 404 || res.status === 503 || res.status === 429) return true; // no existe, saturado o sin cuota: probamos el siguiente modelo
   var msg = (res.data && res.data.error && res.data.error.message) || "";
-  return /no longer available|is not found|not supported|update your code/i.test(msg);
+  return /no longer available|is not found|not supported|update your code|high demand|overloaded|unavailable|try again later/i.test(msg);
 }
 async function callGemini(key, parts, maxTokens, temp) {
   var last = null;
