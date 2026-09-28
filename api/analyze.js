@@ -326,7 +326,8 @@ function mentorCvPrompt(b) {
     "En \"completar\" van los huecos que tiene que llenar la persona antes de mandarlo.";
 }
 
-var MODEL_FALLBACKS = [MODEL, "gemini-flash-latest", "gemini-2.5-flash"];
+// gemini-2.5-flash ya no está disponible para cuentas nuevas: la reemplaza gemini-3.8-flash.
+var MODEL_FALLBACKS = [MODEL, "gemini-3.8-flash", "gemini-flash-latest"];
 async function callOneModel(model, key, parts, maxTokens, temp, thinkingOff) {
   var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
   var gen = { temperature: (temp == null ? 0.5 : temp), responseMimeType: "application/json", maxOutputTokens: maxTokens || 4096 };
