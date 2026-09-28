@@ -222,6 +222,74 @@ audio{ width:100%; height:34px; }
 .followup-reason{ border-radius:var(--r); padding:10px 13px; font-size:12.5px; background:var(--purple-tint); color:var(--purple); margin-bottom:13px; border:1px solid var(--border); }
 </style>
 
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style id="theme-suave">
+/* ===== Tema «Suave» (v41): fondo gris claro, tarjetas blancas redondeadas con sombra
+   apenas visible, botones en píldora y el turquesa de la marca como único acento. ===== */
+:root, :root[data-theme]{
+  color-scheme: light;
+  --bg:#F4F6F8; --bg-2:#FFFFFF; --surface:#FFFFFF; --surface-2:#F4F6F8; --surface-solid:#FFFFFF;
+  --ink:#16202E; --muted:#5B6778; --faint:#8792A2;
+  --border:#E6EAF0; --border-soft:#EEF1F5;
+  --teal:#1AA5A0; --teal-strong:#0F766E; --teal-tint:#E0F4F3;
+  --cta-bg:#1AA5A0; --cta-fg:#FFFFFF;
+  --brick:#DC2626; --brick-tint:#FEE2E2;
+  --amber:#B45309; --amber-tint:#FEF3C7;
+  --purple:#6D5BD0; --purple-tint:#EEEBFB;
+  --blue:#2563EB; --blue-tint:#DBEAFE;
+  --green:#15803D; --green-tint:#DCFCE7;
+  --logo-deep:#16202E; --logo-teal:#1AA5A0;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.05);
+  --ring:rgba(26,165,160,.20);
+  --ch-1:#1AA5A0; --ch-pos:#15803D; --ch-neg:#DC2626; --ch-grid:#E6EAF0;
+  --r:14px; --r-lg:20px;
+}
+body{ font-family:"Manrope","Inter",ui-sans-serif,system-ui,sans-serif; background:var(--bg); letter-spacing:-.003em; }
+h1,h2,h3{ font-family:inherit; letter-spacing:-.02em; }
+.mono{ font-family:"IBM Plex Mono",ui-monospace,monospace; }
+/* Encabezado */
+.hdr{ border-bottom:none; margin-bottom:24px; padding-bottom:6px; }
+.hdr-title{ font-weight:800; color:var(--ink); }
+.hdr-sub{ color:var(--muted); }
+.hdr-home{ border-radius:999px; background:var(--surface); border:none; box-shadow:var(--shadow); color:var(--ink); padding:8px 14px; }
+.brand-word{ font-weight:800; color:var(--ink); }
+/* Superficies: tarjetas sin borde, con sombra suave */
+.card, .report-hero, .share-code, .center-block, .qa-item, .note, .transcript-box{ border:1px solid transparent; box-shadow:var(--shadow); border-radius:var(--r-lg); }
+.card{ padding:22px; }
+.note{ background:var(--surface); border-left-width:0; }
+.note-info{ background:#EEF7F7; } .note-warn{ background:#FFF8E6; } .note-err{ background:#FEF2F2; }
+.tile{ border:1px solid transparent; border-radius:var(--r-lg); box-shadow:var(--shadow); padding:20px; transition:transform .15s, box-shadow .15s; }
+.tile:hover{ border-color:transparent; transform:translateY(-2px); box-shadow:0 2px 4px rgba(16,24,40,.05), 0 14px 32px rgba(16,24,40,.08); }
+.tile span[style*="var(--teal)"]{ display:inline-flex; width:38px; height:38px; border-radius:12px; align-items:center; justify-content:center; background:var(--teal-tint); }
+/* Botones en píldora */
+.btn{ border-radius:999px; font-weight:600; padding:10px 18px; }
+.btn-sm{ padding:7px 14px; }
+.btn-primary, .btn-teal{ background:var(--cta-bg); border-color:var(--cta-bg); box-shadow:0 1px 2px rgba(15,118,110,.25); }
+.btn-primary:hover, .btn-teal:hover{ background:var(--teal-strong); border-color:var(--teal-strong); }
+.btn-ghost{ background:var(--surface); border-color:var(--border); color:var(--ink); }
+.btn-ghost:hover{ border-color:var(--faint); }
+.pill-time{ border-radius:999px; padding:7px 14px; font-weight:600; }
+.badge{ border-radius:999px; border-color:var(--border); background:var(--surface); padding:3px 10px; }
+.backlink{ color:var(--muted); }
+/* Campos */
+.input-row{ border-radius:12px; background:var(--surface); border-color:var(--border); padding:10px 13px; }
+.input-row:focus-within{ border-color:var(--teal); box-shadow:0 0 0 4px var(--ring); }
+select.bare{ border-radius:12px; background:var(--surface); }
+.check-row{ border-radius:14px; }
+/* Panel de accesos lateral: blanco, redondeado, ítem activo oscuro en píldora */
+.mod-side{ border:none !important; box-shadow:var(--shadow); border-radius:var(--r-lg) !important; padding:14px !important; }
+.mod-side > button{ border-radius:999px !important; }
+.mod-side > button[style*="font-weight:600"]{ background:var(--ink) !important; color:#fff !important; }
+.mod-side > button:not([style*="font-weight:600"]):hover{ background:var(--surface-2) !important; color:var(--ink) !important; }
+/* Tablas y listas */
+.qa-item{ border-radius:16px; }
+.progress-track{ height:6px; border-radius:999px; } .progress-fill{ border-radius:999px; }
+.rec-btn{ box-shadow:0 10px 30px rgba(26,165,160,.28); }
+.eyebrow, .report-eyebrow{ letter-spacing:.08em; color:var(--faint); }
+::selection{ background:var(--teal); color:#fff; }
+@media (max-width:860px){ .mod-side{ border-radius:999px !important; padding:6px !important; } }
+</style>
+
 <div class="wrap" id="app"></div>
 
 <script>
@@ -1764,7 +1832,7 @@ function render(){
 }
 try{ window.__voz = { get state(){ return state; }, get rt(){ return rt; }, computeInviteLink:function(){ return computeInviteLink(); }, decodePayload:decodePayload, buildResultsMessage:function(){ return buildResultsMessage(); }, evaluateLocally:evaluateLocally, transcribeAnswersWithAI:function(){ return transcribeAnswersWithAI(); }, render:render, brandMailFields:function(){ return brandMailFields(); }, effectiveShift:function(e,d){ return effectiveShift(e,d); }, asistMonthControl:function(m){ return asistMonthControl(m); }, captureFichadorPhoto:function(){ return captureFichadorPhoto(); }, startFichadorCamera:function(){ return startFichadorCamera(); }, vacationEntitlement:function(e,y){ return vacationEntitlement(e,y); }, capApplyFields:function(fx){ return capApplyFields(fx); }, hsApplyFields:function(fx){ return hsApplyFields(fx); } }; }catch(e){}
 
-var APP_VERSION = "v40.5-r113";
+var APP_VERSION = "v41.0-r114";
 function Header(){
   var candCtx = state.interviewMode === "candidate" || state.interviewMode === "mentor" || state.screen === "invite-landing" || (state.screen && state.screen.indexOf("cand-") === 0);
   var showHome = state.screen !== "home" && !candCtx;
