@@ -565,6 +565,32 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    // Certificado médico sacado con el celular: devuelve SÓLO fechas y datos del profesional.
+    // Nunca el diagnóstico (dato de salud sensible que RR. HH. no necesita para justificar).
+    if (body.task === "medical_cert") {
+      var img = String(body.image || "").replace(/^data:[^,]+,/, "");
+      var mime = /^image\/(jpeg|png|webp)$/.test(String(body.mime || "")) ? String(body.mime) : "image/jpeg";
+      if (!img || img.length > 3500000) { res.status(200).json({ ok: false, error: "bad_image" }); return; }
+      var today = new Date().toISOString().slice(0, 10);
+      var cprompt = "Sos un asistente de RR. HH. en Argentina. Te paso la foto de un certificado médico que un empleado presenta para justificar una ausencia. " +
+        "Hoy es " + today + ". Leé la imagen y devolvé SOLO un JSON con estas claves:\n" +
+        "{\"es_certificado\": true|false, \"legible\": true|false, \"paciente\": \"nombre tal como figura o vacío\", " +
+        "\"fecha_emision\": \"AAAA-MM-DD o vacío\", \"reposo_desde\": \"AAAA-MM-DD o vacío\", \"reposo_hasta\": \"AAAA-MM-DD o vacío\", " +
+        "\"dias_reposo\": número o 0, \"profesional\": \"nombre del médico o vacío\", \"matricula\": \"matrícula o vacío\", \"institucion\": \"centro de salud o vacío\", " +
+        "\"tipo\": \"reposo\" | \"asistencia\" | \"otro\", \"observacion\": \"una frase corta si algo no se lee o no cierra\"}\n" +
+        "Reglas: NO incluyas el diagnóstico, la enfermedad, síntomas ni medicación en ninguna clave. " +
+        "\"tipo\" es \"reposo\" si indica días de reposo o licencia, \"asistencia\" si sólo certifica que concurrió a una consulta ese día. " +
+        "Si indica N días de reposo desde una fecha y no dice hasta cuándo, calculá reposo_hasta = desde + N − 1. " +
+        "Si sólo hay fecha de emisión y días de reposo, tomá la fecha de emisión como inicio. Las fechas en formato argentino dd/mm/aaaa. No inventes datos que no estén.";
+      var gmc = await callGemini(key, [{ text: cprompt }, { inline_data: { mime_type: mime, data: img } }], 1024, 0.1);
+      if (!gmc.ok) { res.status(200).json({ ok: false, error: "gemini_error", detail: (gmc.data && gmc.data.error && gmc.data.error.message) || ("HTTP " + gmc.status) }); return; }
+      var pmc = parseJson(extractText(gmc.data));
+      if (!pmc || typeof pmc !== "object") { res.status(200).json({ ok: false, error: "parse_error" }); return; }
+      ["diagnostico", "diagnóstico", "enfermedad", "sintomas", "medicacion"].forEach(function (k) { delete pmc[k]; });
+      res.status(200).json({ ok: true, cert: pmc });
+      return;
+    }
+
     if (body.task === "assistant") {
       var apr = String(body.prompt || "").slice(0, 24000);
       if (!apr) { res.status(200).json({ ok: false, error: "no_prompt" }); return; }

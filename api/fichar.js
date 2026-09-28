@@ -126,6 +126,71 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    // action "justify": el empleado justifica una ausencia desde el fichador (con foto del certificado).
+    // Crea/actualiza la justificación de cada día en absence_notes y, si es reposo médico,
+    // una licencia por enfermedad PENDIENTE para que RR. HH. la apruebe.
+    if (b.action === "justify") {
+      var jfirst = String(b.first_name || "").slice(0, 120).trim();
+      var jlast = String(b.last_name || "").slice(0, 120).trim();
+      var jdni = String(b.dni || "").slice(0, 60).trim();
+      var jdig = jdni.replace(/\D/g, "");
+      if (!jdig) { res.status(200).json({ ok: false, error: "no_dni" }); return; }
+      var reDate = /^\d{4}-\d{2}-\d{2}$/;
+      var dFrom = String(b.from || ""), dTo = String(b.to || b.from || "");
+      if (!reDate.test(dFrom) || !reDate.test(dTo) || dTo < dFrom) { res.status(200).json({ ok: false, error: "bad_dates" }); return; }
+      var t0 = new Date(dFrom + "T12:00:00Z"), t1 = new Date(dTo + "T12:00:00Z");
+      var nDays = Math.round((t1 - t0) / 864e5) + 1;
+      var ageDays = Math.round((Date.now() - t0.getTime()) / 864e5);
+      if (nDays > 31 || ageDays > 90 || ageDays < -31) { res.status(200).json({ ok: false, error: "bad_range" }); return; }
+      var reason = String(b.reason || "otro");
+      var REASONS = { enfermedad: "Enfermedad con certificado médico", turno: "Turno o estudio médico", tramite: "Trámite personal", otro: "Otro motivo" };
+      if (!REASONS[reason]) reason = "otro";
+      var fileUrl = String(b.file_url || "").slice(0, 600);
+      if (fileUrl && !/^https:\/\/res\.cloudinary\.com\//.test(fileUrl)) fileUrl = "";
+      var detail = String(b.detail || "").replace(/\s+/g, " ").slice(0, 300).trim();
+
+      // Mismo criterio que la fichada: buscar por DNI y, si no, por N° de legajo.
+      var jemp = null;
+      var jr1 = await fetch(base + "/rest/v1/employees?owner=eq." + encodeURIComponent(owner) + "&select=id,first_name,last_name,status,dni,legajo_number&limit=5000", { headers: headers });
+      var jrows = await jr1.json();
+      if (Array.isArray(jrows)) {
+        for (var ji = 0; ji < jrows.length && !jemp; ji++) { var jd = String(jrows[ji].dni || "").replace(/\D/g, ""); if (jd && jd === jdig) jemp = jrows[ji]; }
+        for (var jk = 0; jk < jrows.length && !jemp; jk++) { var jl = String(jrows[jk].legajo_number || "").trim(); if (jl && (jl.toLowerCase() === jdni.toLowerCase() || jl.replace(/\D/g, "") === jdig)) jemp = jrows[jk]; }
+      }
+      if (!jemp) { res.status(200).json({ ok: false, error: "no_match" }); return; }
+
+      var noteTxt = REASONS[reason] + " · enviado por el empleado desde el fichador" + (detail ? (" · " + detail) : "") + (fileUrl ? (" · comprobante: " + fileUrl) : "");
+      noteTxt = noteTxt.slice(0, 900);
+      // Notas existentes del rango (para no duplicar: se actualizan).
+      var exR = await fetch(base + "/rest/v1/absence_notes?employee_id=eq." + encodeURIComponent(jemp.id) + "&date=gte." + dFrom + "&date=lte." + dTo + "&select=id,date,note", { headers: headers });
+      var exRows = await exR.json(); if (!Array.isArray(exRows)) exRows = [];
+      var byDate = {}; exRows.forEach(function (x) { byDate[String(x.date).slice(0, 10)] = x; });
+      var saved = 0;
+      for (var di = 0; di < nDays; di++) {
+        var dd = new Date(t0.getTime() + di * 864e5).toISOString().slice(0, 10);
+        var ex = byDate[dd];
+        var rq = ex
+          ? await fetch(base + "/rest/v1/absence_notes?id=eq." + encodeURIComponent(ex.id), { method: "PATCH", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify({ note: noteTxt }) })
+          : await fetch(base + "/rest/v1/absence_notes", { method: "POST", headers: Object.assign({}, headers, { Prefer: "return=minimal" }), body: JSON.stringify({ owner: owner, employee_id: jemp.id, date: dd, note: noteTxt }) });
+        if (rq.ok) saved++;
+      }
+      // Reposo médico: licencia por enfermedad pendiente de aprobación (si no hay otra que se superponga).
+      var leaveMade = false;
+      if (reason === "enfermedad") {
+        var lr = await fetch(base + "/rest/v1/leaves?employee_id=eq." + encodeURIComponent(jemp.id) + "&status=neq.rechazada&start_date=lte." + dTo + "&end_date=gte." + dFrom + "&select=id&limit=1", { headers: headers });
+        var lrows = await lr.json();
+        if (Array.isArray(lrows) && !lrows.length) {
+          var lv = await fetch(base + "/rest/v1/leaves", { method: "POST", headers: Object.assign({}, headers, { Prefer: "return=minimal" }),
+            body: JSON.stringify({ owner: owner, employee_id: jemp.id, type: "enfermedad", start_date: dFrom, end_date: dTo, days: nDays, status: "pendiente",
+              note: ("Enviada por el empleado con certificado médico" + (detail ? (" · " + detail) : "") + (fileUrl ? (" · " + fileUrl) : "")).slice(0, 900) }) });
+          leaveMade = lv.ok;
+        }
+      }
+      if (!saved) { res.status(200).json({ ok: false, error: "insert_failed" }); return; }
+      res.status(200).json({ ok: true, days: saved, leave: leaveMade, employee_name: ((jemp.first_name || "") + " " + (jemp.last_name || "")).trim() });
+      return;
+    }
+
     res.status(200).json({ ok: false, error: "bad_action" });
   } catch (e) {
     res.status(200).json({ ok: false, error: "exception", detail: String(e && e.message || e) });
