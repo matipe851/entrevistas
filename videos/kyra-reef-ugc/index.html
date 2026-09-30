@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="assets/vendor/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #efefed;
+      }
+      #root {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        font-family: Montserrat, sans-serif;
+        background: #efefed;
+      }
+
+      /* ---------- camera over the product photo ---------- */
+      #shake,
+      #cam {
+        position: absolute;
+        inset: 0;
+        width: 1080px;
+        height: 1920px;
+        transform-origin: 50% 60%;
+      }
+      #photo {
+        position: absolute;
+        left: -229px;
+        top: 0;
+        width: 1538px;
+        height: 1920px;
+        object-fit: cover;
+      }
+      #vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at 50% 55%, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.28) 100%);
+        pointer-events: none;
+      }
+      #flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        opacity: 0;
+      }
+
+      /* ---------- UGC chrome ---------- */
+      #rec {
+        position: absolute;
+        top: 150px;
+        left: 70px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 16px 28px 16px 18px;
+        border-radius: 60px;
+        background: rgba(15, 15, 15, 0.72);
+        color: #fff;
+        font-weight: 700;
+        font-size: 34px;
+      }
+      #rec .avatar {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: #efe6dc;
+        color: #2a2420;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: Oswald, sans-serif;
+        font-size: 18px;
+        letter-spacing: 3px;
+      }
+      #pov {
+        position: absolute;
+        top: 270px;
+        left: 70px;
+        width: 760px;
+        padding: 22px 30px;
+        border-radius: 22px;
+        background: #fff;
+        color: #111;
+        font-weight: 700;
+        font-size: 44px;
+        line-height: 1.15;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+      }
+
+      /* ---------- callout chips ---------- */
+      .chip {
+        position: absolute;
+        right: 60px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 20px 32px 20px 22px;
+        border-radius: 60px;
+        background: #111;
+        color: #fff;
+        font-weight: 900;
+        font-size: 46px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+      }
+      .chip .tick {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: #f6d86b;
+        position: relative;
+        flex: none;
+      }
+      .chip .tick::after {
+        content: "";
+        position: absolute;
+        left: 19px;
+        top: 11px;
+        width: 14px;
+        height: 26px;
+        border-right: 7px solid #111;
+        border-bottom: 7px solid #111;
+        transform: rotate(45deg);
+      }
+
+      /* ---------- TikTok-style captions ---------- */
+      .cap {
+        position: absolute;
+        left: 60px;
+        width: 960px;
+        top: 1180px;
+        text-align: center;
+        font-weight: 900;
+        font-size: 92px;
+        line-height: 1.05;
+        color: #fff;
+        text-transform: uppercase;
+        -webkit-text-stroke: 14px #000;
+        paint-order: stroke fill;
+        text-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+      }
+      .cap em {
+        font-style: normal;
+        color: #ff2a4f;
+      }
+
+      /* ---------- end card ---------- */
+      #end {
+        position: absolute;
+        inset: 0;
+        background: #141212;
+        overflow: hidden;
+      }
+      #end-photo-wrap {
+        position: absolute;
+        left: 170px;
+        top: 390px;
+        width: 740px;
+        height: 740px;
+        border-radius: 48px;
+        overflow: hidden;
+        background: #efefed;
+      }
+      #end-photo {
+        position: absolute;
+        left: -150px;
+        top: -330px;
+        width: 1100px;
+        height: auto;
+      }
+      #end-name {
+        position: absolute;
+        top: 1190px;
+        left: 0;
+        width: 1080px;
+        text-align: center;
+        font-family: Oswald, sans-serif;
+        font-weight: 700;
+        font-size: 120px;
+        letter-spacing: 4px;
+        color: #fff;
+      }
+      #end-brand {
+        position: absolute;
+        top: 1385px;
+        left: 0;
+        width: 1080px;
+        text-align: center;
+        font-family: Oswald, sans-serif;
+        font-size: 44px;
+        letter-spacing: 22px;
+        color: #efe6dc;
+      }
+      #end-sizes {
+        position: absolute;
+        top: 1475px;
+        left: 290px;
+        width: 500px;
+        padding: 20px 0;
+        border-radius: 60px;
+        text-align: center;
+        background: #f6d86b;
+        color: #111;
+        font-weight: 900;
+        font-size: 46px;
+      }
+      #end-handle {
+        position: absolute;
+        top: 1605px;
+        left: 0;
+        width: 1080px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 44px;
+        color: #fff;
+      }
+      .cap.cap-end {
+        top: 170px;
+        font-size: 80px;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="18"
+      data-width="1080"
+      data-height="1920"
+    >
+      <!-- product footage (photo with handheld camera) -->
+      <div id="stage" class="clip" data-start="0" data-duration="13.3" data-track-index="0">
+        <div id="shake">
+          <div id="cam">
+            <img id="photo" src="assets/reef.png" alt="Borcegos Reef negros de Kyra Shoes" />
+          </div>
+        </div>
+        <div id="vignette"></div>
+      </div>
+
+      <!-- UGC chrome -->
+      <div id="rec" class="clip" data-start="0" data-duration="13.3" data-track-index="1">
+        <div class="avatar">KYRA</div>
+        <span>@kyra.shoes</span>
+      </div>
+      <div id="pov" class="clip" data-start="0.2" data-duration="4.6" data-track-index="2">
+        POV: encontraste los borcegos que no te querés sacar más
+      </div>
+
+      <!-- callouts -->
+      <div id="chip1" class="chip clip" style="top: 470px" data-start="2.7" data-duration="2.2" data-track-index="3">
+        <span class="tick"></span>Súper cómodos
+      </div>
+      <div id="chip2" class="chip clip" style="top: 420px" data-start="6.4" data-duration="2.3" data-track-index="3">
+        <span class="tick"></span>Eco cuero negro
+      </div>
+      <div id="chip3" class="chip clip" style="top: 540px" data-start="7.3" data-duration="1.4" data-track-index="4">
+        <span class="tick"></span>Plataforma alta
+      </div>
+      <div id="chip4" class="chip clip" style="top: 470px" data-start="8.9" data-duration="2.1" data-track-index="3">
+        <span class="tick"></span>Todo el día
+      </div>
+      <div id="chip5" class="chip clip" style="top: 470px" data-start="11.3" data-duration="1.9" data-track-index="3">
+        <span class="tick"></span>Van con todo
+      </div>
+
+      <!-- captions -->
+      <div id="cap1" class="cap clip" data-start="0.3" data-duration="0.62" data-track-index="5">¡Chicas,</div>
+      <div id="cap2" class="cap clip" data-start="0.92" data-duration="0.91" data-track-index="5"><em>frenen todo!</em></div>
+      <div id="cap3" class="cap clip" data-start="1.83" data-duration="0.85" data-track-index="5">Encontré los borcegos</div>
+      <div id="cap4" class="cap clip" data-start="2.68" data-duration="0.57" data-track-index="5">más <em>cómodos</em></div>
+      <div id="cap5" class="cap clip" data-start="3.25" data-duration="1.67" data-track-index="5">que tuve en mi vida</div>
+      <div id="cap6" class="cap clip" data-start="4.92" data-duration="0.9" data-track-index="5">Son los <em>Reef</em></div>
+      <div id="cap7" class="cap clip" data-start="5.82" data-duration="0.6" data-track-index="5">de <em>Kyra</em></div>
+      <div id="cap8" class="cap clip" data-start="6.42" data-duration="0.9" data-track-index="5">Eco cuero negro</div>
+      <div id="cap9" class="cap clip" data-start="7.32" data-duration="1.46" data-track-index="5">y plataforma bien <em>alta</em></div>
+      <div id="cap10" class="cap clip" data-start="8.78" data-duration="1.22" data-track-index="5">Los usás <em>todo el día</em></div>
+      <div id="cap11" class="cap clip" data-start="10.0" data-duration="1.16" data-track-index="5">y ni te enterás</div>
+      <div id="cap12" class="cap clip" data-start="11.16" data-duration="1.14" data-track-index="5">Y quedan <em>re modernos</em></div>
+      <div id="cap13" class="cap clip" data-start="12.3" data-duration="1.0" data-track-index="5">con todo</div>
+
+      <!-- end card -->
+      <div id="end" class="clip" data-start="13.3" data-duration="4.7" data-track-index="6">
+        <div id="end-photo-wrap"><img id="end-photo" src="assets/reef.png" alt="" /></div>
+        <div id="end-name">BORCEGOS REEF</div>
+        <div id="end-brand">KYRA SHOES</div>
+        <div id="end-sizes">Talles 36 al 40</div>
+        <div id="end-handle">Pedilos en @kyra.shoes</div>
+      </div>
+      <div id="cap-end1" class="cap cap-end clip" data-start="13.3" data-duration="1.5" data-track-index="5">Del <em>36 al 40</em></div>
+      <div id="cap-end2" class="cap cap-end clip" data-start="14.8" data-duration="1.6" data-track-index="5">¡Corran a <em>Kyra Shoes</em>!</div>
+
+      <div id="flash" class="clip" data-start="0" data-duration="18" data-track-index="7"></div>
+
+      <audio id="vo" src="assets/vo.wav" data-start="0" data-duration="18" data-track-index="10" data-volume="1"></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // --- handheld shake: deterministic small drift, whole stage section ---
+      const shakeKeys = [];
+      for (let i = 0; i < 44; i++) {
+        shakeKeys.push({
+          x: Math.sin(i * 1.7) * 7,
+          y: Math.cos(i * 1.3) * 6,
+          rotation: Math.sin(i * 0.9) * 0.5,
+          duration: 0.3,
+          ease: "sine.inOut",
+        });
+      }
+      tl.to("#shake", { keyframes: shakeKeys }, 0);
+
+      // --- camera moves (cam scale / pan) ---
+      // hook: snap in from wide
+      tl.fromTo("#cam", { scale: 1.25, y: -120 }, { scale: 1.0, y: 0, duration: 0.5, ease: "power3.out" }, 0);
+      // "más cómodos": slow push in
+      tl.to("#cam", { scale: 1.12, duration: 3.0, ease: "sine.inOut" }, 1.8);
+      // "Reef de Kyra": punch to the upper boot / laces
+      tl.set("#cam", { scale: 1.55, x: 40, y: 120 }, 4.9);
+      tl.to("#cam", { scale: 1.65, duration: 2.4, ease: "none" }, 4.9);
+      // "plataforma bien alta": punch to the sole
+      tl.set("#cam", { scale: 1.9, x: 0, y: -760 }, 7.3);
+      tl.to("#cam", { x: -60, duration: 1.5, ease: "sine.inOut" }, 7.3);
+      // "todo el día": pull back to the full look
+      tl.set("#cam", { scale: 1.3, x: 0, y: -60 }, 8.78);
+      tl.to("#cam", { scale: 1.02, y: 0, duration: 2.2, ease: "power2.out" }, 8.78);
+      // "re modernos": whip in with a slight tilt
+      tl.set("#cam", { scale: 1.4, x: 0, y: 80, rotation: -3 }, 11.16);
+      tl.to("#cam", { scale: 1.2, rotation: 0, duration: 2.1, ease: "power2.out" }, 11.16);
+
+      // --- white flashes on each cut ---
+      tl.set("#flash", { opacity: 0 }, 0);
+      [4.9, 7.3, 8.78, 11.16, 13.3].forEach((t) => {
+        tl.fromTo("#flash", { opacity: 0.85 }, { opacity: 0, duration: 0.28, ease: "power2.out", immediateRender: false }, t);
+      });
+
+      // --- UGC chrome ---
+      tl.from("#rec", { y: -40, opacity: 0, duration: 0.4, ease: "power3.out" }, 0.1);
+      tl.from("#pov", { scale: 0.85, opacity: 0, duration: 0.35, ease: "back.out(2)", transformOrigin: "0% 50%" }, 0.2);
+      tl.to("#pov", { opacity: 0, y: -20, duration: 0.25 }, 4.55);
+
+      // --- chips pop in from the right ---
+      ["#chip1", "#chip2", "#chip3", "#chip4", "#chip5"].forEach((id) => {
+        const el = document.querySelector(id);
+        const start = parseFloat(el.dataset.start);
+        const dur = parseFloat(el.dataset.duration);
+        tl.from(id, { x: 140, opacity: 0, scale: 0.8, duration: 0.35, ease: "back.out(2.2)" }, start);
+        tl.to(id, { opacity: 0, x: 60, duration: 0.2, ease: "power2.in" }, start + dur - 0.2);
+      });
+
+      // --- captions pop ---
+      document.querySelectorAll("#root > .cap.clip").forEach((el) => {
+        const start = parseFloat(el.dataset.start);
+        tl.from(el, { scale: 0.7, duration: 0.18, ease: "back.out(3)" }, start);
+      });
+
+      // --- end card ---
+      tl.from("#end-photo-wrap", { scale: 0.8, opacity: 0, duration: 0.5, ease: "power3.out" }, 13.3);
+      tl.fromTo("#end-photo", { scale: 1.0 }, { scale: 1.08, duration: 4.7, ease: "none" }, 13.3);
+      tl.from("#end-name", { y: 50, opacity: 0, duration: 0.45, ease: "power3.out" }, 13.55);
+      tl.from("#end-brand", { opacity: 0, scale: 1.15, duration: 0.6, ease: "power2.out" }, 13.75);
+      tl.from("#end-sizes", { scale: 0.6, opacity: 0, duration: 0.4, ease: "back.out(2.5)" }, 14.0);
+      tl.from("#end-handle", { y: 30, opacity: 0, duration: 0.4, ease: "power2.out" }, 14.4);
+      tl.to("#end-sizes", { scale: 1.06, duration: 0.35, yoyo: true, repeat: 3, ease: "sine.inOut" }, 15.2);
+
+      tl.set({}, {}, 18);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
