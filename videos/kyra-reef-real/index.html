@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1080, height=1920">
+    <script src="assets/vendor/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #111;
+      }
+      #root {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        font-family: Montserrat, sans-serif;
+        background: #111;
+      }
+
+      /* ---------- footage ---------- */
+      .shot {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+      }
+      .shot video {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1080px;
+        height: 1920px;
+        object-fit: cover;
+        transform-origin: 50% 80%;
+      }
+      #product {
+        background: #efefed;
+      }
+      #photo {
+        position: absolute;
+        left: -229px;
+        top: 0;
+        width: 1538px;
+        height: 1920px;
+        object-fit: cover;
+        transform-origin: 50% 60%;
+      }
+      #flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        opacity: 0;
+      }
+
+      /* ---------- creator chip ---------- */
+      #rec {
+        position: absolute;
+        top: 150px;
+        left: 70px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 16px 28px 16px 18px;
+        border-radius: 60px;
+        background: rgba(15, 15, 15, 0.72);
+        color: #fff;
+        font-weight: 700;
+        font-size: 34px;
+      }
+      #rec .avatar {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: #efe6dc;
+        color: #2a2420;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: Oswald, sans-serif;
+        font-size: 18px;
+        letter-spacing: 3px;
+      }
+
+      /* ---------- callout chips ---------- */
+      .chip {
+        position: absolute;
+        right: 60px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 20px 32px 20px 22px;
+        border-radius: 60px;
+        background: #111;
+        color: #fff;
+        font-weight: 900;
+        font-size: 46px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+      }
+      .chip .tick {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: #f6d86b;
+        position: relative;
+        flex: none;
+      }
+      .chip .tick::after {
+        content: "";
+        position: absolute;
+        left: 19px;
+        top: 11px;
+        width: 14px;
+        height: 26px;
+        border-right: 7px solid #111;
+        border-bottom: 7px solid #111;
+        transform: rotate(45deg);
+      }
+
+      /* ---------- size bubbles ---------- */
+      #sizes {
+        position: absolute;
+        top: 300px;
+        left: 0;
+        width: 1080px;
+        display: flex;
+        justify-content: center;
+        gap: 22px;
+      }
+      #sizes .size {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        background: #fff;
+        color: #111;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 60px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+      }
+
+      /* ---------- captions ---------- */
+      .cap {
+        position: absolute;
+        left: 60px;
+        width: 960px;
+        top: 1180px;
+        text-align: center;
+        font-weight: 900;
+        font-size: 92px;
+        line-height: 1.05;
+        color: #fff;
+        text-transform: uppercase;
+        -webkit-text-stroke: 14px #000;
+        paint-order: stroke fill;
+        text-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+      }
+      .cap em {
+        font-style: normal;
+        color: #f6d86b;
+      }
+      .cap.cap-end {
+        top: 170px;
+        font-size: 84px;
+      }
+
+      /* ---------- end card ---------- */
+      #end {
+        position: absolute;
+        inset: 0;
+        background: #141212;
+        overflow: hidden;
+      }
+      #end-photo-wrap {
+        position: absolute;
+        left: 170px;
+        top: 390px;
+        width: 740px;
+        height: 740px;
+        border-radius: 48px;
+        overflow: hidden;
+        background: #efefed;
+      }
+      #end-photo {
+        position: absolute;
+        left: -150px;
+        top: -330px;
+        width: 1100px;
+        height: auto;
+      }
+      #end-name {
+        position: absolute;
+        top: 1190px;
+        left: 0;
+        width: 1080px;
+        text-align: center;
+        font-family: Oswald, sans-serif;
+        font-weight: 700;
+        font-size: 120px;
+        letter-spacing: 4px;
+        color: #fff;
+      }
+      #end-brand {
+        position: absolute;
+        top: 1385px;
+        left: 0;
+        width: 1080px;
+        text-align: center;
+        font-family: Oswald, sans-serif;
+        font-size: 44px;
+        letter-spacing: 22px;
+        color: #efe6dc;
+      }
+      #end-sizes {
+        position: absolute;
+        top: 1475px;
+        left: 290px;
+        width: 500px;
+        padding: 20px 0;
+        border-radius: 60px;
+        text-align: center;
+        background: #f6d86b;
+        color: #111;
+        font-weight: 900;
+        font-size: 46px;
+      }
+      #end-handle {
+        position: absolute;
+        top: 1605px;
+        left: 0;
+        width: 1080px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 44px;
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-wtrm" id="root" data-composition-id="main" data-start="0" data-duration="20" data-width="1080" data-height="1920">
+      <!-- scene 1: the creator in the mirror -->
+      <div data-hf-id="hf-uf8x" id="shot1" class="shot">
+        <video data-hf-id="hf-zhdc" id="v1" class="clip" data-track-index="0" src="assets/chica.mp4" data-start="0" data-duration="8" data-media-start="0" muted playsinline></video>
+      </div>
+
+      <!-- scene 2: real product -->
+      <div data-hf-id="hf-r1ad" id="product" class="shot clip" data-start="8" data-duration="4.6" data-track-index="0">
+        <img data-hf-id="hf-kxw3" id="photo" src="assets/reef.png" alt="Borcegos Reef negros de Kyra Shoes">
+      </div>
+
+      <!-- scene 3: creator reprise, punch-in on the boots -->
+      <div data-hf-id="hf-lj0t" id="shot3" class="shot">
+        <video data-hf-id="hf-skvp" id="v3" class="clip" data-track-index="0" src="assets/chica.mp4" data-start="12.6" data-duration="3" data-media-start="2" muted playsinline></video>
+      </div>
+
+      <div data-hf-id="hf-morf" id="rec" class="clip" data-start="0" data-duration="15.6" data-track-index="1">
+        <div data-hf-id="hf-umwu" class="avatar">KYRA</div>
+        <span data-hf-id="hf-hv08">@kyra.shoes</span>
+      </div>
+
+      <!-- callouts -->
+      <div data-hf-id="hf-2gk6" id="chip1" class="chip clip" style="top: 470px" data-start="3.6" data-duration="1.9" data-track-index="2">
+        <span data-hf-id="hf-coyi" class="tick"></span>Súper cómodos
+      </div>
+      <div data-hf-id="hf-eg45" id="chip2" class="chip clip" style="top: 470px" data-start="8.3" data-duration="2.0" data-track-index="2">
+        <span data-hf-id="hf-ptha" class="tick"></span>Eco cuero negro
+      </div>
+      <div data-hf-id="hf-fdn9" id="chip3" class="chip clip" style="top: 590px" data-start="9.3" data-duration="1.0" data-track-index="3">
+        <span data-hf-id="hf-q7sb" class="tick"></span>Suela tractor
+      </div>
+      <div data-hf-id="hf-x1nz" id="sizes" class="clip" data-start="12.8" data-duration="2.8" data-track-index="2">
+        <div data-hf-id="hf-9bbe" class="size">36</div>
+        <div data-hf-id="hf-8x0d" class="size">37</div>
+        <div data-hf-id="hf-evls" class="size">38</div>
+        <div data-hf-id="hf-ehar" class="size">39</div>
+        <div data-hf-id="hf-w06v" class="size">40</div>
+      </div>
+
+      <!-- captions -->
+      <div data-hf-id="hf-yv35" id="cap1" class="cap clip" data-start="0.3" data-duration="0.7" data-track-index="5">¡Chicas!</div>
+      <div data-hf-id="hf-rvbl" id="cap2" class="cap clip" data-start="1.0" data-duration="1.0" data-track-index="5">Encontré los borcegos</div>
+      <div data-hf-id="hf-3avq" id="cap3" class="cap clip" data-start="2.0" data-duration="0.95" data-track-index="5"><em data-hf-id="hf-tltm">perfectos</em></div>
+      <div data-hf-id="hf-w1ds" id="cap4" class="cap clip" data-start="2.95" data-duration="1.25" data-track-index="5">Plataforma <em data-hf-id="hf-rh08">re alta</em></div>
+      <div data-hf-id="hf-waue" id="cap5" class="cap clip" data-start="4.2" data-duration="1.4" data-track-index="5">y son <em data-hf-id="hf-k1pj">comodísimos</em></div>
+      <div data-hf-id="hf-gtoy" id="cap6" class="cap clip" data-start="5.6" data-duration="1.15" data-track-index="5">Los uso <em data-hf-id="hf-8t8q">todo el día</em></div>
+      <div data-hf-id="hf-rkrx" id="cap7" class="cap clip" data-start="6.75" data-duration="1.25" data-track-index="5">y quedan <em data-hf-id="hf-fjwv">con todo</em></div>
+      <div data-hf-id="hf-yqnb" id="cap8" class="cap clip" data-start="8.2" data-duration="1.0" data-track-index="5">Eco cuero <em data-hf-id="hf-5200">negro</em></div>
+      <div data-hf-id="hf-5zab" id="cap9" class="cap clip" data-start="9.2" data-duration="1.25" data-track-index="5">suela <em data-hf-id="hf-tmfy">tractor</em></div>
+      <div data-hf-id="hf-cavi" id="cap10" class="cap clip" data-start="10.45" data-duration="0.75" data-track-index="5">Son los <em data-hf-id="hf-5gc5">Reef</em></div>
+      <div data-hf-id="hf-6fj3" id="cap11" class="cap clip" data-start="11.2" data-duration="1.4" data-track-index="5">de <em data-hf-id="hf-ss9a">Kyra Shoes</em></div>
+      <div data-hf-id="hf-dcos" id="cap12" class="cap clip" data-start="12.8" data-duration="1.5" data-track-index="5">Del <em data-hf-id="hf-zmcp">36 al 40</em></div>
+      <div data-hf-id="hf-bxrw" id="cap13" class="cap clip" data-start="14.3" data-duration="1.3" data-track-index="5">y <em data-hf-id="hf-pajt">se agotan</em></div>
+
+      <!-- end card -->
+      <div data-hf-id="hf-79jl" id="end" class="clip" data-start="15.6" data-duration="4.4" data-track-index="6">
+        <div data-hf-id="hf-pnuc" id="end-photo-wrap"><img data-hf-id="hf-bwx9" id="end-photo" src="assets/reef.png" alt=""></div>
+        <div data-hf-id="hf-b1uc" id="end-name">BORCEGOS REEF</div>
+        <div data-hf-id="hf-boi1" id="end-brand">KYRA SHOES</div>
+        <div data-hf-id="hf-6jg0" id="end-sizes">Talles 36 al 40</div>
+        <div data-hf-id="hf-v7bx" id="end-handle">Pedilos en @kyra.shoes</div>
+      </div>
+      <div data-hf-id="hf-dm2a" id="cap14" class="cap cap-end clip" data-start="15.9" data-duration="4.1" data-track-index="5">¡Pedí <em data-hf-id="hf-dazr">los tuyos</em>!</div>
+
+      <div data-hf-id="hf-qpvd" id="flash" class="clip" data-start="0" data-duration="20" data-track-index="7"></div>
+
+      <audio data-hf-id="hf-3p3l" id="vo" src="assets/vo.wav" data-start="0" data-duration="20" data-track-index="10" data-volume="1"></audio>
+      <audio data-hf-id="hf-o78c" id="music" src="assets/music-bed.wav" data-start="0" data-duration="20" data-track-index="11" data-volume="0.16"></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // --- scene 1: gentle push-in on the creator ---
+      tl.fromTo("#v1", { scale: 1.0 }, { scale: 1.08, duration: 8, ease: "none" }, 0);
+
+      // --- scene 2: product camera moves ---
+      tl.fromTo("#photo", { scale: 1.6, x: 40, y: 120 }, { scale: 1.7, duration: 1.0, ease: "none" }, 8);
+      tl.set("#photo", { scale: 1.9, x: 0, y: -760 }, 9.2);
+      tl.to("#photo", { x: -60, duration: 1.25, ease: "sine.inOut" }, 9.2);
+      tl.set("#photo", { scale: 1.25, x: 0, y: -40 }, 10.45);
+      tl.to("#photo", { scale: 1.05, y: 0, duration: 2.15, ease: "power2.out" }, 10.45);
+
+      // --- scene 3: punch-in on the boots ---
+      tl.fromTo("#v3", { scale: 1.35 }, { scale: 1.5, duration: 3, ease: "none" }, 12.6);
+
+      // --- white flashes on cuts ---
+      tl.set("#flash", { opacity: 0 }, 0);
+      [8, 9.2, 10.45, 12.6, 15.6].forEach((t) => {
+        tl.fromTo("#flash", { opacity: 0.85 }, { opacity: 0, duration: 0.28, ease: "power2.out", immediateRender: false }, t);
+      });
+
+      tl.from("#rec", { y: -40, opacity: 0, duration: 0.4, ease: "power3.out" }, 0.1);
+
+      // --- chips ---
+      ["#chip1", "#chip2", "#chip3"].forEach((id) => {
+        const el = document.querySelector(id);
+        const start = parseFloat(el.dataset.start);
+        const dur = parseFloat(el.dataset.duration);
+        tl.from(id, { x: 140, opacity: 0, scale: 0.8, duration: 0.35, ease: "back.out(2.2)" }, start);
+        tl.to(id, { opacity: 0, x: 60, duration: 0.2, ease: "power2.in" }, start + dur - 0.2);
+      });
+
+      // --- size bubbles pop one by one ---
+      tl.from("#sizes .size", { scale: 0, duration: 0.3, ease: "back.out(2.5)", stagger: 0.12 }, 12.85);
+
+      // --- captions pop ---
+      document.querySelectorAll("#root > .cap.clip").forEach((el) => {
+        tl.from(el, { scale: 0.7, duration: 0.18, ease: "back.out(3)" }, parseFloat(el.dataset.start));
+      });
+
+      // --- end card ---
+      tl.from("#end-photo-wrap", { scale: 0.8, opacity: 0, duration: 0.5, ease: "power3.out" }, 15.6);
+      tl.fromTo("#end-photo", { scale: 1.0 }, { scale: 1.08, duration: 4.4, ease: "none" }, 15.6);
+      tl.from("#end-name", { y: 50, opacity: 0, duration: 0.45, ease: "power3.out" }, 15.85);
+      tl.from("#end-brand", { opacity: 0, scale: 1.15, duration: 0.6, ease: "power2.out" }, 16.05);
+      tl.from("#end-sizes", { scale: 0.6, opacity: 0, duration: 0.4, ease: "back.out(2.5)" }, 16.3);
+      tl.from("#end-handle", { y: 30, opacity: 0, duration: 0.4, ease: "power2.out" }, 16.7);
+      tl.to("#end-sizes", { scale: 1.06, duration: 0.35, yoyo: true, repeat: 3, ease: "sine.inOut" }, 17.4);
+
+      tl.set({}, {}, 20);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
