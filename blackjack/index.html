@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blackjack 21</title>
+<style>
+  :root{
+    --felt:#0f6b43; --felt-dark:#083822; --rail:#3b2414; --gold:#e8c35a; --ink:#f4f1e8;
+    --muted:#a9cbb8; --red:#c62828; --card:#fffdf7; --win:#7ee08a; --lose:#ff8a80; --push:#ffd666;
+    --panel:rgba(0,0,0,.24); --line:rgba(255,255,255,.12);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  html{background:var(--felt-dark)}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);min-height:100vh;
+    background:radial-gradient(ellipse at 50% 0%,var(--felt) 0%,var(--felt-dark) 80%) no-repeat}
+  button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:10px 16px;font-weight:700;
+    background:var(--gold);color:#2b2102;transition:transform .08s,opacity .15s}
+  button:active{transform:scale(.97)}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid rgba(255,255,255,.35)}
+  button.rec{box-shadow:0 0 0 3px #fff,0 0 14px 3px var(--gold)}
+
+  /* Cabecera */
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;
+    background:rgba(0,0,0,.3);border-bottom:3px solid var(--rail);flex-wrap:wrap}
+  header h1{font-size:20px;margin:0}
+  header h1 span{color:var(--gold)}
+  .mode-tag{font-size:12px;background:var(--gold);color:#2b2102;border-radius:999px;padding:3px 10px;margin-left:8px;vertical-align:middle}
+  .head-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+  /* Diseño general */
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;max-width:1280px;margin:0 auto;padding:16px}
+  @media (max-width:960px){.layout{grid-template-columns:minmax(0,1fr)}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px}
+
+  /* Resumen de saldos */
+  .summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .pill{background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--muted)}
+  .pill b{color:var(--ink);margin-left:4px}
+  .pill.me{border-color:var(--gold)}
+
+  /* Mesa */
+  .dealer{text-align:center;margin-bottom:16px}
+  .dealer .hand{justify-content:center}
+  .row-title{display:flex;justify-content:center;align-items:center;gap:8px;margin:0 0 8px;font-size:15px;flex-wrap:wrap}
+  .total{background:rgba(0,0,0,.4);padding:2px 10px;border-radius:999px;font-size:13px;font-weight:700}
+  .seats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  @media (max-width:720px){.seats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .seat{background:rgba(0,0,0,.2);border:2px solid transparent;border-radius:14px;padding:10px;min-width:0}
+  .seat.turn{border-color:var(--gold)}
+  .seat.me{background:rgba(232,195,90,.1)}
+  .seat-head{display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-bottom:6px}
+  .seat-head b{font-size:15px}
+  .seat-head small{color:var(--muted);font-size:12px}
+  .hbox{border-radius:10px;padding:6px;margin-top:6px;background:rgba(0,0,0,.15);border:2px solid transparent}
+  .hbox.active{border-color:#fff}
+  .hmeta{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+  .badge{font-weight:800;font-size:12px;border-radius:6px;padding:2px 7px;background:rgba(0,0,0,.35)}
+  .badge.win{color:var(--win)} .badge.lose{color:var(--lose)} .badge.push{color:var(--push)}
+
+  /* Cartas */
+  .hand{display:flex;min-height:84px;padding-left:2px}
+  .card{width:58px;height:82px;border-radius:7px;background:var(--card);color:#1b1b1b;position:relative;flex:none;
+    box-shadow:0 2px 6px rgba(0,0,0,.4)}
+  .card.new{animation:deal .25s ease-out}
+  .seat .card+.card{margin-left:-30px}
+  .dealer .card+.card{margin-left:-14px}
+  .card.red{color:var(--red)}
+  .card .corner{position:absolute;top:4px;left:5px;font-size:14px;line-height:1;font-weight:800;text-align:center}
+  .card .corner.b{top:auto;left:auto;bottom:4px;right:5px;transform:rotate(180deg)}
+  .card .pip{position:absolute;inset:0;display:grid;place-items:center;font-size:28px}
+  .card.back{background:repeating-linear-gradient(45deg,#7a1515 0 6px,#a83232 6px 12px);border:3px solid var(--card)}
+  @keyframes deal{from{transform:translateY(-14px) scale(.9);opacity:0}to{transform:none;opacity:1}}
+  @media (max-width:520px){.card{width:48px;height:68px}.card .pip{font-size:22px}.hand{min-height:70px}.seat .card+.card{margin-left:-26px}}
+
+  /* Controles */
+  .status{font-weight:700;font-size:16px;min-height:24px;margin:14px 0 10px;text-align:center}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .chip{width:52px;height:52px;border-radius:50%;padding:0;border:4px dashed rgba(255,255,255,.75);color:#fff;font-weight:800}
+  .c10{background:#1e88e5}.c25{background:#43a047}.c50{background:#e53935}.c100{background:#222}
+  .betbox{font-size:15px;padding:0 6px}
+  .hint{font-size:13px;color:var(--muted);text-align:center;margin:10px 0 0;line-height:1.5}
+  .hint b{color:var(--gold)}
+  label.check{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--muted);cursor:pointer}
+  kbd{font-size:11px;opacity:.7;margin-left:4px}
+
+  /* Historial */
+  aside h2{margin:0 0 10px;font-size:16px;display:flex;justify-content:space-between;align-items:center}
+  .log{list-style:none;margin:0;padding:0;max-height:70vh;overflow:auto;font-size:13px}
+  @media (max-width:960px){.log{max-height:260px}}
+  .log li{padding:6px 2px;border-bottom:1px solid var(--line);line-height:1.4}
+  .log li small{color:var(--muted);margin-right:6px}
+  .log li.win{color:var(--win)} .log li.lose{color:var(--lose)} .log li.push{color:var(--push)}
+  .log li.sys{color:var(--muted);font-style:italic}
+</style>
+</head>
+<body>
+<header>
+  <h1>♠ Black<span>jack</span> 21 <span class="mode-tag" id="modeTag"></span></h1>
+  <div class="head-actions">
+    <button class="ghost" data-a="switch-mode" id="btnMode">Cambiar modo</button>
+    <button class="ghost" data-a="reset" id="btnReset">Reiniciar</button>
+  </div>
+</header>
+
+<div class="layout">
+  <main>
+    <div class="summary" id="summary"></div>
+    <section class="panel">
+      <div class="dealer" id="dealer"></div>
+      <div class="seats" id="seats"></div>
+      <div class="status" id="status"></div>
+      <div class="controls" id="controls"></div>
+      <p class="hint" id="hint"></p>
+    </section>
+  </main>
+  <aside class="panel">
+    <h2>Historial <small id="shoeInfo" style="font-weight:400;font-size:12px;color:var(--muted)"></small></h2>
+    <ul class="log" id="log"></ul>
+  </aside>
+</div>
+
+<script>
+'use strict';
+
+/* =========================================================
+ * Configuración
+ * ======================================================= */
+const CONFIG = {
+  DECKS: 6,
+  RESHUFFLE_AT: 0.25,       // se baraja cuando queda menos de este porcentaje del sabot
+  MIN_BET: 10,
+  CHIPS: [10, 25, 50, 100],
+  HUMAN_START: 1000,
+  BOT_START: 500,
+  HOUSE_START: 10000,       // banca manejada por la computadora (modo jugador)
+  USER_BANK_START: 5000,    // banca del usuario (modo banca)
+  MAX_HANDS: 4,             // manos máximas por jugador al dividir
+  DEAL_DELAY: 200,
+  ACTION_DELAY: 650,
+  LOG_LIMIT: 200,
+  BOT_INSURANCE_RATE: 0.25,  // probabilidad de que un bot tome seguro
+  STORAGE_KEY: 'blackjack21-v1',
+};
+
+const ACTION_LABEL = {
+  hit: 'Pedir', stand: 'Plantarse', double: 'Doblar', split: 'Dividir',
+  insure: 'Tomar seguro', decline: 'Sin seguro',
+};
+
+/* =========================================================
+ * Mazo (sabot de varias barajas)
+ * ======================================================= */
+const Deck = (() => {
+  const SUITS = ['♠', '♥', '♦', '♣'];
+  const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  let shoe = [];
+  let nextId = 1;
+
+  function build() {
+    const cards = [];
+    for (let d = 0; d < CONFIG.DECKS; d++)
+      for (const s of SUITS) for (const r of RANKS) cards.push({ r, s, id: nextId++ });
+    for (let i = cards.length - 1; i > 0; i--) {   // Fisher–Yates
+      const j = Math.floor(Math.random() * (i + 1));
+      [cards[i], cards[j]] = [cards[j], cards[i]];
+    }
+    return cards;
+  }
+
+  return {
+    // Solo se llama entre rondas, para no barajar a mitad de mano.
+    reshuffleIfNeeded() {
+      if (shoe.length < CONFIG.DECKS * 52 * CONFIG.RESHUFFLE_AT) { shoe = build(); return true; }
+      return false;
+    },
+    draw() { if (!shoe.length) shoe = build(); return shoe.pop(); },
+    remaining: () => shoe.length,
+  };
+})();
+
+/* =========================================================
+ * Reglas
+ * ======================================================= */
+const Rules = {
+  cardValue(c) {
+    if (c.r === 'A') return 11;
+    if (c.r === 'J' || c.r === 'Q' || c.r === 'K') return 10;
+    return Number(c.r);
+  },
+  total(cards) {
+    let t = 0, aces = 0;
+    for (const c of cards) { t += Rules.cardValue(c); if (c.r === 'A') aces++; }
+    while (t > 21 && aces) { t -= 10; aces--; }
+    return { t, soft: aces > 0 };
+  },
+  // Blackjack natural: 21 con las dos primeras cartas y sin haber dividido.
+  isNatural(cards, fromSplit = false) {
+    return !fromSplit && cards.length === 2 && Rules.total(cards).t === 21;
+  },
+  canDouble(seat, hand) {
+    return hand.cards.length === 2 && !hand.splitAces && seat.bal >= hand.bet;
+  },
+  canSplit(seat, hand) {
+    return hand.cards.length === 2 && !hand.splitAces && seat.bal >= hand.bet &&
+      seat.hands.length < CONFIG.MAX_HANDS &&
+      Rules.cardValue(hand.cards[0]) === Rules.cardValue(hand.cards[1]);
+  },
+  dealerShouldHit: cards => Rules.total(cards).t <= 16,
+};
+
+/* =========================================================
+ * Estrategia básica (bots y sugerencias al usuario)
+ * ======================================================= */
+const Strategy = {
+  decide(cards, upCard, { canDouble, canSplit }) {
+    const u = Rules.cardValue(upCard);
+    const dbl = alt => (canDouble ? 'double' : alt);
+
+    if (canSplit) {
+      const v = Rules.cardValue(cards[0]);
+      if (v === 11 || v === 8) return 'split';
+      if (v === 9 && ((u >= 2 && u <= 6) || u === 8 || u === 9)) return 'split';
+      if (v === 7 && u <= 7) return 'split';
+      if (v === 6 && u <= 6) return 'split';
+      if (v === 4 && (u === 5 || u === 6)) return 'split';
+      if ((v === 2 || v === 3) && u <= 7) return 'split';
+    }
+
+    const { t, soft } = Rules.total(cards);
+    if (soft) {
+      if (t >= 19) return 'stand';
+      if (t === 18) return u >= 3 && u <= 6 ? dbl('stand') : u <= 8 ? 'stand' : 'hit';
+      if (t >= 15 && u >= 4 && u <= 6) return dbl('hit');
+      if (t >= 13 && u >= 5 && u <= 6) return dbl('hit');
+      return 'hit';
+    }
+    if (t >= 17) return 'stand';
+    if (t >= 13) return u <= 6 ? 'stand' : 'hit';
+    if (t === 12) return u >= 4 && u <= 6 ? 'stand' : 'hit';
+    if (t === 11) return dbl('hit');
+    if (t === 10) return u <= 9 ? dbl('hit') : 'hit';
+    if (t === 9) return u >= 3 && u <= 6 ? dbl('hit') : 'hit';
+    return 'hit';
+  },
+  botBet(bal) {
+    const opts = [10, 25, 25, 50, 50, 100].filter(v => v <= bal);
+    return opts.length ? opts[Math.floor(Math.random() * opts.length)] : bal;
+  },
+};
+
+/* =========================================================
+ * Estado
+ * ======================================================= */
+const makeSeat = (name, human, bal) => ({ name, human, bal, hands: [], insurance: 0 });
+const makeHand = (bet, fromSplit = false) =>
+  ({ cards: [], bet, fromSplit, splitAces: false, doubled: false, status: 'playing', result: null, net: 0 });
+
+const S = {
+  mode: 'player',            // 'player' | 'banca'
+  phase: 'bet',              // 'bet' | 'dealing' | 'insurance' | 'players' | 'dealer'
+  seats: [],
+  dealer: { cards: [], hidden: true },
+  humanBal: CONFIG.HUMAN_START,
+  humanBet: 25,
+  houseBank: CONFIG.HOUSE_START,
+  userBank: CONFIG.USER_BANK_START,
+  sessionStart: 0,
+  round: 0,
+  autoRule: false,
+  botBals: { player: [], banca: [] },  // saldos de los bots por modo
+  active: null,              // { seat, hand } en turno
+  prompt: null,              // { who: 'player' | 'dealer' | 'insurance', options: [...], rec }
+  status: '',
+  log: [],
+};
+
+const bankOf = () => (S.mode === 'player' ? S.houseBank : S.userBank);
+function addToBank(delta) {
+  if (S.mode === 'player') S.houseBank += delta; else S.userBank += delta;
+}
+const humanSeat = () => S.seats.find(s => s.human);
+
+/* =========================================================
+ * Guardado de saldos (localStorage, solo en este navegador)
+ * ======================================================= */
+const Storage = {
+  load() {
+    try { return JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY)); } catch { return null; }
+  },
+  save(data) {
+    try { localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data)); } catch { /* sin almacenamiento */ }
+  },
+};
+
+function persist() {
+  const me = humanSeat();
+  if (me) S.humanBal = me.bal;
+  S.botBals[S.mode] = S.seats.filter(s => !s.human).map(s => s.bal);
+  Storage.save({
+    mode: S.mode, humanBal: S.humanBal, humanBet: S.humanBet, houseBank: S.houseBank,
+    userBank: S.userBank, autoRule: S.autoRule, round: S.round, botBals: S.botBals,
+  });
+}
+
+function restore() {
+  const d = Storage.load();
+  if (!d || typeof d !== 'object') return false;
+  const num = (v, min = 0) => (typeof v === 'number' && Number.isFinite(v) && v >= min ? v : null);
+  const nums = a => (Array.isArray(a) ? a.map(v => num(v, 0) ?? 0) : []);
+  if (d.mode === 'player' || d.mode === 'banca') S.mode = d.mode;
+  S.humanBal = num(d.humanBal) ?? S.humanBal;
+  S.humanBet = num(d.humanBet) ?? S.humanBet;
+  S.houseBank = num(d.houseBank, -Infinity) ?? S.houseBank;
+  S.userBank = num(d.userBank, -Infinity) ?? S.userBank;
+  S.round = num(d.round) ?? 0;
+  S.autoRule = d.autoRule === true;
+  if (d.botBals) S.botBals = { player: nums(d.botBals.player), banca: nums(d.botBals.banca) };
+  return true;
+}
+
+function setupTable() {
+  const saved = S.botBals[S.mode] || [];
+  const bot = n => makeSeat(`Bot ${n}`, false, saved[n - 1] > 0 ? saved[n - 1] : CONFIG.BOT_START);
+  S.seats = S.mode === 'player'
+    ? [bot(1), bot(2), makeSeat('Vos', true, S.humanBal), bot(3)]
+    : [bot(1), bot(2), bot(3), bot(4)];
+  S.dealer = { cards: [], hidden: true };
+  S.phase = 'bet';
+  S.active = null;
+  S.prompt = null;
+  S.sessionStart = bankOf();
+  S.status = S.mode === 'player'
+    ? 'Elegí tu apuesta con las fichas y repartí.'
+    : 'Sos la banca. Repartí cuando quieras: los bots apuestan solos.';
+}
+
+/* =========================================================
+ * Historial
+ * ======================================================= */
+function log(text, kind = '') {
+  S.log.unshift({ round: S.round, text, kind });
+  if (S.log.length > CONFIG.LOG_LIMIT) S.log.pop();
+}
+
+/* =========================================================
+ * Utilidades
+ * ======================================================= */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const money = n => '$' + (Number.isInteger(n) ? n.toLocaleString('es-AR') : n.toFixed(1));
+const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '±') + money(Math.abs(n));
+const isRedSuit = s => s === '♥' || s === '♦';
+
+// Puente entre el bucle del juego (async) y los botones del usuario.
+let pendingAnswer = null;
+function askUser(prompt) {
+  S.prompt = prompt;
+  render();
+  return new Promise(resolve => { pendingAnswer = resolve; });
+}
+function answer(action) {
+  if (!pendingAnswer || !S.prompt || !S.prompt.options.includes(action)) return;
+  const resolve = pendingAnswer;
+  pendingAnswer = null;
+  S.prompt = null;
+  resolve(action);
+}
+
+/* =========================================================
+ * Flujo de la ronda
+ * ======================================================= */
+async function dealCard(cards) {
+  cards.push(Deck.draw());
+  render();
+  await sleep(CONFIG.DEAL_DELAY);
+}
+
+async function playRound() {
+  if (S.phase !== 'bet') return;
+  const me = humanSeat();
+  if (me && (S.humanBet < CONFIG.MIN_BET || S.humanBet > me.bal)) return;
+  if (bankOf() <= 0) return;
+
+  S.round++;
+  S.phase = 'dealing';
+  shownCards.clear();
+  S.status = 'Repartiendo…';
+  log(`— Ronda ${S.round} —`, 'sys');
+  if (Deck.reshuffleIfNeeded()) log('Se barajó el sabot.', 'sys');
+
+  // 1. Apuestas
+  for (const seat of S.seats) {
+    if (!seat.human && seat.bal < CONFIG.MIN_BET) {
+      seat.bal = CONFIG.BOT_START;
+      log(`${seat.name} se quedó sin fichas y recompró ${money(CONFIG.BOT_START)}.`, 'sys');
+    }
+    const bet = seat.human ? S.humanBet : Strategy.botBet(seat.bal);
+    seat.bal -= bet;
+    seat.hands = [makeHand(bet)];
+    seat.insurance = 0;
+    log(`${seat.name} apuesta ${money(bet)}.`);
+  }
+
+  // 2. Reparto: dos vueltas, la segunda carta de la banca queda oculta
+  S.dealer = { cards: [], hidden: true };
+  for (let k = 0; k < 2; k++) {
+    for (const seat of S.seats) await dealCard(seat.hands[0].cards);
+    await dealCard(S.dealer.cards);
+  }
+
+  // Seguro: si la banca muestra un As, cada jugador puede asegurar la mitad de su apuesta.
+  if (S.dealer.cards[0].r === 'A') await offerInsurance();
+
+  // La banca revisa si tiene Blackjack (solo puede tenerlo con un As o un 10 visible)
+  if (Rules.isNatural(S.dealer.cards)) {
+    S.dealer.hidden = false;
+    log('La banca tiene Blackjack.', 'lose');
+    return finishRound();
+  }
+
+  // 3. Turno de los jugadores
+  S.phase = 'players';
+  for (const seat of S.seats) {
+    for (let h = 0; h < seat.hands.length; h++) await playHand(seat, h);
+  }
+  S.active = null;
+
+  // 4. Turno de la banca
+  S.phase = 'dealer';
+  S.dealer.hidden = false;
+  log(`La banca muestra ${describe(S.dealer.cards)}.`);
+  render();
+  await sleep(CONFIG.ACTION_DELAY);
+
+  const live = S.seats.some(s => s.hands.some(h => h.status === 'stand'));
+  if (live) await playDealer();
+  else log('No quedan manos en juego: la banca no necesita pedir.', 'sys');
+
+  finishRound();
+}
+
+async function offerInsurance() {
+  S.phase = 'insurance';
+  S.status = 'La banca muestra un As: ¿seguro?';
+  log('La banca muestra un As: se ofrece seguro.', 'sys');
+  render();
+  for (const seat of S.seats) {
+    const cost = seat.hands[0].bet / 2;
+    if (seat.bal < cost) continue;
+    S.active = { seat, hand: seat.hands[0] };
+    let take;
+    if (seat.human) {
+      take = (await askUser({ who: 'insurance', options: ['insure', 'decline'], rec: 'decline', cost })) === 'insure';
+    } else {
+      await sleep(CONFIG.ACTION_DELAY / 2);
+      take = Math.random() < CONFIG.BOT_INSURANCE_RATE;
+    }
+    if (take) {
+      seat.bal -= cost;
+      seat.insurance = cost;
+      log(`${seat.name} toma seguro por ${money(cost)}.`);
+    } else if (seat.human) {
+      log(`${seat.name} no toma seguro.`);
+    }
+    render();
+  }
+  S.active = null;
+  if (!S.seats.some(s => s.insurance)) log('Nadie tomó seguro.', 'sys');
+}
+
+async function playHand(seat, h) {
+  const hand = seat.hands[h];
+  S.active = { seat, hand };
+  // Con manos divididas, el historial indica cuál juega.
+  const who = () => (seat.hands.length > 1 ? `${seat.name} (mano ${seat.hands.indexOf(hand) + 1})` : seat.name);
+
+  // Las manos que vienen de dividir reciben su segunda carta al empezar su turno.
+  if (hand.cards.length === 1) await dealCard(hand.cards);
+
+  if (Rules.isNatural(hand.cards, hand.fromSplit)) {
+    hand.status = 'bj';
+    log(`${who()} tiene Blackjack.`, 'win');
+    render();
+    await sleep(CONFIG.ACTION_DELAY / 2);
+    return;
+  }
+  // Ases divididos: una sola carta cada uno.
+  if (hand.splitAces) {
+    hand.status = 'stand';
+    log(`${who()} se planta con ${Rules.total(hand.cards).t} (As dividido).`);
+    return;
+  }
+
+  S.status = seat.human ? 'Tu turno.' : `Juega ${seat.name}…`;
+  render();
+
+  while (true) {
+    const { t } = Rules.total(hand.cards);
+    if (t > 21) { hand.status = 'bust'; log(`${who()} se pasó con ${t}.`, 'lose'); break; }
+    if (t === 21) { hand.status = 'stand'; log(`${who()} se planta con 21.`); break; }
+
+    const flags = { canDouble: Rules.canDouble(seat, hand), canSplit: Rules.canSplit(seat, hand) };
+    const rec = Strategy.decide(hand.cards, S.dealer.cards[0], flags);
+    let action;
+    if (seat.human) {
+      const options = ['hit', 'stand'];
+      if (flags.canDouble) options.push('double');
+      if (flags.canSplit) options.push('split');
+      action = await askUser({ who: 'player', options, rec });
+    } else {
+      await sleep(CONFIG.ACTION_DELAY);
+      action = rec;
+    }
+
+    if (action === 'stand') {
+      hand.status = 'stand';
+      log(`${who()} se plantó con ${t}.`);
+      break;
+    }
+    if (action === 'hit') {
+      await dealCard(hand.cards);
+      log(`${who()} pide: ${describe(hand.cards.slice(-1))} (${Rules.total(hand.cards).t}).`);
+      continue;
+    }
+    if (action === 'double') {
+      seat.bal -= hand.bet;
+      hand.bet *= 2;
+      hand.doubled = true;
+      await dealCard(hand.cards);
+      const nt = Rules.total(hand.cards).t;
+      log(`${who()} dobla a ${money(hand.bet)} y recibe ${describe(hand.cards.slice(-1))} (${nt}).`);
+      if (nt > 21) { hand.status = 'bust'; log(`${who()} se pasó con ${nt}.`, 'lose'); }
+      else hand.status = 'stand';
+      break;
+    }
+    if (action === 'split') {
+      const aces = hand.cards[0].r === 'A';
+      const second = makeHand(hand.bet, true);
+      second.cards.push(hand.cards.pop());
+      hand.fromSplit = true;
+      hand.splitAces = second.splitAces = aces;
+      seat.bal -= hand.bet;
+      seat.hands.splice(h + 1, 0, second);
+      log(`${seat.name} divide su par de ${aces ? 'ases' : hand.cards[0].r}.`);
+      await dealCard(hand.cards);
+      if (aces) {
+        hand.status = 'stand';
+        log(`${who()} se planta con ${Rules.total(hand.cards).t} (As dividido).`);
+        break;
+      }
+    }
+  }
+  render();
+}
+
+async function playDealer() {
+  const userDeals = S.mode === 'banca' && !S.autoRule;
+  S.status = userDeals ? 'Te toca jugar la mano de la banca.' : 'Juega la banca…';
+  render();
+
+  while (true) {
+    const { t } = Rules.total(S.dealer.cards);
+    if (t > 21) { log(`La banca superó 21 (${t}).`, 'win'); break; }
+    if (t === 21) { log('La banca se planta con 21.'); break; }
+
+    const rec = Rules.dealerShouldHit(S.dealer.cards) ? 'hit' : 'stand';
+    let action;
+    if (userDeals) {
+      action = await askUser({ who: 'dealer', options: ['hit', 'stand'], rec });
+    } else {
+      await sleep(CONFIG.ACTION_DELAY);
+      action = rec;
+    }
+    if (action === 'stand') { log(`La banca se planta con ${t}.`); break; }
+    await dealCard(S.dealer.cards);
+    log(`La banca pide: ${describe(S.dealer.cards.slice(-1))} (${Rules.total(S.dealer.cards).t}).`);
+  }
+}
+
+/* =========================================================
+ * 5. Resolución de pagos
+ * ======================================================= */
+function finishRound() {
+  const dCards = S.dealer.cards;
+  const dt = Rules.total(dCards).t;
+  const dNat = Rules.isNatural(dCards);
+  const dBust = dt > 21;
+  let houseDelta = 0;
+
+  // Seguro: paga 2 a 1 si la banca tiene Blackjack; si no, se pierde.
+  for (const seat of S.seats) {
+    if (!seat.insurance) continue;
+    const pay = dNat ? seat.insurance * 3 : 0;
+    const net = pay - seat.insurance;
+    seat.bal += pay;
+    houseDelta -= net;
+    log(`Seguro de ${seat.name}: ${dNat ? 'cobra' : 'pierde'} ${signed(net)}.`, dNat ? 'win' : 'lose');
+  }
+
+  for (const seat of S.seats) {
+    seat.hands.forEach((hand, i) => {
+      const t = Rules.total(hand.cards).t;
+      const nat = Rules.isNatural(hand.cards, hand.fromSplit);
+      let pay = 0, result;
+      if (t > 21) result = 'lose';
+      else if (dNat) { result = nat ? 'push' : 'lose'; pay = nat ? hand.bet : 0; }
+      else if (nat) { result = 'bj'; pay = hand.bet * 2.5; }           // 3:2
+      else if (dBust || t > dt) { result = 'win'; pay = hand.bet * 2; } // 1:1
+      else if (t === dt) { result = 'push'; pay = hand.bet; }
+      else result = 'lose';
+
+      seat.bal += pay;
+      hand.net = pay - hand.bet;
+      hand.result = result;
+      houseDelta -= hand.net;
+
+      const who = seat.hands.length > 1 ? `${seat.name} (mano ${i + 1})` : seat.name;
+      const text = { win: 'gana', bj: 'gana con Blackjack', push: 'empata', lose: 'pierde' }[result];
+      log(`${who} ${text}: ${signed(hand.net)}.`, result === 'bj' ? 'win' : result);
+    });
+  }
+
+  addToBank(houseDelta);
+  const bankKind = S.mode === 'banca' ? (houseDelta > 0 ? 'win' : houseDelta < 0 ? 'lose' : 'push') : 'sys';
+  log(`Resultado de la banca en la ronda: ${signed(houseDelta)}.`, bankKind);
+
+  const me = humanSeat();
+  if (me) {
+    S.humanBal = me.bal;
+    const net = me.hands.reduce((a, h) => a + h.net, 0) + (me.insurance ? (dNat ? 2 : -1) * me.insurance : 0);
+    S.status = `Ronda terminada. Tu resultado: ${signed(net)}.`;
+    if (S.humanBet > me.bal) S.humanBet = Math.max(0, Math.floor(me.bal / 5) * 5);
+  } else {
+    S.status = `Ronda terminada. La banca ${houseDelta >= 0 ? 'gana' : 'pierde'} ${money(Math.abs(houseDelta))}.`;
+  }
+  if (S.mode === 'banca' && S.userBank <= 0) {
+    S.status = 'La banca quebró. Reiniciá para volver a empezar.';
+    log('La banca quebró.', 'lose');
+  }
+
+  S.phase = 'bet';
+  S.active = null;
+  persist();
+  render();
+}
+
+function describe(cards) { return cards.map(c => c.r + c.s).join(' '); }
+
+/* =========================================================
+ * Render
+ * ======================================================= */
+const $ = id => document.getElementById(id);
+
+// Solo se anima la primera vez que se dibuja cada carta (o cuando se da vuelta la oculta).
+const shownCards = new Set();
+function cardHTML(c, hidden) {
+  const key = (hidden ? 'b' : 'f') + c.id;
+  const fresh = !shownCards.has(key) ? ' new' : '';
+  shownCards.add(key);
+  if (hidden) return `<div class="card back${fresh}" aria-label="carta oculta"></div>`;
+  return `<div class="card${isRedSuit(c.s) ? ' red' : ''}${fresh}" aria-label="${c.r} de ${c.s}">` +
+    `<span class="corner">${c.r}<br>${c.s}</span><span class="pip">${c.s}</span>` +
+    `<span class="corner b">${c.r}<br>${c.s}</span></div>`;
+}
+
+function totalLabel(cards, { hideHole = false, fromSplit = false } = {}) {
+  if (!cards.length) return '';
+  if (hideHole) return `<span class="total">${Rules.cardValue(cards[0]) === 11 ? 'A' : Rules.cardValue(cards[0])} + ?</span>`;
+  if (Rules.isNatural(cards, fromSplit)) return '<span class="total">Blackjack</span>';
+  const { t, soft } = Rules.total(cards);
+  if (t > 21) return `<span class="total" style="color:var(--lose)">${t}</span>`;
+  return `<span class="total">${soft && t < 21 ? `${t - 10}/${t}` : t}</span>`;
+}
+
+function resultBadge(hand) {
+  if (hand.result) {
+    const cls = hand.result === 'bj' || hand.result === 'win' ? 'win' : hand.result;
+    const label = { win: 'Gana', bj: 'Blackjack', push: 'Empate', lose: 'Pierde' }[hand.result];
+    return `<span class="badge ${cls}">${label} ${signed(hand.net)}</span>`;
+  }
+  if (hand.status === 'bust') return '<span class="badge lose">Se pasó</span>';
+  if (hand.status === 'bj') return '<span class="badge win">Blackjack</span>';
+  if (hand.status === 'stand' && S.phase !== 'dealing') return '<span class="badge">Plantado</span>';
+  return '';
+}
+
+function renderSummary() {
+  const bankLabel = S.mode === 'player' ? 'Banca (IA)' : 'Tu banca';
+  const sess = bankOf() - S.sessionStart;
+  $('summary').innerHTML =
+    `<span class="pill${S.mode === 'banca' ? ' me' : ''}">${bankLabel}<b>${money(bankOf())}</b>` +
+    `<span style="color:${sess >= 0 ? 'var(--win)' : 'var(--lose)'};margin-left:6px">${signed(sess)}</span></span>` +
+    S.seats.map(s => `<span class="pill${s.human ? ' me' : ''}">${s.name}<b>${money(s.bal)}</b></span>`).join('') +
+    `<span class="pill">Ronda<b>${S.round}</b></span>`;
+}
+
+function renderDealer() {
+  const d = S.dealer;
+  const title = S.mode === 'banca' ? 'Banca (vos)' : 'Banca';
+  $('dealer').innerHTML =
+    `<div class="row-title"><b>${title}</b>${totalLabel(d.cards, { hideHole: d.hidden })}</div>` +
+    `<div class="hand">${d.cards.map((c, i) => cardHTML(c, d.hidden && i === 1)).join('') ||
+      '<div class="card back" style="opacity:.15"></div>'}</div>`;
+}
+
+function renderSeats() {
+  $('seats').innerHTML = S.seats.map(seat => {
+    const onTurn = S.active && S.active.seat === seat;
+    const hands = seat.hands.length ? seat.hands.map(hand => `
+      <div class="hbox${S.active && S.active.hand === hand ? ' active' : ''}">
+        <div class="hand">${hand.cards.map(c => cardHTML(c)).join('')}</div>
+        <div class="hmeta">
+          <span>${totalLabel(hand.cards, { fromSplit: hand.fromSplit })} Apuesta ${money(hand.bet)}${hand.doubled ? ' ×2' : ''}</span>
+          ${resultBadge(hand)}
+        </div>
+      </div>`).join('') : '<div class="hbox"><div class="hand"></div><div class="hmeta">Esperando apuesta…</div></div>';
+    return `<div class="seat${onTurn ? ' turn' : ''}${seat.human ? ' me' : ''}">
+      <div class="seat-head"><b>${seat.name}</b><small>${seat.human ? 'Jugador' : 'Bot'} · ${money(seat.bal)}</small></div>
+      ${hands}${seat.insurance ? `<div class="hmeta">Seguro ${money(seat.insurance)}</div>` : ''}</div>`;
+  }).join('');
+}
+
+function actionButtons(prompt) {
+  const keys = { hit: 'H', stand: 'S', double: 'D', split: 'P', insure: 'I', decline: 'N' };
+  const all = { dealer: ['hit', 'stand'], insurance: ['insure', 'decline'] }[prompt.who] ||
+    ['hit', 'stand', 'double', 'split'];
+  return all.map(a => {
+    const enabled = prompt.options.includes(a);
+    const rec = enabled && a === prompt.rec ? ' rec' : '';
+    const ghost = ['double', 'split', 'insure'].includes(a) ? ' ghost' : '';
+    return `<button class="${ghost}${rec}" data-a="act" data-v="${a}" ${enabled ? '' : 'disabled'}>` +
+      `${ACTION_LABEL[a]}<kbd>${keys[a]}</kbd></button>`;
+  }).join('');
+}
+
+function renderControls() {
+  const c = $('controls');
+  const hint = $('hint');
+  const me = humanSeat();
+
+  if (S.prompt) {
+    c.innerHTML = actionButtons(S.prompt);
+    if (S.prompt.who === 'dealer') {
+      const live = S.seats.flatMap(s => s.hands.filter(h => h.status === 'stand')
+        .map(h => `${s.name} ${Rules.total(h.cards).t} (${money(h.bet)})`));
+      hint.innerHTML = `Recomendación (regla de la casa): <b>${ACTION_LABEL[S.prompt.rec]}</b> — ` +
+        `la banca pide con 16 o menos y se planta con 17 o más.<br>En juego: ${live.join(' · ')}`;
+    } else if (S.prompt.who === 'insurance') {
+      hint.innerHTML = `El seguro cuesta ${money(S.prompt.cost)} (la mitad de tu apuesta) y paga 2 a 1 si la banca ` +
+        'tiene Blackjack. La estrategia básica recomienda <b>no tomarlo</b>.';
+    } else {
+      hint.innerHTML = `Sugerencia de estrategia básica: <b>${ACTION_LABEL[S.prompt.rec]}</b>`;
+    }
+    return;
+  }
+
+  if (S.phase !== 'bet') {
+    c.innerHTML = '<button disabled>Ronda en curso…</button>';
+    hint.textContent = '';
+    return;
+  }
+
+  if (S.mode === 'banca') {
+    if (S.userBank <= 0) {
+      c.innerHTML = '<button data-a="reset">Reiniciar banca</button>';
+      hint.textContent = 'Te quedaste sin fondos como banca.';
+      return;
+    }
+    c.innerHTML = `<button data-a="deal">Repartir ronda<kbd>Enter</kbd></button>
+      <label class="check"><input type="checkbox" id="autoRule" ${S.autoRule ? 'checked' : ''}>
+      Jugar la banca automáticamente (regla 16/17)</label>`;
+    hint.innerHTML = 'Como banca cobrás las apuestas perdidas y pagás las ganadoras (1:1, Blackjack 3:2, seguro 2:1). ' +
+      'Sin la opción automática, vos decidís cuándo pedir o plantarte, con una recomendación en pantalla.';
+    return;
+  }
+
+  // Modo jugador, fase de apuestas
+  if (me.bal < CONFIG.MIN_BET) {
+    c.innerHTML = `<button data-a="refill">Recargar ${money(CONFIG.HUMAN_START)}</button>`;
+    hint.textContent = 'Te quedaste sin fichas.';
+    return;
+  }
+  const valid = S.humanBet >= CONFIG.MIN_BET && S.humanBet <= me.bal;
+  c.innerHTML = `
+    <div class="chips">${CONFIG.CHIPS.map(v =>
+      `<button class="chip c${v}" data-a="chip" data-v="${v}" ${S.humanBet + v > me.bal ? 'disabled' : ''}>${v}</button>`).join('')}</div>
+    <span class="betbox">Apuesta: <b>${money(S.humanBet)}</b></span>
+    <button class="ghost" data-a="clear-bet">Borrar</button>
+    <button data-a="deal" ${valid ? '' : 'disabled'}>Apostar y repartir<kbd>Enter</kbd></button>`;
+  hint.textContent = `Apuesta mínima ${money(CONFIG.MIN_BET)}. La banca pide con 16 o menos y se planta con 17. ` +
+    'Con un As visible se ofrece seguro (paga 2:1). Atajos: H pedir, S plantarse, D doblar, P dividir, I/N seguro. ' +
+    'Tus saldos se guardan en este navegador.';
+}
+
+function renderLog() {
+  $('log').innerHTML = S.log.map(e =>
+    `<li class="${e.kind}"><small>R${e.round}</small>${e.text}</li>`).join('') ||
+    '<li class="sys">Todavía no hay eventos.</li>';
+  $('shoeInfo').textContent = Deck.remaining() ? `${Deck.remaining()} cartas en el sabot` : '';
+}
+
+function render() {
+  $('modeTag').textContent = S.mode === 'player' ? 'Modo Jugador' : 'Modo Banca';
+  const idle = S.phase === 'bet';
+  $('btnMode').disabled = !idle;
+  $('btnReset').disabled = !idle;
+  $('btnMode').textContent = S.mode === 'player' ? 'Cambiar a Modo Banca' : 'Cambiar a Modo Jugador';
+  $('status').textContent = S.status;
+  renderSummary();
+  renderDealer();
+  renderSeats();
+  renderControls();
+  renderLog();
+}
+
+/* =========================================================
+ * Eventos
+ * ======================================================= */
+function switchMode() {
+  if (S.phase !== 'bet') return;
+  persist();
+  S.mode = S.mode === 'player' ? 'banca' : 'player';
+  setupTable();
+  persist();
+  log(`Cambio a ${S.mode === 'player' ? 'Modo Jugador' : 'Modo Banca'}.`, 'sys');
+  render();
+}
+
+function resetGame() {
+  if (S.phase !== 'bet') return;
+  if (S.mode === 'player') { S.humanBal = CONFIG.HUMAN_START; S.houseBank = CONFIG.HOUSE_START; S.humanBet = 25; }
+  else S.userBank = CONFIG.USER_BANK_START;
+  S.botBals[S.mode] = [];
+  S.round = 0;
+  S.log = [];
+  setupTable();
+  persist();
+  log('Partida reiniciada.', 'sys');
+  render();
+}
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-a]');
+  if (!el || el.disabled) return;
+  const v = el.dataset.v;
+  switch (el.dataset.a) {
+    case 'act': answer(v); break;
+    case 'deal': playRound(); break;
+    case 'chip': {
+      const me = humanSeat();
+      if (S.phase === 'bet' && me && S.humanBet + Number(v) <= me.bal) { S.humanBet += Number(v); persist(); render(); }
+      break;
+    }
+    case 'clear-bet': if (S.phase === 'bet') { S.humanBet = 0; persist(); render(); } break;
+    case 'refill': {
+      const me = humanSeat();
+      me.bal = S.humanBal = CONFIG.HUMAN_START;
+      S.humanBet = 25;
+      log(`Recargaste ${money(CONFIG.HUMAN_START)}.`, 'sys');
+      persist();
+      render();
+      break;
+    }
+    case 'switch-mode': switchMode(); break;
+    case 'reset': resetGame(); break;
+  }
+});
+
+document.addEventListener('change', e => {
+  if (e.target.id === 'autoRule') { S.autoRule = e.target.checked; persist(); }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.repeat) return;
+  const map = { h: 'hit', s: 'stand', d: 'double', p: 'split', i: 'insure', n: 'decline' };
+  const k = e.key.toLowerCase();
+  if (S.prompt && map[k]) { answer(map[k]); e.preventDefault(); }
+  else if (e.key === 'Enter' && S.phase === 'bet') { e.preventDefault(); playRound(); }
+});
+
+/* =========================================================
+ * Inicio
+ * ======================================================= */
+const restored = restore();
+setupTable();
+log(restored ? 'Se recuperaron tus saldos guardados.' : 'Mesa lista. ¡Buena suerte!', 'sys');
+render();
+</script>
+</body>
+</html>
