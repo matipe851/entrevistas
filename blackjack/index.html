@@ -142,9 +142,14 @@ const CONFIG = {
   DEAL_DELAY: 200,
   ACTION_DELAY: 650,
   LOG_LIMIT: 200,
+  BOT_INSURANCE_RATE: 0.25,  // probabilidad de que un bot tome seguro
+  STORAGE_KEY: 'blackjack21-v1',
 };
 
-const ACTION_LABEL = { hit: 'Pedir', stand: 'Plantarse', double: 'Doblar', split: 'Dividir' };
+const ACTION_LABEL = {
+  hit: 'Pedir', stand: 'Plantarse', double: 'Doblar', split: 'Dividir',
+  insure: 'Tomar seguro', decline: 'Sin seguro',
+};
 
 /* =========================================================
  * Mazo (sabot de varias barajas)
@@ -250,13 +255,13 @@ const Strategy = {
 /* =========================================================
  * Estado
  * ======================================================= */
-const makeSeat = (name, human, bal) => ({ name, human, bal, hands: [] });
+const makeSeat = (name, human, bal) => ({ name, human, bal, hands: [], insurance: 0 });
 const makeHand = (bet, fromSplit = false) =>
   ({ cards: [], bet, fromSplit, splitAces: false, doubled: false, status: 'playing', result: null, net: 0 });
 
 const S = {
   mode: 'player',            // 'player' | 'banca'
-  phase: 'bet',              // 'bet' | 'dealing' | 'players' | 'dealer'
+  phase: 'bet',              // 'bet' | 'dealing' | 'insurance' | 'players' | 'dealer'
   seats: [],
   dealer: { cards: [], hidden: true },
   humanBal: CONFIG.HUMAN_START,
@@ -266,8 +271,9 @@ const S = {
   sessionStart: 0,
   round: 0,
   autoRule: false,
+  botBals: { player: [], banca: [] },  // saldos de los bots por modo
   active: null,              // { seat, hand } en turno
-  prompt: null,              // { who: 'player' | 'dealer', options: [...], rec }
+  prompt: null,              // { who: 'player' | 'dealer' | 'insurance', options: [...], rec }
   status: '',
   log: [],
 };
@@ -278,8 +284,47 @@ function addToBank(delta) {
 }
 const humanSeat = () => S.seats.find(s => s.human);
 
+/* =========================================================
+ * Guardado de saldos (localStorage, solo en este navegador)
+ * ======================================================= */
+const Storage = {
+  load() {
+    try { return JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY)); } catch { return null; }
+  },
+  save(data) {
+    try { localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(data)); } catch { /* sin almacenamiento */ }
+  },
+};
+
+function persist() {
+  const me = humanSeat();
+  if (me) S.humanBal = me.bal;
+  S.botBals[S.mode] = S.seats.filter(s => !s.human).map(s => s.bal);
+  Storage.save({
+    mode: S.mode, humanBal: S.humanBal, humanBet: S.humanBet, houseBank: S.houseBank,
+    userBank: S.userBank, autoRule: S.autoRule, round: S.round, botBals: S.botBals,
+  });
+}
+
+function restore() {
+  const d = Storage.load();
+  if (!d || typeof d !== 'object') return false;
+  const num = (v, min = 0) => (typeof v === 'number' && Number.isFinite(v) && v >= min ? v : null);
+  const nums = a => (Array.isArray(a) ? a.map(v => num(v, 0) ?? 0) : []);
+  if (d.mode === 'player' || d.mode === 'banca') S.mode = d.mode;
+  S.humanBal = num(d.humanBal) ?? S.humanBal;
+  S.humanBet = num(d.humanBet) ?? S.humanBet;
+  S.houseBank = num(d.houseBank, -Infinity) ?? S.houseBank;
+  S.userBank = num(d.userBank, -Infinity) ?? S.userBank;
+  S.round = num(d.round) ?? 0;
+  S.autoRule = d.autoRule === true;
+  if (d.botBals) S.botBals = { player: nums(d.botBals.player), banca: nums(d.botBals.banca) };
+  return true;
+}
+
 function setupTable() {
-  const bot = n => makeSeat(`Bot ${n}`, false, CONFIG.BOT_START);
+  const saved = S.botBals[S.mode] || [];
+  const bot = n => makeSeat(`Bot ${n}`, false, saved[n - 1] > 0 ? saved[n - 1] : CONFIG.BOT_START);
   S.seats = S.mode === 'player'
     ? [bot(1), bot(2), makeSeat('Vos', true, S.humanBal), bot(3)]
     : [bot(1), bot(2), bot(3), bot(4)];
@@ -355,6 +400,7 @@ async function playRound() {
     const bet = seat.human ? S.humanBet : Strategy.botBet(seat.bal);
     seat.bal -= bet;
     seat.hands = [makeHand(bet)];
+    seat.insurance = 0;
     log(`${seat.name} apuesta ${money(bet)}.`);
   }
 
@@ -364,6 +410,9 @@ async function playRound() {
     for (const seat of S.seats) await dealCard(seat.hands[0].cards);
     await dealCard(S.dealer.cards);
   }
+
+  // Seguro: si la banca muestra un As, cada jugador puede asegurar la mitad de su apuesta.
+  if (S.dealer.cards[0].r === 'A') await offerInsurance();
 
   // La banca revisa si tiene Blackjack (solo puede tenerlo con un As o un 10 visible)
   if (Rules.isNatural(S.dealer.cards)) {
@@ -391,6 +440,35 @@ async function playRound() {
   else log('No quedan manos en juego: la banca no necesita pedir.', 'sys');
 
   finishRound();
+}
+
+async function offerInsurance() {
+  S.phase = 'insurance';
+  S.status = 'La banca muestra un As: ¿seguro?';
+  log('La banca muestra un As: se ofrece seguro.', 'sys');
+  render();
+  for (const seat of S.seats) {
+    const cost = seat.hands[0].bet / 2;
+    if (seat.bal < cost) continue;
+    S.active = { seat, hand: seat.hands[0] };
+    let take;
+    if (seat.human) {
+      take = (await askUser({ who: 'insurance', options: ['insure', 'decline'], rec: 'decline', cost })) === 'insure';
+    } else {
+      await sleep(CONFIG.ACTION_DELAY / 2);
+      take = Math.random() < CONFIG.BOT_INSURANCE_RATE;
+    }
+    if (take) {
+      seat.bal -= cost;
+      seat.insurance = cost;
+      log(`${seat.name} toma seguro por ${money(cost)}.`);
+    } else if (seat.human) {
+      log(`${seat.name} no toma seguro.`);
+    }
+    render();
+  }
+  S.active = null;
+  if (!S.seats.some(s => s.insurance)) log('Nadie tomó seguro.', 'sys');
 }
 
 async function playHand(seat, h) {
@@ -512,6 +590,16 @@ function finishRound() {
   const dBust = dt > 21;
   let houseDelta = 0;
 
+  // Seguro: paga 2 a 1 si la banca tiene Blackjack; si no, se pierde.
+  for (const seat of S.seats) {
+    if (!seat.insurance) continue;
+    const pay = dNat ? seat.insurance * 3 : 0;
+    const net = pay - seat.insurance;
+    seat.bal += pay;
+    houseDelta -= net;
+    log(`Seguro de ${seat.name}: ${dNat ? 'cobra' : 'pierde'} ${signed(net)}.`, dNat ? 'win' : 'lose');
+  }
+
   for (const seat of S.seats) {
     seat.hands.forEach((hand, i) => {
       const t = Rules.total(hand.cards).t;
@@ -542,7 +630,7 @@ function finishRound() {
   const me = humanSeat();
   if (me) {
     S.humanBal = me.bal;
-    const net = me.hands.reduce((a, h) => a + h.net, 0);
+    const net = me.hands.reduce((a, h) => a + h.net, 0) + (me.insurance ? (dNat ? 2 : -1) * me.insurance : 0);
     S.status = `Ronda terminada. Tu resultado: ${signed(net)}.`;
     if (S.humanBet > me.bal) S.humanBet = Math.max(0, Math.floor(me.bal / 5) * 5);
   } else {
@@ -555,6 +643,7 @@ function finishRound() {
 
   S.phase = 'bet';
   S.active = null;
+  persist();
   render();
 }
 
@@ -630,17 +719,18 @@ function renderSeats() {
       </div>`).join('') : '<div class="hbox"><div class="hand"></div><div class="hmeta">Esperando apuesta…</div></div>';
     return `<div class="seat${onTurn ? ' turn' : ''}${seat.human ? ' me' : ''}">
       <div class="seat-head"><b>${seat.name}</b><small>${seat.human ? 'Jugador' : 'Bot'} · ${money(seat.bal)}</small></div>
-      ${hands}</div>`;
+      ${hands}${seat.insurance ? `<div class="hmeta">Seguro ${money(seat.insurance)}</div>` : ''}</div>`;
   }).join('');
 }
 
 function actionButtons(prompt) {
-  const keys = { hit: 'H', stand: 'S', double: 'D', split: 'P' };
-  const all = prompt.who === 'dealer' ? ['hit', 'stand'] : ['hit', 'stand', 'double', 'split'];
+  const keys = { hit: 'H', stand: 'S', double: 'D', split: 'P', insure: 'I', decline: 'N' };
+  const all = { dealer: ['hit', 'stand'], insurance: ['insure', 'decline'] }[prompt.who] ||
+    ['hit', 'stand', 'double', 'split'];
   return all.map(a => {
     const enabled = prompt.options.includes(a);
     const rec = enabled && a === prompt.rec ? ' rec' : '';
-    const ghost = a === 'double' || a === 'split' ? ' ghost' : '';
+    const ghost = ['double', 'split', 'insure'].includes(a) ? ' ghost' : '';
     return `<button class="${ghost}${rec}" data-a="act" data-v="${a}" ${enabled ? '' : 'disabled'}>` +
       `${ACTION_LABEL[a]}<kbd>${keys[a]}</kbd></button>`;
   }).join('');
@@ -658,6 +748,9 @@ function renderControls() {
         .map(h => `${s.name} ${Rules.total(h.cards).t} (${money(h.bet)})`));
       hint.innerHTML = `Recomendación (regla de la casa): <b>${ACTION_LABEL[S.prompt.rec]}</b> — ` +
         `la banca pide con 16 o menos y se planta con 17 o más.<br>En juego: ${live.join(' · ')}`;
+    } else if (S.prompt.who === 'insurance') {
+      hint.innerHTML = `El seguro cuesta ${money(S.prompt.cost)} (la mitad de tu apuesta) y paga 2 a 1 si la banca ` +
+        'tiene Blackjack. La estrategia básica recomienda <b>no tomarlo</b>.';
     } else {
       hint.innerHTML = `Sugerencia de estrategia básica: <b>${ACTION_LABEL[S.prompt.rec]}</b>`;
     }
@@ -679,7 +772,7 @@ function renderControls() {
     c.innerHTML = `<button data-a="deal">Repartir ronda<kbd>Enter</kbd></button>
       <label class="check"><input type="checkbox" id="autoRule" ${S.autoRule ? 'checked' : ''}>
       Jugar la banca automáticamente (regla 16/17)</label>`;
-    hint.innerHTML = 'Como banca cobrás las apuestas perdidas y pagás las ganadoras (1:1, Blackjack 3:2). ' +
+    hint.innerHTML = 'Como banca cobrás las apuestas perdidas y pagás las ganadoras (1:1, Blackjack 3:2, seguro 2:1). ' +
       'Sin la opción automática, vos decidís cuándo pedir o plantarte, con una recomendación en pantalla.';
     return;
   }
@@ -698,7 +791,8 @@ function renderControls() {
     <button class="ghost" data-a="clear-bet">Borrar</button>
     <button data-a="deal" ${valid ? '' : 'disabled'}>Apostar y repartir<kbd>Enter</kbd></button>`;
   hint.textContent = `Apuesta mínima ${money(CONFIG.MIN_BET)}. La banca pide con 16 o menos y se planta con 17. ` +
-    'Atajos: H pedir, S plantarse, D doblar, P dividir.';
+    'Con un As visible se ofrece seguro (paga 2:1). Atajos: H pedir, S plantarse, D doblar, P dividir, I/N seguro. ' +
+    'Tus saldos se guardan en este navegador.';
 }
 
 function renderLog() {
@@ -727,10 +821,10 @@ function render() {
  * ======================================================= */
 function switchMode() {
   if (S.phase !== 'bet') return;
-  const me = humanSeat();
-  if (me) S.humanBal = me.bal;
+  persist();
   S.mode = S.mode === 'player' ? 'banca' : 'player';
   setupTable();
+  persist();
   log(`Cambio a ${S.mode === 'player' ? 'Modo Jugador' : 'Modo Banca'}.`, 'sys');
   render();
 }
@@ -739,9 +833,11 @@ function resetGame() {
   if (S.phase !== 'bet') return;
   if (S.mode === 'player') { S.humanBal = CONFIG.HUMAN_START; S.houseBank = CONFIG.HOUSE_START; S.humanBet = 25; }
   else S.userBank = CONFIG.USER_BANK_START;
+  S.botBals[S.mode] = [];
   S.round = 0;
   S.log = [];
   setupTable();
+  persist();
   log('Partida reiniciada.', 'sys');
   render();
 }
@@ -755,15 +851,16 @@ document.addEventListener('click', e => {
     case 'deal': playRound(); break;
     case 'chip': {
       const me = humanSeat();
-      if (S.phase === 'bet' && me && S.humanBet + Number(v) <= me.bal) { S.humanBet += Number(v); render(); }
+      if (S.phase === 'bet' && me && S.humanBet + Number(v) <= me.bal) { S.humanBet += Number(v); persist(); render(); }
       break;
     }
-    case 'clear-bet': if (S.phase === 'bet') { S.humanBet = 0; render(); } break;
+    case 'clear-bet': if (S.phase === 'bet') { S.humanBet = 0; persist(); render(); } break;
     case 'refill': {
       const me = humanSeat();
       me.bal = S.humanBal = CONFIG.HUMAN_START;
       S.humanBet = 25;
       log(`Recargaste ${money(CONFIG.HUMAN_START)}.`, 'sys');
+      persist();
       render();
       break;
     }
@@ -773,12 +870,12 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('change', e => {
-  if (e.target.id === 'autoRule') S.autoRule = e.target.checked;
+  if (e.target.id === 'autoRule') { S.autoRule = e.target.checked; persist(); }
 });
 
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.repeat) return;
-  const map = { h: 'hit', s: 'stand', d: 'double', p: 'split' };
+  const map = { h: 'hit', s: 'stand', d: 'double', p: 'split', i: 'insure', n: 'decline' };
   const k = e.key.toLowerCase();
   if (S.prompt && map[k]) { answer(map[k]); e.preventDefault(); }
   else if (e.key === 'Enter' && S.phase === 'bet') { e.preventDefault(); playRound(); }
@@ -787,8 +884,9 @@ document.addEventListener('keydown', e => {
 /* =========================================================
  * Inicio
  * ======================================================= */
+const restored = restore();
 setupTable();
-log('Mesa lista. ¡Buena suerte!', 'sys');
+log(restored ? 'Se recuperaron tus saldos guardados.' : 'Mesa lista. ¡Buena suerte!', 'sys');
 render();
 </script>
 </body>
