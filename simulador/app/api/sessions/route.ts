@@ -1,17 +1,20 @@
 import { DAILY_SESSIONS } from "@/lib/limits";
 import { getScenario } from "@/lib/scenarios";
 import { sessionsStartedToday } from "@/lib/sessions";
-import { createAdmin, getUser } from "@/lib/supabase/server";
+import { approvedOrError } from "@/lib/access";
+import { createAdmin } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
-  const user = await getUser();
-  if (!user) return Response.json({ error: "Iniciá sesión para practicar." }, { status: 401 });
+  const gate = await approvedOrError();
+  if ("response" in gate) return gate.response;
+  const user = gate.access;
 
   const body = (await request.json().catch(() => null)) as { scenario?: unknown } | null;
   const scenario = typeof body?.scenario === "string" ? getScenario(body.scenario) : undefined;
   if (!scenario) return Response.json({ error: "Esa situación no existe." }, { status: 400 });
 
-  if ((await sessionsStartedToday(user.id)) >= DAILY_SESSIONS) {
+  // El administrador no tiene tope diario.
+  if (!user.isAdmin && (await sessionsStartedToday(user.id)) >= DAILY_SESSIONS) {
     return Response.json(
       { error: `Ya hiciste tus ${DAILY_SESSIONS} prácticas de hoy. Volvé mañana.` },
       { status: 429 },

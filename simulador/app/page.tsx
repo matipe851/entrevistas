@@ -27,7 +27,7 @@ export default function Landing() {
         >
           Probar gratis
         </Link>
-        <p className="mt-2 text-sm text-muted">{DAILY_SESSIONS} prácticas gratis por día. Entrás con tu email, sin contraseña.</p>
+        <p className="mt-2 text-sm text-muted">{DAILY_SESSIONS} prácticas gratis por día. Entrás con tu email y contraseña.</p>
       </section>
 
       <section className="mt-14">

@@ -2,13 +2,15 @@ import { ApiError, FinishReason } from "@google/genai";
 import { gemini, logAiError, MODEL, toContents } from "@/lib/ai";
 import { buildPersonaPrompt, getScenario, MAX_USER_TURNS } from "@/lib/scenarios";
 import { getOwnSession, getTurns } from "@/lib/sessions";
-import { createAdmin, getUser } from "@/lib/supabase/server";
+import { approvedOrError } from "@/lib/access";
+import { createAdmin } from "@/lib/supabase/server";
 
 const MAX_MESSAGE_CHARS = 1500;
 
 export async function POST(request: Request) {
-  const user = await getUser();
-  if (!user) return Response.json({ error: "Tu sesión venció. Volvé a entrar." }, { status: 401 });
+  const gate = await approvedOrError();
+  if ("response" in gate) return gate.response;
+  const user = gate.access;
 
   const body = (await request.json().catch(() => null)) as
     | { sessionId?: unknown; message?: unknown }

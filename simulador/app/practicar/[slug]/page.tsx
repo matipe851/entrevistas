@@ -3,15 +3,15 @@ import { notFound } from "next/navigation";
 import Difficulty from "@/components/difficulty";
 import { getScenario, MAX_USER_TURNS } from "@/lib/scenarios";
 import { remainingToday } from "@/lib/sessions";
-import { requireUser } from "@/lib/supabase/server";
+import { requireApproved } from "@/lib/access";
 import StartButton from "./start-button";
 
 export default async function ScenarioPage(props: PageProps<"/practicar/[slug]">) {
   const { slug } = await props.params;
   const scenario = getScenario(slug);
   if (!scenario) notFound();
-  const user = await requireUser(`/practicar/${slug}`);
-  const remaining = await remainingToday(user.id);
+  const user = await requireApproved(`/practicar/${slug}`);
+  const remaining = user.isAdmin ? Infinity : await remainingToday(user.id);
   const repeat = (await props.searchParams).repetir === "1";
 
   return (
