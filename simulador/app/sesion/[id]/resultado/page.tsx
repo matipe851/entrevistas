@@ -3,11 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import type { FeedbackRow } from "@/lib/feedback";
 import { getScenario } from "@/lib/scenarios";
 import { getOwnSession } from "@/lib/sessions";
-import { createClient, requireUser } from "@/lib/supabase/server";
+import { requireApproved } from "@/lib/access";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function ResultPage(props: PageProps<"/sesion/[id]/resultado">) {
   const { id } = await props.params;
-  const user = await requireUser(`/sesion/${id}/resultado`);
+  const user = await requireApproved(`/sesion/${id}/resultado`);
   const session = await getOwnSession(id, user.id);
   const scenario = session && getScenario(session.scenario_slug);
   if (!session || !scenario) notFound();

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, Public_Sans } from "next/font/google";
 import Link from "next/link";
 import { Analytics } from "@vercel/analytics/next";
+import { isAdminEmail } from "@/lib/admin";
 import { getUser } from "@/lib/supabase/server";
 import "./globals.css";
 
@@ -26,6 +27,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             <div className="flex items-center gap-4 text-sm">
               {user ? (
                 <>
+                  {isAdminEmail(user.email) && (
+                    <Link href="/admin" className="font-semibold text-accent hover:opacity-80">
+                      Admin
+                    </Link>
+                  )}
                   <Link href="/practicar" className="hover:text-accent">
                     Mis prácticas
                   </Link>

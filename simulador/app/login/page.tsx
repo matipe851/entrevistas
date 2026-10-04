@@ -10,10 +10,10 @@ export default async function LoginPage(props: PageProps<"/login">) {
   return (
     <main className="mx-auto w-full max-w-md px-4 py-16">
       <h1 className="font-display text-3xl">Entrar a Ensayo</h1>
-      <p className="mt-2 text-muted">Te mandamos un link a tu email. Sin contraseñas.</p>
+      <p className="mt-2 text-muted">Entrá con tu email y tu contraseña.</p>
       {params.error === "link" && (
         <p role="alert" className="mt-4 text-sm text-red-700 dark:text-red-400">
-          El link venció o ya se usó. Pedí uno nuevo.
+          El link venció o ya se usó. Si estabas recuperando tu contraseña, pedí otro mail.
         </p>
       )}
       <LoginForm next={next} />

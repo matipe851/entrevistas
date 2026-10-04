@@ -9,7 +9,7 @@ Elegís una situación (pedir un aumento, dar feedback negativo, atender a un cl
 | 0 | Proyecto Next.js 16 + TypeScript + Tailwind, listo para Vercel |
 | 1 | 6 situaciones, chat en vivo con el personaje, tope de 10 mensajes |
 | 2 | Diagnóstico en JSON (JSON mode de Gemini con `responseSchema`, validado con Zod) y pantalla de resultado |
-| 3 | Login con link mágico (Supabase), historial, límite de 3 prácticas por día |
+| 3 | Login con email y contraseña (Supabase), aprobación de cuentas por el administrador, historial, límite de 3 prácticas por día |
 | 4 | Landing, aviso de "no es terapia", eventos de Vercel Analytics y consultas de métricas |
 
 ## Puesta en marcha (una sola vez)
@@ -17,10 +17,11 @@ Elegís una situación (pedir un aumento, dar feedback negativo, atender a un cl
 ### 1. Supabase
 
 1. Creá un proyecto en [supabase.com](https://supabase.com) (el plan gratuito alcanza).
-2. En **SQL Editor**, pegá y corré `supabase/migrations/0001_init.sql`.
+2. En **SQL Editor**, pegá y corré `supabase/migrations/0001_init.sql` y después `supabase/migrations/0002_profiles.sql`.
+   - Dejá activado **Authentication → Sign In / Providers → Email → Confirm email**: es lo que impide que alguien se registre con el mail del administrador.
 3. En **Authentication → URL Configuration**:
    - **Site URL**: la URL de producción (por ejemplo `https://ensayo.vercel.app`).
-   - **Redirect URLs**: agregá `http://localhost:3000/auth/callback` y `https://TU-DOMINIO/auth/callback`.
+   - **Redirect URLs**: agregá `http://localhost:3000/**` y `https://TU-DOMINIO/**` (los usan la confirmación del email y "olvidé mi contraseña").
 4. En **Project Settings → API** copiá la URL, la `anon` key y la `service_role` key.
 
 ### 2. Gemini (gratis)
@@ -53,7 +54,10 @@ npm run dev                  # http://localhost:3000
 - `lib/ai.ts`: cliente de Gemini (`@google/genai`) y conversión del historial al formato de Gemini.
 - `app/api/chat`: lee el historial **de la base**, llama a Gemini en vivo (sin razonamiento previo, para que responda rápido) y guarda el par de mensajes solo si la respuesta llegó completa. Corta en 10 mensajes.
 - `app/api/feedback`: genera el diagnóstico una sola vez por práctica y la marca como terminada. Si Gemini devuelve un JSON que no cumple el formato, no se guarda nada y el usuario puede reintentar.
-- `proxy.ts`: refresca la sesión de Supabase y protege `/practicar` y `/sesion`.
+- `proxy.ts`: refresca la sesión de Supabase y protege `/practicar`, `/sesion`, `/admin`, `/pendiente` y `/cuenta`.
+- `lib/access.ts`: cada cuenta nueva queda **pendiente** (tabla `profiles`) hasta que el administrador la acepta. Sin aprobación no se puede practicar, ni desde las páginas ni desde las API.
+- Administrador: el email de `ADMIN_EMAIL` (por defecto `matipealv@gmail.com`; varios separados por coma), solo si Supabase confirmó ese email. Tiene prácticas ilimitadas y el panel `/admin` con usuarios (aceptar, denegar, quitar acceso), métricas y las prácticas de todos.
+- Contraseñas: alta con confirmación del email una sola vez, login con contraseña y "olvidé mi contraseña" (`/cuenta/clave`).
 - Base de datos: el navegador solo **lee** lo suyo (RLS). Todas las escrituras pasan por el servidor con la service role key, así nadie puede saltear los límites escribiendo directo en Supabase.
 
 ## Métricas del lanzamiento

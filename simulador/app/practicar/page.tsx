@@ -3,7 +3,8 @@ import Difficulty from "@/components/difficulty";
 import { DAILY_SESSIONS } from "@/lib/limits";
 import { getScenario, scenarios } from "@/lib/scenarios";
 import { remainingToday } from "@/lib/sessions";
-import { createClient, requireUser } from "@/lib/supabase/server";
+import { requireApproved } from "@/lib/access";
+import { createClient } from "@/lib/supabase/server";
 
 type Scores = { score_tone: number; score_assertive: number; score_empathy: number; score_clarity: number };
 
@@ -24,7 +25,7 @@ const dateFmt = new Intl.DateTimeFormat("es-AR", {
 });
 
 export default async function PracticarPage() {
-  const user = await requireUser("/practicar");
+  const user = await requireApproved("/practicar");
   const supabase = await createClient();
   const [{ data }, remaining] = await Promise.all([
     supabase
@@ -32,7 +33,7 @@ export default async function PracticarPage() {
       .select("id, scenario_slug, status, created_at, feedback(score_tone, score_assertive, score_empathy, score_clarity)")
       .order("created_at", { ascending: false })
       .limit(20),
-    remainingToday(user.id),
+    user.isAdmin ? Infinity : remainingToday(user.id),
   ]);
   const history = (data ?? []) as unknown as HistoryRow[];
 
@@ -40,7 +41,9 @@ export default async function PracticarPage() {
     <main className="mx-auto w-full max-w-4xl px-4 py-10">
       <h1 className="font-display text-3xl">Elegí qué practicar</h1>
       <p className="mt-2 text-muted">
-        {remaining > 0
+        {user.isAdmin
+          ? "Sos administrador: tus prácticas son ilimitadas."
+          : remaining > 0
           ? `Te quedan ${remaining} de ${DAILY_SESSIONS} prácticas hoy.`
           : `Ya usaste tus ${DAILY_SESSIONS} prácticas de hoy. Mañana tenés más.`}
       </p>

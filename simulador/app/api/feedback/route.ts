@@ -3,11 +3,13 @@ import { logAiError } from "@/lib/ai";
 import { generateFeedback } from "@/lib/feedback";
 import { getScenario } from "@/lib/scenarios";
 import { getOwnSession, getTurns } from "@/lib/sessions";
-import { createAdmin, getUser } from "@/lib/supabase/server";
+import { approvedOrError } from "@/lib/access";
+import { createAdmin } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
-  const user = await getUser();
-  if (!user) return Response.json({ error: "Tu sesión venció. Volvé a entrar." }, { status: 401 });
+  const gate = await approvedOrError();
+  if ("response" in gate) return gate.response;
+  const user = gate.access;
 
   const body = (await request.json().catch(() => null)) as { sessionId?: unknown } | null;
   if (typeof body?.sessionId !== "string") {

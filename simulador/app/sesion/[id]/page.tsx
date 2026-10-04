@@ -1,12 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import { getScenario, toPublic } from "@/lib/scenarios";
 import { getOwnSession, getTurns } from "@/lib/sessions";
-import { requireUser } from "@/lib/supabase/server";
+import { requireApproved } from "@/lib/access";
 import Chat from "./chat";
 
 export default async function SessionPage(props: PageProps<"/sesion/[id]">) {
   const { id } = await props.params;
-  const user = await requireUser(`/sesion/${id}`);
+  const user = await requireApproved(`/sesion/${id}`);
   const session = await getOwnSession(id, user.id);
   const scenario = session && getScenario(session.scenario_slug);
   if (!session || !scenario) notFound();
