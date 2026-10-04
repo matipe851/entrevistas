@@ -1,4 +1,5 @@
-import { logClaudeError } from "@/lib/claude";
+import { ApiError } from "@google/genai";
+import { logAiError } from "@/lib/ai";
 import { generateFeedback } from "@/lib/feedback";
 import { getScenario } from "@/lib/scenarios";
 import { getOwnSession, getTurns } from "@/lib/sessions";
@@ -33,7 +34,13 @@ export async function POST(request: Request) {
   try {
     feedback = await generateFeedback(session.id, scenario, turns);
   } catch (error) {
-    logClaudeError(error);
+    logAiError(error);
+    if (error instanceof ApiError && error.status === 429) {
+      return Response.json(
+        { error: "Se agotó la cuota gratuita de la IA por ahora. Probá de nuevo en un rato." },
+        { status: 429 },
+      );
+    }
     return Response.json({ error: "No pudimos generar el diagnóstico. Probá de nuevo." }, { status: 502 });
   }
 

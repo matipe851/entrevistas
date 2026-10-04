@@ -1,6 +1,7 @@
-import { claude, FALLBACK, logClaudeError, MODEL } from "@/lib/claude";
+import { ApiError, FinishReason } from "@google/genai";
+import { gemini, logAiError, MODEL, toContents } from "@/lib/ai";
 import { buildPersonaPrompt, getScenario, MAX_USER_TURNS } from "@/lib/scenarios";
-import { getOwnSession, getTurns, toMessageParams } from "@/lib/sessions";
+import { getOwnSession, getTurns } from "@/lib/sessions";
 import { createAdmin, getUser } from "@/lib/supabase/server";
 
 const MAX_MESSAGE_CHARS = 1500;
@@ -33,37 +34,53 @@ export async function POST(request: Request) {
     );
   }
 
-  let anthropic;
+  const abort = new AbortController();
+  let stream;
   try {
-    anthropic = claude();
+    stream = await gemini().models.generateContentStream({
+      model: MODEL,
+      contents: [...toContents(turns), { role: "user", parts: [{ text: message }] }],
+      config: {
+        systemInstruction: buildPersonaPrompt(scenario),
+        maxOutputTokens: 1024,
+        // Charla en vivo: sin razonamiento previo para que la respuesta empiece rápido.
+        thinkingConfig: { thinkingBudget: 0 },
+        abortSignal: abort.signal,
+      },
+    });
   } catch (error) {
-    console.error(error);
-    return Response.json({ error: "El servidor no tiene configurada la IA." }, { status: 500 });
+    logAiError(error);
+    if (error instanceof ApiError && error.status === 429) {
+      return Response.json(
+        { error: "Se agotó la cuota gratuita de la IA por ahora. Probá de nuevo en un rato." },
+        { status: 429 },
+      );
+    }
+    const missingKey = error instanceof Error && error.message.includes("GEMINI_API_KEY");
+    return Response.json(
+      { error: missingKey ? "El servidor no tiene configurada la IA." : "No pudimos conectar con el personaje." },
+      { status: missingKey ? 500 : 502 },
+    );
   }
-
-  const stream = anthropic.beta.messages.stream({
-    model: MODEL,
-    max_tokens: 1024,
-    // Charla en vivo: poco razonamiento previo para que la respuesta empiece rápido.
-    output_config: { effort: "low" },
-    system: buildPersonaPrompt(scenario),
-    messages: [...toMessageParams(turns), { role: "user", content: message }],
-    ...FALLBACK,
-  });
 
   const encoder = new TextEncoder();
   const responseBody = new ReadableStream<Uint8Array>({
     async start(controller) {
       let reply = "";
+      let blocked = false;
       try {
-        for await (const event of stream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            reply += event.delta.text;
-            controller.enqueue(encoder.encode(event.delta.text));
+        for await (const chunk of stream) {
+          const finish = chunk.candidates?.[0]?.finishReason;
+          if (chunk.promptFeedback?.blockReason || finish === FinishReason.SAFETY || finish === FinishReason.PROHIBITED_CONTENT) {
+            blocked = true;
+          }
+          const text = chunk.text;
+          if (text) {
+            reply += text;
+            controller.enqueue(encoder.encode(text));
           }
         }
-        const final = await stream.finalMessage();
-        if (final.stop_reason === "refusal" || !reply.trim()) {
+        if (blocked || !reply.trim()) {
           controller.enqueue(encoder.encode("\n\n[El personaje no puede seguir con esta respuesta. Probá reformular.]"));
           controller.close();
           return;
@@ -78,12 +95,12 @@ export async function POST(request: Request) {
         if (error) throw error;
         controller.close();
       } catch (error) {
-        logClaudeError(error);
+        logAiError(error);
         controller.error(error);
       }
     },
     cancel() {
-      stream.abort();
+      abort.abort();
     },
   });
 

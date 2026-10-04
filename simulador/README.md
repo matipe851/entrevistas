@@ -1,6 +1,6 @@
 # Ensayo · Simulador de conversaciones difíciles
 
-Elegís una situación (pedir un aumento, dar feedback negativo, atender a un cliente enojado…), practicás la charla con un personaje interpretado por Claude y al terminar recibís un diagnóstico: tono, asertividad, empatía, claridad, dos aciertos y tres frases tuyas reescritas mejor.
+Elegís una situación (pedir un aumento, dar feedback negativo, atender a un cliente enojado…), practicás la charla con un personaje interpretado por Gemini (Google) y al terminar recibís un diagnóstico: tono, asertividad, empatía, claridad, dos aciertos y tres frases tuyas reescritas mejor.
 
 ## Qué incluye
 
@@ -8,7 +8,7 @@ Elegís una situación (pedir un aumento, dar feedback negativo, atender a un cl
 |---|---|
 | 0 | Proyecto Next.js 16 + TypeScript + Tailwind, listo para Vercel |
 | 1 | 6 situaciones, chat en vivo con el personaje, tope de 10 mensajes |
-| 2 | Diagnóstico con salida estructurada validada con Zod y pantalla de resultado |
+| 2 | Diagnóstico en JSON (JSON mode de Gemini con `responseSchema`, validado con Zod) y pantalla de resultado |
 | 3 | Login con link mágico (Supabase), historial, límite de 3 prácticas por día |
 | 4 | Landing, aviso de "no es terapia", eventos de Vercel Analytics y consultas de métricas |
 
@@ -23,9 +23,13 @@ Elegís una situación (pedir un aumento, dar feedback negativo, atender a un cl
    - **Redirect URLs**: agregá `http://localhost:3000/auth/callback` y `https://TU-DOMINIO/auth/callback`.
 4. En **Project Settings → API** copiá la URL, la `anon` key y la `service_role` key.
 
-### 2. Claude
+### 2. Gemini (gratis)
 
-Creá una API key en [platform.claude.com](https://platform.claude.com) y configurá una **alerta de gasto** en la consola.
+1. Entrá a [Google AI Studio](https://aistudio.google.com/apikey) con tu cuenta de Google y tocá **Create API key**.
+2. Guardala como `GEMINI_API_KEY`. No hace falta cargar tarjeta: el plan gratuito alcanza para el MVP.
+3. Modelo por defecto: `gemini-2.5-flash`. Si Google lo reemplaza por otro Flash gratuito, cambiá `GEMINI_MODEL` sin tocar el código.
+
+Límites del plan gratuito: hay un tope de pedidos por minuto y por día (los valores vigentes están en la página de *Rate limits* de la documentación de Gemini). Si se agota, la app muestra "Se agotó la cuota gratuita de la IA por ahora". Cada práctica usa hasta 10 pedidos de chat más 1 de diagnóstico. En el plan gratuito, Google puede usar los datos de los pedidos para mejorar sus productos: avisalo en tus términos si vas a tener usuarios reales.
 
 ### 3. Local
 
@@ -46,8 +50,9 @@ npm run dev                  # http://localhost:3000
 
 - `lib/scenarios.ts`: las situaciones y el prompt del personaje. Es solo de servidor: el navegador recibe la versión pública, sin el secreto de cada personaje.
 - `app/api/sessions`: crea una práctica y controla el límite diario (horario de Argentina).
-- `app/api/chat`: lee el historial **de la base**, llama a Claude en vivo y guarda el par de mensajes solo si la respuesta llegó completa. Corta en 10 mensajes.
-- `app/api/feedback`: genera el diagnóstico una sola vez por práctica y la marca como terminada.
+- `lib/ai.ts`: cliente de Gemini (`@google/genai`) y conversión del historial al formato de Gemini.
+- `app/api/chat`: lee el historial **de la base**, llama a Gemini en vivo (sin razonamiento previo, para que responda rápido) y guarda el par de mensajes solo si la respuesta llegó completa. Corta en 10 mensajes.
+- `app/api/feedback`: genera el diagnóstico una sola vez por práctica y la marca como terminada. Si Gemini devuelve un JSON que no cumple el formato, no se guarda nada y el usuario puede reintentar.
 - `proxy.ts`: refresca la sesión de Supabase y protege `/practicar` y `/sesion`.
 - Base de datos: el navegador solo **lee** lo suyo (RLS). Todas las escrituras pasan por el servidor con la service role key, así nadie puede saltear los límites escribiendo directo en Supabase.
 

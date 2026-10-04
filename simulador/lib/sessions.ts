@@ -1,5 +1,4 @@
 import "server-only";
-import type Anthropic from "@anthropic-ai/sdk";
 import { createAdmin } from "@/lib/supabase/server";
 import { DAILY_SESSIONS, startOfTodayAR } from "@/lib/limits";
 
@@ -48,9 +47,4 @@ export async function sessionsStartedToday(userId: string): Promise<number> {
 
 export async function remainingToday(userId: string): Promise<number> {
   return Math.max(0, DAILY_SESSIONS - (await sessionsStartedToday(userId)));
-}
-
-/** Historial para la API de Claude: alterna user/assistant empezando por user. */
-export function toMessageParams(turns: Turn[]): Anthropic.MessageParam[] {
-  return turns.map((t) => ({ role: t.role, content: t.content }));
 }
