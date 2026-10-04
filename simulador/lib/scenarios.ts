@@ -1,3 +1,8 @@
+import "server-only";
+import { MAX_USER_TURNS } from "./constants";
+
+export { MAX_USER_TURNS };
+
 export type Scenario = {
   slug: string;
   title: string;
@@ -13,8 +18,6 @@ export type Scenario = {
   /** Primera frase del personaje, se muestra sin llamar a la IA. */
   opening: string;
 };
-
-export const MAX_USER_TURNS = 10;
 
 export const scenarios: Scenario[] = [
   {
@@ -90,6 +93,14 @@ export const scenarios: Scenario[] = [
     opening: "¡Hola! ¿Tenés un segundito? Es rapidito, te juro.",
   },
 ];
+
+/** Lo que puede ver el navegador: todo menos el secreto del personaje. */
+export type PublicScenario = Omit<Scenario, "personaBrief">;
+
+export function toPublic({ personaBrief: _secret, ...rest }: Scenario): PublicScenario {
+  void _secret;
+  return rest;
+}
 
 export function getScenario(slug: string): Scenario | undefined {
   return scenarios.find((s) => s.slug === slug);

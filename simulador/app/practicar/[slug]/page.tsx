@@ -1,14 +1,40 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getScenario, scenarios } from "@/lib/scenarios";
-import Chat from "./chat";
+import Difficulty from "@/components/difficulty";
+import { getScenario, MAX_USER_TURNS } from "@/lib/scenarios";
+import { remainingToday } from "@/lib/sessions";
+import { requireUser } from "@/lib/supabase/server";
+import StartButton from "./start-button";
 
-export function generateStaticParams() {
-  return scenarios.map((s) => ({ slug: s.slug }));
-}
-
-export default async function PracticePage(props: PageProps<"/practicar/[slug]">) {
+export default async function ScenarioPage(props: PageProps<"/practicar/[slug]">) {
   const { slug } = await props.params;
   const scenario = getScenario(slug);
   if (!scenario) notFound();
-  return <Chat scenario={scenario} />;
+  const user = await requireUser(`/practicar/${slug}`);
+  const remaining = await remainingToday(user.id);
+  const repeat = (await props.searchParams).repetir === "1";
+
+  return (
+    <main className="mx-auto w-full max-w-2xl px-4 py-10">
+      <Link href="/practicar" className="text-sm text-muted hover:text-foreground">
+        ← Todas las situaciones
+      </Link>
+      <div className="mt-4 rounded-lg border border-line bg-surface p-6">
+        <Difficulty level={scenario.difficulty} />
+        <h1 className="mt-2 font-display text-3xl">{scenario.title}</h1>
+        <p className="mt-1 text-muted">Con {scenario.persona}</p>
+        <p className="mt-4">{scenario.context}</p>
+        <p className="mt-3">
+          <strong className="font-semibold">Tu objetivo:</strong> {scenario.userGoal}
+        </p>
+        <p className="mt-4 text-sm text-muted">
+          Tenés hasta {MAX_USER_TURNS} mensajes. Cuando quieras, tocá “Terminar y ver diagnóstico”.
+        </p>
+        <StartButton scenario={scenario.slug} disabled={remaining === 0} repeat={repeat} />
+        {remaining === 0 && (
+          <p className="mt-2 text-sm text-muted">Ya usaste tus prácticas de hoy. Mañana tenés más.</p>
+        )}
+      </div>
+    </main>
+  );
 }

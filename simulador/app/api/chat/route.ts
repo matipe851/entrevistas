@@ -1,84 +1,84 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { claude, FALLBACK, logClaudeError, MODEL } from "@/lib/claude";
 import { buildPersonaPrompt, getScenario, MAX_USER_TURNS } from "@/lib/scenarios";
+import { getOwnSession, getTurns, toMessageParams } from "@/lib/sessions";
+import { createAdmin, getUser } from "@/lib/supabase/server";
 
-const client = new Anthropic();
-const MODEL = process.env.CHAT_MODEL ?? "claude-opus-5-5";
 const MAX_MESSAGE_CHARS = 1500;
 
-type ChatBody = {
-  scenario?: unknown;
-  messages?: unknown;
-};
-
-function parseMessages(raw: unknown): Anthropic.MessageParam[] | null {
-  if (!Array.isArray(raw) || raw.length === 0) return null;
-  const out: Anthropic.MessageParam[] = [];
-  for (const [i, m] of raw.entries()) {
-    if (typeof m !== "object" || m === null) return null;
-    const { role, content } = m as { role?: unknown; content?: unknown };
-    // Alternan user / assistant, empezando y terminando en user.
-    const expected = i % 2 === 0 ? "user" : "assistant";
-    if (role !== expected || typeof content !== "string") return null;
-    const text = content.trim();
-    if (!text || text.length > MAX_MESSAGE_CHARS) return null;
-    out.push({ role: expected, content: text });
-  }
-  return out[out.length - 1].role === "user" ? out : null;
-}
-
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as ChatBody | null;
-  const scenario = typeof body?.scenario === "string" ? getScenario(body.scenario) : undefined;
-  const messages = parseMessages(body?.messages);
+  const user = await getUser();
+  if (!user) return Response.json({ error: "Tu sesión venció. Volvé a entrar." }, { status: 401 });
 
-  if (!scenario || !messages) {
+  const body = (await request.json().catch(() => null)) as
+    | { sessionId?: unknown; message?: unknown }
+    | null;
+  const message = typeof body?.message === "string" ? body.message.trim() : "";
+  if (typeof body?.sessionId !== "string" || !message || message.length > MAX_MESSAGE_CHARS) {
     return Response.json({ error: "Pedido inválido." }, { status: 400 });
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return Response.json({ error: "Falta configurar ANTHROPIC_API_KEY en el servidor." }, { status: 500 });
+
+  const session = await getOwnSession(body.sessionId, user.id);
+  const scenario = session && getScenario(session.scenario_slug);
+  if (!session || !scenario) return Response.json({ error: "No encontramos esa práctica." }, { status: 404 });
+  if (session.status !== "active") {
+    return Response.json({ error: "Esta práctica ya terminó." }, { status: 409 });
   }
-  const userTurns = messages.filter((m) => m.role === "user").length;
-  if (userTurns > MAX_USER_TURNS) {
+
+  // El historial sale de la base, no del navegador.
+  const turns = await getTurns(session.id);
+  if (turns.filter((t) => t.role === "user").length >= MAX_USER_TURNS) {
     return Response.json(
       { error: `La práctica tiene un máximo de ${MAX_USER_TURNS} mensajes.` },
-      { status: 400 },
+      { status: 409 },
     );
   }
 
-  const stream = client.beta.messages.stream({
+  let anthropic;
+  try {
+    anthropic = claude();
+  } catch (error) {
+    console.error(error);
+    return Response.json({ error: "El servidor no tiene configurada la IA." }, { status: 500 });
+  }
+
+  const stream = anthropic.beta.messages.stream({
     model: MODEL,
     max_tokens: 1024,
     // Charla en vivo: poco razonamiento previo para que la respuesta empiece rápido.
     output_config: { effort: "low" },
     system: buildPersonaPrompt(scenario),
-    messages,
-    // Si un clasificador de seguridad rechaza el pedido, la API lo reintenta con otro modelo.
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
+    messages: [...toMessageParams(turns), { role: "user", content: message }],
+    ...FALLBACK,
   });
 
   const encoder = new TextEncoder();
-  const body$ = new ReadableStream<Uint8Array>({
+  const responseBody = new ReadableStream<Uint8Array>({
     async start(controller) {
+      let reply = "";
       try {
         for await (const event of stream) {
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            reply += event.delta.text;
             controller.enqueue(encoder.encode(event.delta.text));
           }
         }
         const final = await stream.finalMessage();
-        if (final.stop_reason === "refusal") {
+        if (final.stop_reason === "refusal" || !reply.trim()) {
           controller.enqueue(encoder.encode("\n\n[El personaje no puede seguir con esta respuesta. Probá reformular.]"));
+          controller.close();
+          return;
         }
+        // Guardamos el par solo si la respuesta llegó completa: el historial sigue alternando.
+        const { error } = await createAdmin()
+          .from("messages")
+          .insert([
+            { session_id: session.id, role: "user", content: message },
+            { session_id: session.id, role: "assistant", content: reply.trim() },
+          ]);
+        if (error) throw error;
         controller.close();
       } catch (error) {
-        if (error instanceof Anthropic.RateLimitError) {
-          console.error("Rate limit de la API de Claude", error.message);
-        } else if (error instanceof Anthropic.APIError) {
-          console.error(`Error de la API de Claude ${error.status}:`, error.message);
-        } else {
-          console.error(error);
-        }
+        logClaudeError(error);
         controller.error(error);
       }
     },
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
     },
   });
 
-  return new Response(body$, {
+  return new Response(responseBody, {
     headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
   });
 }
