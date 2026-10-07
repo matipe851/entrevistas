@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
+import { createClient as createPlainClient } from "@supabase/supabase-js";
+import { requireSupabaseEnv } from "@/lib/supabase/env";
 
 type Mode = "entrar" | "crear" | "olvide";
 
@@ -11,10 +13,24 @@ const MIN_PASSWORD = 8;
 const inputClass =
   "rounded-md border border-line bg-surface px-3 py-2 focus:outline-2 focus:outline-accent";
 
-function callbackUrl(next: string): string {
-  const url = new URL("/auth/callback", window.location.origin);
+/** A dónde vuelve el link del mail. La página toma la sesión que viene en el link. */
+function linkUrl(next: string): string {
+  const url = new URL("/auth/recuperar", window.location.origin);
   url.searchParams.set("next", next);
   return url.toString();
+}
+
+/**
+ * Cliente solo para pedir los mails (alta y "olvidé mi contraseña").
+ * Usa el flujo "implicit": el link trae la sesión adentro, así funciona aunque el mail
+ * se abra en otro navegador o en el celular. Con PKCE (el flujo por defecto) el link
+ * solo andaba en el mismo navegador donde se pidió, y en cualquier otro daba "venció".
+ */
+function emailLinkClient() {
+  const { url, anonKey } = requireSupabaseEnv();
+  return createPlainClient(url, anonKey, {
+    auth: { flowType: "implicit", persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
 }
 
 /** Tope para cada pedido a Supabase: si no responde, el botón no queda trabado en "Un momento…". */
@@ -90,14 +106,18 @@ export default function LoginForm({ next }: { next: string }) {
           return setError(`La contraseña tiene que tener al menos ${MIN_PASSWORD} caracteres.`);
         }
         const { data, error } = await withTimeout(
-          supabase.auth.signUp({
+          emailLinkClient().auth.signUp({
             email: cleanEmail,
             password,
-            options: { emailRedirectTo: callbackUrl("/practicar") },
+            options: { emailRedirectTo: linkUrl("/practicar") },
           }),
         );
         if (error) return setError(friendly(error.message));
         if (data.session) {
+          await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          });
           router.replace("/practicar");
           router.refresh();
           return;
@@ -109,8 +129,8 @@ export default function LoginForm({ next }: { next: string }) {
       }
 
       const { error } = await withTimeout(
-        supabase.auth.resetPasswordForEmail(cleanEmail, {
-          redirectTo: callbackUrl("/cuenta/clave"),
+        emailLinkClient().auth.resetPasswordForEmail(cleanEmail, {
+          redirectTo: linkUrl("/cuenta/clave"),
         }),
       );
       if (error) return setError(friendly(error.message));
