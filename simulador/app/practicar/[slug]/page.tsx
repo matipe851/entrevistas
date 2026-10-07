@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Difficulty from "@/components/difficulty";
-import { getScenario, MAX_USER_TURNS } from "@/lib/scenarios";
+import { getScenario, MAX_USER_TURNS, type Theory } from "@/lib/scenarios";
 import { remainingToday } from "@/lib/sessions";
 import { requireApproved } from "@/lib/access";
 import StartButton from "./start-button";
@@ -27,7 +27,8 @@ export default async function ScenarioPage(props: PageProps<"/practicar/[slug]">
         <p className="mt-3">
           <strong className="font-semibold">Tu objetivo:</strong> {scenario.userGoal}
         </p>
-        <p className="mt-4 text-sm text-muted">
+        <TheoryBlock theory={scenario.theory} />
+        <p className="mt-6 text-sm text-muted">
           Tenés hasta {MAX_USER_TURNS} mensajes. Cuando quieras, tocá “Terminar y ver diagnóstico”.
         </p>
         <StartButton scenario={scenario.slug} disabled={remaining === 0} repeat={repeat} />
@@ -36,5 +37,42 @@ export default async function ScenarioPage(props: PageProps<"/practicar/[slug]">
         )}
       </div>
     </main>
+  );
+}
+
+/** Teoría para leer antes de practicar: la técnica, los pasos, frases de ejemplo y errores comunes. */
+function TheoryBlock({ theory }: { theory: Theory }) {
+  return (
+    <section className="mt-6 border-t border-line pt-6">
+      <h2 className="font-display text-xl">Antes de practicar</h2>
+      <p className="mt-2">{theory.technique}</p>
+
+      <h3 className="mt-5 text-sm font-semibold">Paso a paso</h3>
+      <ol className="mt-2 list-decimal space-y-1 pl-5">
+        {theory.steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+
+      <h3 className="mt-5 text-sm font-semibold">Frases que te pueden servir</h3>
+      <ul className="mt-2 space-y-2">
+        {theory.phrases.map((phrase) => (
+          <li key={phrase} className="border-l-2 border-accent pl-3 italic">
+            “{phrase}”
+          </li>
+        ))}
+      </ul>
+
+      <h3 className="mt-5 text-sm font-semibold">Evitá</h3>
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
+        {theory.avoid.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+
+      <p className="mt-5 text-sm text-muted">
+        No hace falta seguirlo al pie de la letra: usalo como guía y probá con tus palabras.
+      </p>
+    </section>
   );
 }
