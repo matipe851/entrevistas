@@ -17,9 +17,33 @@ function callbackUrl(next: string): string {
   return url.toString();
 }
 
+/** Tope para cada pedido a Supabase: si no responde, el botón no queda trabado en "Un momento…". */
+const TIMEOUT_MS = 20_000;
+
+class TimeoutError extends Error {}
+
+function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new TimeoutError()), TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 /** Traduce los errores de Supabase Auth que puede ver el usuario. */
 function friendly(message: string): string {
   const m = message.toLowerCase();
+  if (m.includes("sending") && m.includes("email")) {
+    return "No pudimos mandarte el mail de confirmación. Probá de nuevo en unos minutos.";
+  }
   if (m.includes("invalid login")) return "Email o contraseña incorrectos.";
   if (m.includes("email not confirmed")) return "Todavía no confirmaste tu email. Revisá tu casilla (y spam).";
   if (m.includes("already registered")) return "Ya hay una cuenta con ese email. Entrá o recuperá tu contraseña.";
@@ -47,12 +71,14 @@ export default function LoginForm({ next }: { next: string }) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const supabase = createClient();
     const cleanEmail = email.trim();
 
     try {
+      const supabase = createClient();
       if (mode === "entrar") {
-        const { error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+        const { error } = await withTimeout(
+          supabase.auth.signInWithPassword({ email: cleanEmail, password }),
+        );
         if (error) return setError(friendly(error.message));
         router.replace(next);
         router.refresh();
@@ -63,11 +89,13 @@ export default function LoginForm({ next }: { next: string }) {
         if (password.length < MIN_PASSWORD) {
           return setError(`La contraseña tiene que tener al menos ${MIN_PASSWORD} caracteres.`);
         }
-        const { data, error } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-          options: { emailRedirectTo: callbackUrl("/practicar") },
-        });
+        const { data, error } = await withTimeout(
+          supabase.auth.signUp({
+            email: cleanEmail,
+            password,
+            options: { emailRedirectTo: callbackUrl("/practicar") },
+          }),
+        );
         if (error) return setError(friendly(error.message));
         if (data.session) {
           router.replace("/practicar");
@@ -80,11 +108,20 @@ export default function LoginForm({ next }: { next: string }) {
         return;
       }
 
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: callbackUrl("/cuenta/clave"),
-      });
+      const { error } = await withTimeout(
+        supabase.auth.resetPasswordForEmail(cleanEmail, {
+          redirectTo: callbackUrl("/cuenta/clave"),
+        }),
+      );
       if (error) return setError(friendly(error.message));
       setNotice(`Si hay una cuenta con ${cleanEmail}, te llega un mail para elegir una contraseña nueva.`);
+    } catch (err) {
+      console.error(err);
+      setError(
+        err instanceof TimeoutError
+          ? "El servidor tardó demasiado en responder. Si te llegó un mail, confirmalo; si no, probá de nuevo en un rato."
+          : "No pudimos conectarnos. Revisá tu conexión y probá de nuevo.",
+      );
     } finally {
       setBusy(false);
     }
