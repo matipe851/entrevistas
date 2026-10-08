@@ -3,35 +3,34 @@ import { ApiError, GoogleGenAI, type Content } from "@google/genai";
 import type { Turn } from "@/lib/sessions";
 
 /**
- * Modelo Flash de Gemini. Se puede cambiar con GEMINI_MODEL sin tocar el código.
- * gemini-2.5-flash ya no está disponible para cuentas nuevas (404).
+ * Modelo principal de Gemini. Se puede cambiar con GEMINI_MODEL sin tocar el código.
+ * gemini-2.5-flash ya no está disponible para cuentas nuevas (404) y gemini-3.8-flash,
+ * recién salido, suele estar saturado: por eso el principal es 3.7 y el respaldo 3.8.
  */
-export const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
+export const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.7-flash";
 
-/** Modelo de respaldo cuando el principal está saturado (503). Se puede cambiar con GEMINI_FALLBACK_MODEL. */
-export const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL ?? "gemini-3.7-flash";
+/** Modelo de respaldo si el principal falla, se satura o tarda demasiado. Se cambia con GEMINI_FALLBACK_MODEL. */
+export const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL ?? "gemini-3.8-flash";
 
-const RETRYABLE = new Set([500, 503, 504]);
+/** Tope por pedido a Gemini: si no responde en este tiempo, probamos con el modelo de respaldo. */
+export const AI_TIMEOUT_MS = 50_000;
 
-function isRetryable(error: unknown): boolean {
-  return error instanceof ApiError && RETRYABLE.has(error.status);
+/** Errores 4xx (pedido inválido, sin permiso) no se arreglan cambiando de modelo; el resto sí (429, 5xx, timeout, red). */
+function shouldFallback(error: unknown): boolean {
+  if (error instanceof ApiError) return error.status === 429 || error.status >= 500;
+  return true;
 }
 
 /**
- * Llama a Gemini con el modelo principal. Si está saturado (503 "high demand"),
- * reintenta una vez y, si sigue fallando, usa el modelo de respaldo.
+ * Llama a Gemini con el modelo principal y, si falla por saturación, cuota o demora,
+ * repite el pedido con el modelo de respaldo.
  */
 export async function withFallback<T>(call: (model: string) => Promise<T>): Promise<T> {
   try {
     return await call(MODEL);
   } catch (error) {
-    if (!isRetryable(error)) throw error;
-  }
-  await new Promise((resolve) => setTimeout(resolve, 800));
-  try {
-    return await call(MODEL);
-  } catch (error) {
-    if (!isRetryable(error) || FALLBACK_MODEL === MODEL) throw error;
+    if (!shouldFallback(error) || FALLBACK_MODEL === MODEL) throw error;
+    logAiError(error);
   }
   return call(FALLBACK_MODEL);
 }

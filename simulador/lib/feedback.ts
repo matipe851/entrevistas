@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { ThinkingLevel, Type, type Schema } from "@google/genai";
-import { gemini, withFallback } from "@/lib/ai";
+import { gemini, AI_TIMEOUT_MS, withFallback } from "@/lib/ai";
 import { isNegotiation, type Scenario } from "@/lib/scenarios";
 import type { Turn } from "@/lib/sessions";
 
@@ -150,6 +150,7 @@ ${transcript(scenario, turns)}
       responseMimeType: "application/json",
       responseSchema: negotiation ? NEGOTIATION_SCHEMA : BASE_SCHEMA,
       maxOutputTokens: 8192,
+      httpOptions: { timeout: AI_TIMEOUT_MS },
       // Razonamiento bajo: con el nivel por defecto el análisis tarda demasiado.
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
     },

@@ -1,7 +1,7 @@
 import "server-only";
 import { ThinkingLevel, Type, type Schema } from "@google/genai";
 import { z } from "zod";
-import { gemini, withFallback } from "@/lib/ai";
+import { gemini, AI_TIMEOUT_MS, withFallback } from "@/lib/ai";
 
 /** Intentos de oratoria por día y por usuario (el administrador no tiene tope). */
 export const DAILY_SPEECHES = 5;
@@ -237,6 +237,7 @@ export async function analyzeSpeech(
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
       maxOutputTokens: 8192,
+      httpOptions: { timeout: AI_TIMEOUT_MS },
       // Razonamiento bajo: con el nivel por defecto el análisis tarda demasiado.
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
     },
