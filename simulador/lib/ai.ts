@@ -2,8 +2,11 @@ import "server-only";
 import { ApiError, GoogleGenAI, type Content } from "@google/genai";
 import type { Turn } from "@/lib/sessions";
 
-/** Flash tiene plan gratuito en Google AI Studio. Se puede cambiar con GEMINI_MODEL. */
-export const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+/**
+ * Modelo Flash de Gemini. Se puede cambiar con GEMINI_MODEL sin tocar el código.
+ * gemini-2.5-flash ya no está disponible para cuentas nuevas (404).
+ */
+export const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
 let client: GoogleGenAI | null = null;
 
