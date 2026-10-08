@@ -1,5 +1,5 @@
 import { ApiError, FinishReason, ThinkingLevel } from "@google/genai";
-import { gemini, logAiError, MODEL, toContents } from "@/lib/ai";
+import { gemini, logAiError, toContents, withFallback } from "@/lib/ai";
 import { buildPersonaPrompt, getScenario, MAX_USER_TURNS } from "@/lib/scenarios";
 import { getOwnSession, getTurns } from "@/lib/sessions";
 import { approvedOrError } from "@/lib/access";
@@ -39,8 +39,9 @@ export async function POST(request: Request) {
   const abort = new AbortController();
   let stream;
   try {
-    stream = await gemini().models.generateContentStream({
-      model: MODEL,
+    stream = await withFallback((model) =>
+      gemini().models.generateContentStream({
+      model,
       contents: [...toContents(turns), { role: "user", parts: [{ text: message }] }],
       config: {
         systemInstruction: buildPersonaPrompt(scenario),
@@ -49,7 +50,8 @@ export async function POST(request: Request) {
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         abortSignal: abort.signal,
       },
-    });
+    }),
+    );
   } catch (error) {
     logAiError(error);
     if (error instanceof ApiError && error.status === 429) {
