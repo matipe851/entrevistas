@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PRIVATE_PREFIXES = ["/practicar", "/sesion", "/admin", "/pendiente", "/cuenta"];
+const PRIVATE_PREFIXES = ["/practicar", "/sesion", "/admin", "/pendiente", "/cuenta", "/oratoria", "/dilema", "/pares"];
 
 /** Refresca la sesión de Supabase en cada pedido y protege las páginas privadas. */
 export async function proxy(request: NextRequest) {

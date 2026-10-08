@@ -17,7 +17,7 @@ Elegís una situación (pedir un aumento, dar feedback negativo, atender a un cl
 ### 1. Supabase
 
 1. Creá un proyecto en [supabase.com](https://supabase.com) (el plan gratuito alcanza).
-2. En **SQL Editor**, pegá y corré `supabase/migrations/0001_init.sql` y después `supabase/migrations/0002_profiles.sql`.
+2. En **SQL Editor**, pegá y corré, en orden, `supabase/migrations/0001_init.sql`, `0002_profiles.sql` y `0003_modulos.sql`.
    - Dejá activado **Authentication → Sign In / Providers → Email → Confirm email**: es lo que impide que alguien se registre con el mail del administrador.
 3. En **Authentication → URL Configuration**:
    - **Site URL**: la URL de producción (por ejemplo `https://ensayo.vercel.app`).
@@ -72,3 +72,13 @@ Criterio para pasar a la v2 (voz, situaciones propias): más del 60% de las prá
 1. Invitá a 15 a 20 personas (LinkedIn, grupos de RRHH, conocidos).
 2. Pediles que hagan al menos 2 prácticas.
 3. Hacé 5 charlas cortas: ¿qué les sirvió del diagnóstico?, ¿el personaje se sintió real?, ¿volverían?
+
+## Módulos
+
+| Módulo | Dónde | Cómo funciona |
+|---|---|---|
+| Conversaciones difíciles | `/practicar` | Chat con un personaje de IA y diagnóstico (`lib/scenarios.ts`, `lib/feedback.ts`). |
+| Negociación | `/practicar` (grupo “Negociación”) | Escenarios con `kind: "negociacion"`: la contraparte tiene objetivos ocultos y un límite real; el diagnóstico evalúa escucha activa, indagación, propuestas y firmeza, analiza si hubo acuerdo dentro del margen y al final revela lo que la otra parte no decía (`reveal`). |
+| Oratoria | `/oratoria` | Desafíos de 1 o 2 minutos (`lib/oratoria.ts`). El navegador graba, convierte a WAV mono de 12 kHz y Gemini transcribe y analiza síntesis, estructura, claridad, persuasión, muletillas y ritmo. También se puede escribir. Tope: 5 intentos por día. |
+| Dilema del día | `/dilema` | Un caso de liderazgo por día, igual para todos (`lib/dilemmas.ts`). Se responde eligiendo una opción o escribiendo una solución (la evalúa Gemini). Muestra cómo respondió la comunidad, la explicación y la racha. |
+| Práctica entre pares | `/pares` | Salas de 15 minutos con dos roles (practica / evalúa), guion minuto a minuto, videollamada en Jitsi Meet y plantilla de feedback guiado (`lib/peer.ts`). Las salas pueden ser públicas o por link, y se puede hacer otra ronda con los roles invertidos. |
