@@ -1,5 +1,5 @@
 import "server-only";
-import { Type, type Schema } from "@google/genai";
+import { ThinkingLevel, Type, type Schema } from "@google/genai";
 import { z } from "zod";
 import { gemini, withFallback } from "@/lib/ai";
 
@@ -237,6 +237,8 @@ export async function analyzeSpeech(
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
       maxOutputTokens: 8192,
+      // Razonamiento bajo: con el nivel por defecto el análisis tarda demasiado.
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
     },
   }),
   );
