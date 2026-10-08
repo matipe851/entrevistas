@@ -1,4 +1,4 @@
-import { ApiError, FinishReason } from "@google/genai";
+import { ApiError, FinishReason, ThinkingLevel } from "@google/genai";
 import { gemini, logAiError, MODEL, toContents } from "@/lib/ai";
 import { buildPersonaPrompt, getScenario, MAX_USER_TURNS } from "@/lib/scenarios";
 import { getOwnSession, getTurns } from "@/lib/sessions";
@@ -45,8 +45,8 @@ export async function POST(request: Request) {
       config: {
         systemInstruction: buildPersonaPrompt(scenario),
         maxOutputTokens: 1024,
-        // Charla en vivo: sin razonamiento previo para que la respuesta empiece rápido.
-        thinkingConfig: { thinkingBudget: 0 },
+        // Charla en vivo: el menor razonamiento posible para que la respuesta empiece rápido.
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         abortSignal: abort.signal,
       },
     });
