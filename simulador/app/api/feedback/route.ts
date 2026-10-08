@@ -6,6 +6,9 @@ import { getOwnSession, getTurns } from "@/lib/sessions";
 import { approvedOrError } from "@/lib/access";
 import { createAdmin } from "@/lib/supabase/server";
 
+/** El diagnóstico puede tardar, sobre todo si hay que reintentar con el modelo de respaldo. */
+export const maxDuration = 120;
+
 export async function POST(request: Request) {
   const gate = await approvedOrError();
   if ("response" in gate) return gate.response;
