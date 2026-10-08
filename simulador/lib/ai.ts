@@ -8,6 +8,34 @@ import type { Turn } from "@/lib/sessions";
  */
 export const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
+/** Modelo de respaldo cuando el principal está saturado (503). Se puede cambiar con GEMINI_FALLBACK_MODEL. */
+export const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL ?? "gemini-3.7-flash";
+
+const RETRYABLE = new Set([500, 503, 504]);
+
+function isRetryable(error: unknown): boolean {
+  return error instanceof ApiError && RETRYABLE.has(error.status);
+}
+
+/**
+ * Llama a Gemini con el modelo principal. Si está saturado (503 "high demand"),
+ * reintenta una vez y, si sigue fallando, usa el modelo de respaldo.
+ */
+export async function withFallback<T>(call: (model: string) => Promise<T>): Promise<T> {
+  try {
+    return await call(MODEL);
+  } catch (error) {
+    if (!isRetryable(error)) throw error;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  try {
+    return await call(MODEL);
+  } catch (error) {
+    if (!isRetryable(error) || FALLBACK_MODEL === MODEL) throw error;
+  }
+  return call(FALLBACK_MODEL);
+}
+
 let client: GoogleGenAI | null = null;
 
 export function gemini(): GoogleGenAI {

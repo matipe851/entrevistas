@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { Type, type Schema } from "@google/genai";
-import { gemini, MODEL } from "@/lib/ai";
+import { gemini, withFallback } from "@/lib/ai";
 import { isNegotiation, type Scenario } from "@/lib/scenarios";
 import type { Turn } from "@/lib/sessions";
 
@@ -136,8 +136,9 @@ export async function generateFeedback(
   turns: Turn[],
 ): Promise<FeedbackRow> {
   const negotiation = isNegotiation(scenario);
-  const response = await gemini().models.generateContent({
-    model: MODEL,
+  const response = await withFallback((model) =>
+    gemini().models.generateContent({
+    model,
     contents: `Situación: ${scenario.context}
 Objetivo del usuario: ${scenario.userGoal}
 
@@ -150,7 +151,8 @@ ${transcript(scenario, turns)}
       responseSchema: negotiation ? NEGOTIATION_SCHEMA : BASE_SCHEMA,
       maxOutputTokens: 8192,
     },
-  });
+  }),
+  );
 
   const text = response.text;
   if (!text) {

@@ -1,7 +1,7 @@
 import "server-only";
 import { Type, type Schema } from "@google/genai";
 import { z } from "zod";
-import { gemini, MODEL } from "@/lib/ai";
+import { gemini, withFallback } from "@/lib/ai";
 
 /** Intentos de oratoria por día y por usuario (el administrador no tiene tope). */
 export const DAILY_SPEECHES = 5;
@@ -228,8 +228,9 @@ export async function analyzeSpeech(
       ? [{ inlineData: { mimeType: input.mimeType, data: input.audioBase64 } }, { text: "Evaluá este audio." }]
       : [{ text: `<texto_del_usuario>\n${input.text}\n</texto_del_usuario>` }];
 
-  const response = await gemini().models.generateContent({
-    model: MODEL,
+  const response = await withFallback((model) =>
+    gemini().models.generateContent({
+    model,
     contents: [{ role: "user", parts }],
     config: {
       systemInstruction: systemPrompt(c, input.mode),
@@ -237,7 +238,8 @@ export async function analyzeSpeech(
       responseSchema: RESPONSE_SCHEMA,
       maxOutputTokens: 8192,
     },
-  });
+  }),
+  );
 
   const text = response.text;
   if (!text) {
