@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import type { FeedbackRow } from "@/lib/feedback";
+import { scoreLabels, type FeedbackRow } from "@/lib/feedback";
 import { getScenario } from "@/lib/scenarios";
 import { getOwnSession } from "@/lib/sessions";
 import { requireApproved } from "@/lib/access";
@@ -18,12 +18,14 @@ export default async function ResultPage(props: PageProps<"/sesion/[id]/resultad
   const feedback = data as FeedbackRow | null;
   if (!feedback) redirect(`/sesion/${id}`);
 
+  const labels = scoreLabels(scenario);
   const scores = [
-    { label: "Tono", value: feedback.score_tone },
-    { label: "Asertividad", value: feedback.score_assertive },
-    { label: "Empatía", value: feedback.score_empathy },
-    { label: "Claridad", value: feedback.score_clarity },
+    { label: labels[0], value: feedback.score_tone },
+    { label: labels[1], value: feedback.score_assertive },
+    { label: labels[2], value: feedback.score_empathy },
+    { label: labels[3], value: feedback.score_clarity },
   ];
+  const deal = feedback.deal ?? null;
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-10">
@@ -33,6 +35,25 @@ export default async function ResultPage(props: PageProps<"/sesion/[id]/resultad
       <p className="mt-4 text-sm font-semibold uppercase tracking-wider text-accent">Diagnóstico</p>
       <h1 className="mt-1 font-display text-3xl">{scenario.title}</h1>
       <p className="mt-3 text-lg">{feedback.summary}</p>
+
+      {deal && (
+        <section
+          className={`mt-6 rounded-lg border p-4 ${deal.withinGoal ? "border-accent" : "border-line"} bg-surface`}
+          aria-label="Resultado de la negociación"
+        >
+          <p className="text-sm font-semibold uppercase tracking-wider text-accent">
+            {deal.withinGoal ? "Acuerdo dentro de tu objetivo" : deal.reached ? "Acuerdo fuera de tu objetivo" : "Sin acuerdo"}
+          </p>
+          <p className="mt-1">{deal.detail}</p>
+        </section>
+      )}
+
+      {scenario.reveal && (
+        <section className="mt-4 rounded-lg border border-line bg-persona p-4">
+          <p className="text-sm font-semibold">Lo que no sabías de la otra parte</p>
+          <p className="mt-1 text-sm">{scenario.reveal}</p>
+        </section>
+      )}
 
       <section className="mt-8 grid gap-4 sm:grid-cols-2" aria-label="Puntajes">
         {scores.map((s) => (
