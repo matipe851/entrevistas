@@ -6,7 +6,7 @@ import { approvedOrError } from "@/lib/access";
 import { createAdmin } from "@/lib/supabase/server";
 
 /** Analizar un audio puede tardar más que una charla. */
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 /** Vercel acepta cuerpos de hasta 4,5 MB: el audio llega en WAV de 12 kHz y hasta 150 segundos. */
 const MAX_AUDIO_BYTES = 4_000_000;
