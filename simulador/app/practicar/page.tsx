@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Difficulty from "@/components/difficulty";
 import { DAILY_SESSIONS } from "@/lib/limits";
-import { getScenario, scenarios } from "@/lib/scenarios";
+import { getScenario, isNegotiation, scenarios, type Scenario } from "@/lib/scenarios";
 import { remainingToday } from "@/lib/sessions";
 import { requireApproved } from "@/lib/access";
 import { createClient } from "@/lib/supabase/server";
@@ -48,24 +48,13 @@ export default async function PracticarPage() {
           : `Ya usaste tus ${DAILY_SESSIONS} prácticas de hoy. Mañana tenés más.`}
       </p>
 
-      <ul className="mt-6 grid gap-4 sm:grid-cols-2">
-        {scenarios.map((s) => (
-          <li key={s.slug} className="flex flex-col rounded-lg border border-line bg-surface p-5">
-            <Difficulty level={s.difficulty} />
-            <h2 className="mt-2 font-display text-xl">{s.title}</h2>
-            <p className="mt-1 text-sm text-muted">Con {s.persona}</p>
-            <p className="mt-3 flex-1 text-sm">
-              <strong className="font-semibold">Tu objetivo:</strong> {s.userGoal}
-            </p>
-            <Link
-              href={`/practicar/${s.slug}`}
-              className="mt-4 self-start rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-ink hover:opacity-90"
-            >
-              Ver situación
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {GROUPS.map((g) => (
+        <section key={g.title} className="mt-8">
+          <h2 className="font-display text-2xl">{g.title}</h2>
+          <p className="mt-1 text-sm text-muted">{g.text}</p>
+          <ScenarioList list={scenarios.filter(g.filter)} />
+        </section>
+      ))}
 
       <section className="mt-12">
         <h2 className="font-display text-2xl">Tus prácticas</h2>
@@ -98,5 +87,41 @@ export default async function PracticarPage() {
         )}
       </section>
     </main>
+  );
+}
+
+const GROUPS: { title: string; text: string; filter: (s: Scenario) => boolean }[] = [
+  {
+    title: "Conversaciones difíciles",
+    text: "Feedback, límites, pedidos y clientes enojados.",
+    filter: (s) => !isNegotiation(s),
+  },
+  {
+    title: "Negociación",
+    text: "La otra parte tiene objetivos ocultos. Tu meta: un acuerdo ganar-ganar dentro de tu margen.",
+    filter: isNegotiation,
+  },
+];
+
+function ScenarioList({ list }: { list: Scenario[] }) {
+  return (
+    <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+      {list.map((s) => (
+        <li key={s.slug} className="flex flex-col rounded-lg border border-line bg-surface p-5">
+          <Difficulty level={s.difficulty} />
+          <h3 className="mt-2 font-display text-xl">{s.title}</h3>
+          <p className="mt-1 text-sm text-muted">Con {s.persona}</p>
+          <p className="mt-3 flex-1 text-sm">
+            <strong className="font-semibold">Tu objetivo:</strong> {s.userGoal}
+          </p>
+          <Link
+            href={`/practicar/${s.slug}`}
+            className="mt-4 self-start rounded-md bg-accent px-4 py-2 text-sm font-semibold text-accent-ink hover:opacity-90"
+          >
+            Ver situación
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
