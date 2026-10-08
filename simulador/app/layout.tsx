@@ -11,7 +11,7 @@ const body = Public_Sans({ variable: "--font-body", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Ensayo · Simulador de conversaciones difíciles",
-  description: "Practicá la conversación que venís evitando y recibí un diagnóstico de cómo te fue.",
+  description: "Entrená habilidades blandas: conversaciones difíciles, negociación, oratoria, liderazgo y práctica entre pares.",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
@@ -20,11 +20,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="es" className={`${display.variable} ${body.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <header className="border-b border-line">
-          <nav className="mx-auto flex w-full max-w-4xl items-center justify-between gap-4 px-4 py-3">
+          <nav className="mx-auto flex w-full max-w-4xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
             <Link href="/" className="font-display text-lg font-semibold">
               Ensayo
             </Link>
-            <div className="flex items-center gap-4 text-sm">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
               {user ? (
                 <>
                   {isAdminEmail(user.email) && (
@@ -33,7 +33,16 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                     </Link>
                   )}
                   <Link href="/practicar" className="hover:text-accent">
-                    Mis prácticas
+                    Conversaciones
+                  </Link>
+                  <Link href="/oratoria" className="hover:text-accent">
+                    Oratoria
+                  </Link>
+                  <Link href="/dilema" className="hover:text-accent">
+                    Dilema del día
+                  </Link>
+                  <Link href="/pares" className="hover:text-accent">
+                    Pares
                   </Link>
                   <form action="/auth/signout" method="post">
                     <button type="submit" className="text-muted hover:text-foreground">

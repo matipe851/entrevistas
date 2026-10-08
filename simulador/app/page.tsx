@@ -9,6 +9,39 @@ const STEPS = [
   { title: "Mirá tu diagnóstico", text: "Tono, asertividad, empatía, claridad y tus frases reescritas mejor." },
 ];
 
+const MODULES = [
+  {
+    href: "/practicar",
+    title: "Conversaciones difíciles",
+    text: "Pedir un aumento, dar feedback, decir que no. Un personaje con IA reacciona a cómo le hablás.",
+    cta: "Practicar",
+  },
+  {
+    href: "/practicar",
+    title: "Negociación ganar-ganar",
+    text: "La contraparte tiene objetivos ocultos. Llegá a un acuerdo dentro de tu margen con escucha, preguntas y propuestas.",
+    cta: "Negociar",
+  },
+  {
+    href: "/oratoria",
+    title: "Oratoria",
+    text: "Grabate explicando una idea en 1 o 2 minutos y recibí un análisis de síntesis, estructura y muletillas.",
+    cta: "Aceptar un desafío",
+  },
+  {
+    href: "/dilema",
+    title: "Dilema del día",
+    text: "Un caso de liderazgo por día. Elegí qué harías, compará con los demás y aprendé la teoría detrás.",
+    cta: "Ver el de hoy",
+  },
+  {
+    href: "/pares",
+    title: "Práctica entre pares",
+    text: "15 minutos con otra persona: una practica, la otra evalúa con un guion y una plantilla de feedback.",
+    cta: "Buscar compañero",
+  },
+];
+
 export default function Landing() {
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-12 sm:py-16">
@@ -18,8 +51,9 @@ export default function Landing() {
           Practicá la conversación que venís evitando
         </h1>
         <p className="mt-4 text-lg text-muted">
-          Un personaje con IA hace de tu jefa, tu compañero o tu cliente. Vos practicás sin
-          consecuencias y al final recibís un diagnóstico concreto de cómo te fue.
+          Un gimnasio de habilidades blandas: conversaciones difíciles y negociaciones con personajes de IA,
+          oratoria, dilemas de liderazgo y práctica con otras personas. Practicás sin consecuencias y recibís
+          un diagnóstico concreto.
         </p>
         <Link
           href="/practicar"
@@ -31,7 +65,22 @@ export default function Landing() {
       </section>
 
       <section className="mt-14">
-        <h2 className="font-display text-2xl">Cómo funciona</h2>
+        <h2 className="font-display text-2xl">Cinco formas de entrenar</h2>
+        <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {MODULES.map((m) => (
+            <li key={m.title} className="flex flex-col rounded-lg border border-line bg-surface p-5">
+              <h3 className="font-display text-xl">{m.title}</h3>
+              <p className="mt-2 flex-1 text-sm text-muted">{m.text}</p>
+              <Link href={m.href} className="mt-4 self-start text-sm font-semibold text-accent hover:opacity-80">
+                {m.cta} →
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="mt-14">
+        <h2 className="font-display text-2xl">Cómo funcionan las conversaciones</h2>
         <ol className="mt-4 grid gap-4 sm:grid-cols-3">
           {STEPS.map((s, i) => (
             <li key={s.title} className="rounded-lg border border-line bg-surface p-5">
