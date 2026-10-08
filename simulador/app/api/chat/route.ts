@@ -1,5 +1,5 @@
 import { ApiError, FinishReason, ThinkingLevel } from "@google/genai";
-import { gemini, logAiError, toContents, withFallback } from "@/lib/ai";
+import { gemini, logAiError, toContents, AI_TIMEOUT_MS, withFallback } from "@/lib/ai";
 import { buildPersonaPrompt, getScenario, MAX_USER_TURNS } from "@/lib/scenarios";
 import { getOwnSession, getTurns } from "@/lib/sessions";
 import { approvedOrError } from "@/lib/access";
@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       config: {
         systemInstruction: buildPersonaPrompt(scenario),
         maxOutputTokens: 1024,
+        httpOptions: { timeout: AI_TIMEOUT_MS },
         // Charla en vivo: el menor razonamiento posible para que la respuesta empiece rápido.
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         abortSignal: abort.signal,
